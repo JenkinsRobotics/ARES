@@ -609,6 +609,25 @@ def delete_session(session_id: str) -> dict[str, Any]:
         loaded = Session.load(session_id)
     except Exception:
         loaded = None
+    jaeger_owned = bool(
+        loaded is not None
+        and any(
+            isinstance(message, dict) and message.get("backend") == "jros"
+            for message in (getattr(loaded, "messages", None) or [])
+        )
+    )
+    if jaeger_owned:
+        # Delete the peer-runtime copy first. If the bridge is unavailable,
+        # preserve the ARES copy so refresh cannot resurrect a half-deleted
+        # conversation and the operator gets an actionable error.
+        try:
+            from api.providers.jaeger.gateway_streaming import command_local_companion
+
+            command_local_companion("delete_session", {"id": f"webui:{session_id}"})
+        except Exception as exc:
+            raise SessionMutationError(
+                f"Jaeger session deletion failed; nothing was removed: {exc}", 502,
+            ) from exc
     is_messaging = is_messaging_session_record(loaded) or is_messaging_session_record(metadata)
     retained = worktree_retained_payload(loaded)
     try:

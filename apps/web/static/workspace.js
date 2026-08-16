@@ -431,7 +431,7 @@ function _normalizeArtifactPath(path){
   // tool arg recorded as "./foo.md" or "~/foo.md" compare equal for mutation
   // tracking; otherwise an agent edit via a ./-prefixed path leaves the open
   // preview stale (#3262 / pre-release regression-gate finding).
-  path = path.replace(/^~\//,'').replace(/^(?:\.\/)+/,'');
+  path = path.replace(/^~\//,'').replace(/^(?:\.\/)+/,'').replace(/^workspace\//,'');
   if(!path) return '';
   if(ARTIFACT_IGNORE_RE.test(path)) return '';
   if(!/[./]/.test(path)) return '';

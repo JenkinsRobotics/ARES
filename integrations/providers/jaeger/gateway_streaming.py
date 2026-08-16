@@ -59,10 +59,10 @@ from api.config import (
     update_active_run,
 )
 from api.helpers import _redact_text, redact_session_data
-from api.providers.jaeger.bridge_client import JrosClient, JrosError
 from api.models import get_session, merge_session_messages_append_only
-from api.run_journal import RunJournalWriter
+from api.providers.jaeger.bridge_client import JrosClient, JrosError
 from api.providers.jaeger.paths import jaeger_home, jros_instance_name
+from api.run_journal import RunJournalWriter
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +295,7 @@ def _get_or_start_bridge_client(instance: str | None = None) -> JrosClient:
             )
         env = os.environ.copy()
         try:
-            from api.config import SESSION_DIR, PORT, ARES_HOME
+            from api.config import ARES_HOME, PORT, SESSION_DIR
             env["ARES_SESSION_DIR"] = str(SESSION_DIR)
             env["ARES_HOME"] = str(ARES_HOME)
             env["ARES_CONTROLLER_PORT"] = str(PORT)
@@ -399,7 +399,13 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jros_event, stream_id: st
     kind = str(frame.get("type") or "").strip().lower()
     if kind == "tool":
         name = str(frame.get("name") or frame.get("tool") or "jros").strip() or "jros"
-        status = str(frame.get("status") or frame.get("event") or frame.get("state") or "").strip().lower()
+        status = str(
+            frame.get("status")
+            or frame.get("phase")
+            or frame.get("event")
+            or frame.get("state")
+            or ""
+        ).strip().lower()
         event_type = "tool.completed" if status in ("done", "complete", "completed", "ok") else "tool.running"
         preview = str(
             frame.get("preview")
@@ -418,11 +424,29 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jros_event, stream_id: st
         if isinstance(frame.get("args"), dict):
             payload["args"] = frame["args"]
         if stream_id in STREAM_LIVE_TOOL_CALLS:
-            STREAM_LIVE_TOOL_CALLS[stream_id].append({
-                "name": name,
-                "args": payload.get("args") or {"preview": preview},
-                "done": payload["event_type"] != "tool.running",
-            })
+            calls = STREAM_LIVE_TOOL_CALLS[stream_id]
+            done = payload["event_type"] != "tool.running"
+            # Jaeger emits start/done as separate frames. Fold the terminal
+            # frame into the most recent matching call so structured path args
+            # from the start frame survive in the persisted session artifact.
+            pending = next(
+                (
+                    call
+                    for call in reversed(calls)
+                    if call.get("name") == name and not call.get("done")
+                ),
+                None,
+            )
+            if done and pending is not None:
+                pending["done"] = True
+                if isinstance(payload.get("args"), dict):
+                    pending["args"] = payload["args"]
+            else:
+                calls.append({
+                    "name": name,
+                    "args": payload.get("args") or {"preview": preview},
+                    "done": done,
+                })
         put_jros_event("tool", payload)
         return
     if kind == "state":
@@ -452,6 +476,7 @@ class _JaegerBridgeTurnControl:
 def _run_local_jros_turn(
     msg_text: str,
     session_id: str,
+    workspace: str,
     cancel_event: threading.Event,
     put_jros_event=None,
     stream_id: str = "",
@@ -473,7 +498,10 @@ def _run_local_jros_turn(
             lock = _BRIDGE_TURN_LOCKS.setdefault(key, threading.RLock())
             tool_activity: list[str] = []
 
-            def on_event(frame: dict[str, Any]) -> None:
+            def on_event(
+                frame: dict[str, Any],
+                activity: list[str] = tool_activity,
+            ) -> None:
                 if cancel_event.is_set():
                     return
                 if isinstance(frame, dict):
@@ -487,7 +515,7 @@ def _run_local_jros_turn(
                         or ""
                     ).strip()
                     if preview:
-                        tool_activity.append(preview)
+                        activity.append(preview)
                     if put_jros_event is not None:
                         _translate_bridge_frame(frame, put_jros_event, stream_id)
 
@@ -530,6 +558,7 @@ def _run_local_jros_turn(
                 result = client.turn(
                     str(msg_text or ""),
                     session=f"webui:{session_id}",
+                    workspace=str(workspace or ""),
                     on_event=on_event,
                     on_request=_on_request,
                 )
@@ -636,6 +665,11 @@ def _merge_and_save_jros_turn(
             "timestamp": assistant_ts,
             "backend": "jros",
         }
+        live_tool_calls = list(STREAM_LIVE_TOOL_CALLS.get(stream_id, []) or [])
+        if live_tool_calls:
+            # Preserve Jaeger's structured, path-only mutation metadata so the
+            # ARES Artifacts tab can render files created during this turn.
+            assistant_msg["tool_calls"] = live_tool_calls
         if selected_model_provider:
             assistant_msg["model_provider"] = selected_model_provider
         saved_reasoning = STREAM_REASONING_TEXT.get(stream_id, "")
@@ -991,7 +1025,8 @@ def _run_jros_chat_streaming(
         context_messages: list[dict] = []
         if explicit_gateway or local_jros_root() is None:
             try:
-                from api.context_store import build_context_block, retrieve as retrieve_context
+                from api.context_store import build_context_block
+                from api.context_store import retrieve as retrieve_context
 
                 context_chunks = retrieve_context(str(msg_text or ""), config_data=cfg)
                 if context_chunks:
@@ -1032,7 +1067,7 @@ def _run_jros_chat_streaming(
             ran_locally = True
             update_active_run(stream_id, phase="jros-local")
             final_text, turn_error, tool_activity = _run_local_jros_turn(
-                msg_text, session_id, cancel_event, put_jros_event, stream_id
+                msg_text, session_id, workspace, cancel_event, put_jros_event, stream_id
             )
             if cancel_event.is_set():
                 put_jros_event("cancel", {"message": "Cancelled by user"})
@@ -1075,7 +1110,7 @@ def _run_jros_chat_streaming(
                 ran_locally = True
                 update_active_run(stream_id, phase="jros-local")
                 final_text, turn_error, tool_activity = _run_local_jros_turn(
-                    msg_text, session_id, cancel_event, put_jros_event, stream_id
+                    msg_text, session_id, workspace, cancel_event, put_jros_event, stream_id
                 )
                 if cancel_event.is_set():
                     put_jros_event("cancel", {"message": "Cancelled by user"})

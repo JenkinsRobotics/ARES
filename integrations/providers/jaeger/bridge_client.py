@@ -25,8 +25,9 @@ import json
 import os
 import subprocess
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from api.providers.jaeger.paths import jaeger_home as resolve_jaeger_home
 from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launcher
@@ -90,8 +91,11 @@ def _encode(frame: dict[str, Any]) -> str:
     return json.dumps(frame, ensure_ascii=False) + "\n"
 
 
-def send_op(text: str, session: str = "") -> dict[str, Any]:
-    return {"op": "send", "text": text, "session": session}
+def send_op(text: str, session: str = "", workspace: str = "") -> dict[str, Any]:
+    frame = {"op": "send", "text": text, "session": session}
+    if workspace:
+        frame["workspace"] = workspace
+    return frame
 
 
 def respond_op(id: str, answer: str) -> dict[str, Any]:
@@ -212,7 +216,7 @@ class JrosClient:
                         pass
         self._proc = None
 
-    def __enter__(self) -> "JrosClient":
+    def __enter__(self) -> JrosClient:
         self.start()
         return self
 
@@ -220,7 +224,7 @@ class JrosClient:
         self.close()
 
     # ── turns ─────────────────────────────────────────────────────
-    def turn(self, text: str, session: str = "", *,
+    def turn(self, text: str, session: str = "", *, workspace: str = "",
              on_event: Callable[[dict], None] | None = None,
              on_request: Callable[[dict], str] | None = None) -> dict[str, Any]:
         """Run one turn; return ``{"text": ..., "error": ...}``.
@@ -231,7 +235,7 @@ class JrosClient:
         with self._io_lock:
             if self._proc is None:
                 raise JrosError("not started")
-            self._write(send_op(text, session))
+            self._write(send_op(text, session, workspace))
             for line in self._proc.stdout:        # type: ignore[union-attr]
                 frame = _parse(line)
                 if frame is None:

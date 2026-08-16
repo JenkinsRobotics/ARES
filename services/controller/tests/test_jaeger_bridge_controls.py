@@ -24,6 +24,17 @@ def test_bridge_client_writes_cancel_and_steer_without_waiting_for_reply():
     ]
 
 
+def test_send_frame_carries_the_ares_session_workspace():
+    from api.providers.jaeger.bridge_client import send_op
+
+    assert send_op("write a report", "webui:s1", "/tmp/project") == {
+        "op": "send",
+        "text": "write a report",
+        "session": "webui:s1",
+        "workspace": "/tmp/project",
+    }
+
+
 def test_bridge_client_validates_integration_contract(monkeypatch):
     from api.providers.jaeger.bridge_client import JrosClient, JrosError
 

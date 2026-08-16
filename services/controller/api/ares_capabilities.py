@@ -17,6 +17,9 @@ from api.backend_selector import VALID_BACKENDS, normalize_backend
 UI_CAPABILITIES = (
     "cloud_provider_model_settings", "mcp_server_config", "messaging_gateway",
     "kanban", "delegate_task", "character_persona_editing", "voice_settings", "skills",
+    "cookbook_model_serving", "deep_research", "model_compare", "caldav",
+    "image_gallery", "image_editor", "visual_reports", "teacher_escalation",
+    "pdf_forms", "youtube_ingest",
 )
 
 _LEGACY_CAPABILITIES: dict[str, set[str]] = {

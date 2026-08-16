@@ -768,6 +768,11 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     assert jros_caps["kanban"] is False
     assert jros_caps["voice_settings"] is True
     assert jros_caps["skills"] is True
+    assert all(jros_caps[name] is False for name in (
+        "cookbook_model_serving", "deep_research", "model_compare", "caldav",
+        "image_gallery", "image_editor", "visual_reports", "teacher_escalation",
+        "pdf_forms", "youtube_ingest",
+    ))
 
     assert ares_capabilities.capabilities_for_backend("jros")["kanban"] is False
 

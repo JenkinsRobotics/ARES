@@ -6605,9 +6605,8 @@ function _syncCtxIndicator(usage){
     wrap.removeAttribute('aria-hidden');
     wrap.style.display='';
   }
-  let hasPromptTok=!!promptTok;
-  if(hasPostCompressionEstimate) hasPromptTok=true;
-  const rawPct=hasPromptTok?Math.round((contextPromptTok/ctxWindow)*100):(totalTok?Math.round((totalTok/ctxWindow)*100):0);
+  const effectiveTokens=contextPromptTok>0?contextPromptTok:totalTok;
+  const rawPct=Math.round((effectiveTokens/ctxWindow)*100);
   const pct=Math.min(100,rawPct);
   const overflowed=rawPct>100;
   const ring=$('ctxRingValue');
@@ -6637,16 +6636,17 @@ function _syncCtxIndicator(usage){
   const cacheHitPct=usage.cache_hit_percent;
   const cacheText=cacheHitPct!=null?t('usage_cache_hit_detail',cacheHitPct,_fmtTokens(cacheReadTok),_fmtTokens(cacheWriteTok)):'';
   const contextLabel=hasPostCompressionEstimate?'Estimated next model context':'Context window';
-  let label=hasPromptTok?`${contextLabel} ${pct}% used`:`${_fmtTokens(totalTok)} tokens used`;
-  if(!hasExplicitCtx&&hasPromptTok) label+=' (est. 128K)';
+  let label=`${_fmtTokens(effectiveTokens)} / ${_fmtTokens(ctxWindow)} tokens (${pct}% used)`;
   if(cost) label+=` \u00b7 $${cost<0.01?cost.toFixed(4):cost.toFixed(2)}`;
   if(cacheText) label+=` \u00b7 ${cacheText}`;
   el.setAttribute('aria-label',label);
-  const usageText=hasPromptTok?(overflowed?`${contextLabel}: ${rawPct}% used (context exceeded)`:`${contextLabel}: ${pct}% used (${100-pct}% left)`):`${_fmtTokens(totalTok)} tokens used`;
-  const tokensText=hasPromptTok?`${contextLabel}: ${_fmtTokens(contextPromptTok)} / ${_fmtTokens(ctxWindow)} tokens used`:`In: ${_fmtTokens(usage.input_tokens||0)} \u00b7 Out: ${_fmtTokens(usage.output_tokens||0)}`;
+  const usageText=overflowed
+    ? `${contextLabel}: ${rawPct}% used (context exceeded)`
+    : `${_fmtTokens(effectiveTokens)} / ${_fmtTokens(ctxWindow)} tokens (${pct}% used \u00b7 ${Math.max(0,100-pct)}% left)`;
+  const tokensText=`In: ${_fmtTokens(usage.input_tokens||0)} \u00b7 Out: ${_fmtTokens(usage.output_tokens||0)}`+(cacheReadTok?` \u00b7 Cached: ${_fmtTokens(cacheReadTok)}`:'');
   if(usageLine) usageLine.textContent=usageText;
   if(tokensLine) tokensLine.textContent=tokensText;
-  const threshold=usage.threshold_tokens||0;
+  const threshold=usage.threshold_tokens||Math.round(ctxWindow*0.75);
   let thresholdText='';
   if(thresholdLine){
     if(threshold&&ctxWindow){
@@ -6676,7 +6676,7 @@ function _syncCtxIndicator(usage){
   }
   _syncMobileCtxDisplay({
     visible:true,
-    hasPromptTok,
+    hasPromptTok:true,
     pct,
     label,
     usageText,

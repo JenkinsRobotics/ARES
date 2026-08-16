@@ -68,11 +68,13 @@ def _swap_in_test_config(extra_cfg):
         config._cfg_mtime = config.Path(config._get_config_path()).stat().st_mtime
     except Exception:
         config._cfg_mtime = 0.0
+    config.invalidate_models_cache()
 
     def _restore():
         config.cfg.clear()
         config.cfg.update(old_cfg)
         config._cfg_mtime = old_mtime
+        config.invalidate_models_cache()
 
     return _restore
 

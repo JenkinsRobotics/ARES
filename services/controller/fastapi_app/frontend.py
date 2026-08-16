@@ -224,6 +224,12 @@ def _spa_shell(root: Path, request: Request, resolve_csrf: CsrfTokenResolver) ->
         .replace(_CSRF_TOKEN_PLACEHOLDER, csrf_json)
     )
 
+    try:
+        from api.extensions import inject_extension_tags
+        html = inject_extension_tags(html)
+    except Exception:
+        pass
+
     return HTMLResponse(
         html,
         headers={
@@ -231,6 +237,42 @@ def _spa_shell(root: Path, request: Request, resolve_csrf: CsrfTokenResolver) ->
             "X-ARES-Frontend": "hermes",
         },
     )
+
+
+def _extension_file(clean_path: str) -> Response | None:
+    try:
+        from api.extensions import (
+            _extension_root,
+            _is_safe_relative_path,
+            _EXTENSION_MIME,
+            _TEXT_MIME_TYPES,
+        )
+        root = _extension_root()
+        if root is None:
+            return None
+        rel = clean_path[len("extensions/"):].strip("/")
+        if not _is_safe_relative_path(rel):
+            return None
+        static_file = (root / rel).resolve()
+        try:
+            static_file.relative_to(root)
+        except ValueError:
+            return None
+        if not static_file.exists() or not static_file.is_file():
+            return None
+        ct = _EXTENSION_MIME.get(static_file.suffix.lower().lstrip("."), "text/plain")
+        ct_header = f"{ct}; charset=utf-8" if ct in _TEXT_MIME_TYPES else ct
+        raw = static_file.read_bytes()
+        return Response(
+            content=raw,
+            media_type=ct_header,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    except Exception:
+        return None
 
 
 def create_frontend_router(
@@ -250,6 +292,12 @@ def create_frontend_router(
         # Unknown API routes must remain JSON 404s, never SPA HTML.
         if _is_api_path(clean_path):
             return _json_not_found()
+
+        if clean_path.startswith("extensions/"):
+            ext_resp = _extension_file(clean_path)
+            if ext_resp is not None:
+                return ext_resp
+            return _json_not_found("Extension file not found")
 
         if clean_path in _MANIFEST_ALIASES:
             return _manifest(root)

@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+set -e
+
+# Resolve the directory of this script, which should be in ARES/bin
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# If it's a symlink, resolve the real path
+if [ -L "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$(readlink "${BASH_SOURCE[0]}")")" && pwd)"
+fi
+ARES_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CTL_SCRIPT="${ARES_ROOT}/ctl.sh"
+export ARES_WEBUI_DIR="${ARES_ROOT}/services/controller"
+export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-127.0.0.1}"
+export ARES_WEBUI_PORT="${ARES_WEBUI_PORT:-8788}"
+
+cmd="${1:-}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+usage() {
+  cat <<'EOF'
+Usage: ares <command> [args]
+
+Commands:
+  start     Launch or activate the ARES app
+  start --server
+            Start only the ARES WebUI service
+  stop      Stop the daemon
+  restart   Stop, then start again
+  status    Show daemon and health status
+  logs      Show the daemon log
+  doctor    Check system health and repair common issues
+  update    Pull the latest code and rebuild the application
+  setup     Launch native onboarding window (first-run setup)
+EOF
+}
+
+_launch_ares_app() {
+  local APP_PATH="${HOME}/Applications/ARES.app"
+  if [[ ! -d "$APP_PATH" ]]; then
+    APP_PATH="${ARES_ROOT}/apps/macos/ARES.app"
+  fi
+
+  if [[ ! -d "$APP_PATH" ]]; then
+    echo "ARES.app not found at ${APP_PATH}" >&2
+    echo "Build it once with: cd apps/macos && bash build-app.sh" >&2
+    exit 1
+  fi
+
+  if _ares_service_online && [[ "$(_ares_runtime_owner)" == "standalone" ]]; then
+    echo "Stopping the standalone ARES controller before handing lifecycle ownership to the Mac app."
+    bash "${CTL_SCRIPT}" stop
+    for _ in 1 2 3 4 5; do
+      _ares_service_online || break
+      sleep 1
+    done
+    if _ares_service_online; then
+      echo "ARES controller did not release port ${ARES_WEBUI_PORT}." >&2
+      exit 1
+    fi
+  fi
+
+  if _ares_service_online; then
+    echo "ARES WebUI is healthy at http://$(_webui_probe_host):${ARES_WEBUI_PORT}"
+  else
+    echo "ARES WebUI is not healthy yet; the app will start or recover it on ${ARES_WEBUI_PORT}."
+  fi
+  if pgrep -x "ARES" >/dev/null 2>&1; then
+    echo "ARES app is already running; activating its existing window."
+  else
+    echo "Launching ARES app."
+  fi
+  open "$APP_PATH"
+  sleep 1
+  osascript -e 'tell application id "com.jenkinsrobotics.ares-desktop" to activate' 2>/dev/null || true
+}
+
+_webui_probe_host() {
+  case "$ARES_WEBUI_HOST" in
+    0.0.0.0|::) printf '%s\n' "127.0.0.1" ;;
+    *) printf '%s\n' "$ARES_WEBUI_HOST" ;;
+  esac
+}
+
+_ares_service_online() {
+  local probe_host
+  probe_host="$(_webui_probe_host)"
+  curl -fsS --max-time 1 \
+    "http://${probe_host}:${ARES_WEBUI_PORT}/health" 2>/dev/null |
+    /usr/bin/grep -Eq \
+      '"service"[[:space:]]*:[[:space:]]*"ares-webui"|"accept_loop"'
+}
+
+_ares_runtime_owner() {
+  local probe_host
+  probe_host="$(_webui_probe_host)"
+  curl -fsS --max-time 1 \
+    "http://${probe_host}:${ARES_WEBUI_PORT}/health" 2>/dev/null |
+    /usr/bin/sed -n \
+      's/.*"runtime_owner"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+
+cmd_setup() {
+  pkill -x "ARES" 2>/dev/null || true
+  sleep 1
+  defaults delete com.shuwalker.ARES onboarding_completed 2>/dev/null || true
+  defaults delete com.shuwalker.ARES ARESForceOnboarding 2>/dev/null || true
+  defaults write com.shuwalker.ARES ARESForceOnboarding -bool true
+  _launch_ares_app
+}
+
+cmd_doctor() {
+  local needs_fix=0
+  local fixed=0
+
+  echo "ARES Doctor — checking system health"
+  echo ""
+
+  # 1. Check Python venv
+  if [ -f "${ARES_ROOT}/services/controller/.venv/bin/python" ]; then
+    echo "  ✅ Python venv: ${ARES_ROOT}/services/controller/.venv"
+  else
+    echo "  ❌ Python venv missing at services/controller/.venv"
+    echo "     Creating…"
+    cd "${ARES_ROOT}/services/controller"
+    if python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt; then
+      echo "  ✅ Python environment created"
+    else
+      echo "  ❌ Failed to create the Python environment" >&2
+      return 1
+    fi
+    needs_fix=1
+    fixed=1
+  fi
+
+  # 2. Check Python deps installed
+  if [ -f "${ARES_ROOT}/services/controller/.venv/bin/python" ]; then
+    if "${ARES_ROOT}/services/controller/.venv/bin/python" -c "import fastapi" 2>/dev/null; then
+      echo "  ✅ Python dependencies installed"
+    else
+      echo "  ❌ Python dependencies missing"
+      echo "     Installing…"
+      if "${ARES_ROOT}/services/controller/.venv/bin/python" -m pip install \
+          -r "${ARES_ROOT}/services/controller/requirements.txt"; then
+        needs_fix=1
+        fixed=1
+      else
+        echo "  ❌ Dependency installation failed" >&2
+        return 1
+      fi
+    fi
+  fi
+
+  # 3. Check macOS app bundle
+  if [ -d "${ARES_ROOT}/apps/macos/ARES.app" ]; then
+    echo "  ✅ macOS app bundle: apps/macos/ARES.app"
+  else
+    echo "  ❌ macOS app bundle missing"
+    echo "     Building…"
+    cd "${ARES_ROOT}/apps/macos"
+    (cd "${ARES_ROOT}" && swift build) && echo "  ✅ Built successfully" || {
+      echo "  ❌ Build failed — run 'swift build' from the repository root" >&2
+      return 1
+    }
+    needs_fix=1
+  fi
+
+  # 4. Check frontend build
+  if [ -d "${ARES_ROOT}/apps/web/dist" ]; then
+    echo "  ✅ Frontend build: apps/web/dist"
+  else
+    echo "  ❌ Frontend build missing"
+    echo "     Building…"
+    cd "${ARES_ROOT}/apps/web"
+    if command -v npm >/dev/null 2>&1; then
+      npm run build 2>/dev/null && echo "  ✅ Built successfully" || echo "  ⚠️  Build failed — run 'cd apps/web && npm run build' manually"
+    else
+      echo "  ⚠️  npm not found — install Node.js to build the frontend"
+    fi
+    needs_fix=1
+  fi
+
+  # 5. Check git repo state
+  cd "${ARES_ROOT}"
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "  ✅ Git repository: $(git rev-parse --show-toplevel 2>/dev/null)"
+    # Check for uncommitted changes
+    if ! git diff --quiet HEAD 2>/dev/null; then
+      echo "  ⚠️  Uncommitted changes present (git status to see them)"
+    fi
+  else
+    echo "  ❌ Not a git repository"
+    needs_fix=1
+  fi
+
+  # 6. Check ctl.sh
+  if [ -f "${CTL_SCRIPT}" ]; then
+    echo "  ✅ Control script: ctl.sh"
+  else
+    echo "  ❌ Control script missing at ${CTL_SCRIPT}"
+    needs_fix=1
+  fi
+
+  # 7. Check ARES home
+  local ARES_HOME="${ARES_HOME:-${HOME}/.ares}"
+  if [ -d "${ARES_HOME}" ]; then
+    echo "  ✅ ARES home: ${ARES_HOME}"
+  else
+    echo "  ⚠️  ARES home not found at ${ARES_HOME} (will be created on first start)"
+  fi
+
+  echo ""
+  if (( needs_fix )); then
+    echo "⚠️  Issues found and repaired where possible."
+    echo "   Run 'ares start' to launch the WebUI."
+  else
+    echo "✅ All systems healthy."
+  fi
+}
+
+cmd_update() {
+  echo "ARES Update"
+  echo ""
+
+  cd "${ARES_ROOT}"
+
+  echo "1. Pulling latest code…"
+  git pull origin main 2>/dev/null || echo "  ⚠️  Git pull failed (check network or branch name)"
+
+  echo "2. Installing Python dependencies…"
+  if [ -f "${ARES_ROOT}/services/controller/.venv/bin/python" ]; then
+    "${ARES_ROOT}/services/controller/.venv/bin/python" -m pip install \
+      -r "${ARES_ROOT}/services/controller/requirements.txt"
+    echo "  ✅ Python deps updated"
+  fi
+
+  echo "3. Building frontend…"
+  if [ -d "${ARES_ROOT}/apps/web" ]; then
+    cd "${ARES_ROOT}/apps/web"
+    if command -v npm >/dev/null 2>&1; then
+      npm run build 2>/dev/null && echo "  ✅ Frontend built" || echo "  ⚠️  Build failed"
+    fi
+  fi
+
+  echo "4. Building and installing macOS app…"
+  if [ -x "${ARES_ROOT}/apps/macos/build-app.sh" ]; then
+    cd "${ARES_ROOT}/apps/macos"
+    bash ./build-app.sh
+    if [ ! -x "${HOME}/Applications/ARES.app/Contents/MacOS/ARES" ]; then
+      echo "  ❌ Installed ARES.app binary was not created" >&2
+      exit 1
+    fi
+    echo "  ✅ macOS app built and installed to ${HOME}/Applications/ARES.app"
+  else
+    echo "  ❌ macOS app builder not found: ${ARES_ROOT}/apps/macos/build-app.sh" >&2
+    exit 1
+  fi
+
+  echo ""
+  echo "Update complete. Run 'ares start' to launch the installed app."
+}
+
+case "${cmd}" in
+  start)
+    if [[ "${1:-}" == "--server" || "${1:-}" == "--cli" ]]; then
+      if _ares_service_online; then
+        echo "ARES WebUI is already healthy at http://$(_webui_probe_host):${ARES_WEBUI_PORT}"
+        exit 0
+      fi
+      exec bash "${CTL_SCRIPT}" start
+    fi
+    _launch_ares_app
+    ;;
+  stop|restart|status|logs)
+    exec bash "${CTL_SCRIPT}" "${cmd}" "$@"
+    ;;
+  doctor)
+    cmd_doctor
+    ;;
+  update)
+    cmd_update
+    ;;
+  setup)
+    cmd_setup
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    # Default: launch the macOS app (menu bar icon + window)
+    _launch_ares_app
+    ;;
+esac

@@ -1,0 +1,20 @@
+# Ares WebUI local test/lint dependencies.
+#
+# Runtime dependencies stay in requirements.txt. This file mirrors the Python
+# tools CI installs for contributor validation.
+-r requirements.txt
+pytest
+pytest-timeout
+pytest-asyncio
+pytest-shard
+pytest-cov
+ruff
+httpx>=0.28.1,<1.0
+mcp
+# Optional Office parsers — runtime-optional (commented in requirements.txt), but
+# installed here so the workspace Office-preview tests (tests/test_issue540_*.py)
+# run under the documented ./scripts/test.sh entry point. These files
+# pytest.importorskip the parsers, so they skip cleanly if these are removed.
+python-docx
+openpyxl
+python-pptx

@@ -283,9 +283,12 @@ def _gateway_stream_usage(payload: dict) -> dict:
     usage = payload.get("usage") if isinstance(payload, dict) else None
     if not isinstance(usage, dict):
         return {}
+    prompt_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    completion_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
     return {
-        "input_tokens": int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
-        "output_tokens": int(usage.get("completion_tokens") or usage.get("output_tokens") or 0),
+        "input_tokens": prompt_tokens,
+        "last_prompt_tokens": prompt_tokens,
+        "output_tokens": completion_tokens,
         "estimated_cost": usage.get("estimated_cost") or usage.get("estimated_cost_usd") or 0,
     }
 

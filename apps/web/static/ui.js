@@ -6192,7 +6192,25 @@ if(typeof window!=='undefined'){
     });
   });
 })();
-function _fmtTokens(n){if(!n||n<0)return'0';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'k';return String(n);}
+function _fmtTokens(n){
+  if(!n||n<0)return'0';
+  if(n===1048576)return'1M';
+  if(n===262144)return'256k';
+  if(n===131072)return'128k';
+  if(n===65536)return'64k';
+  if(n===32768)return'32k';
+  if(n===16384)return'16k';
+  if(n===8192)return'8k';
+  if(n>=1e6){
+    const val=n/1e6;
+    return (val%1===0?val.toFixed(0):val.toFixed(1))+'M';
+  }
+  if(n>=1e3){
+    const val=n/1e3;
+    return (val%1===0?val.toFixed(0):(val>=100?Math.round(val):val.toFixed(1)))+'k';
+  }
+  return String(n);
+}
 function _formatTurnDuration(seconds){
   const n=Number(seconds);
   if(!Number.isFinite(n)||n<0)return'';

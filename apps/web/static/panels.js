@@ -9728,6 +9728,9 @@ function _extensionInstalledList(extensions,extensionDirConfigured){
     const note=canToggle
       ? 'Toggles the WebUI-managed override for the next app load.'
       : 'Manifest-disabled entries cannot be enabled from WebUI.';
+    const dashboardBtn = (id === 'ares-minecraft' || (entry && entry.dashboard_url))
+      ? `<a href="/extensions/${encodeURIComponent(id)}/dashboard/index.html" target="_blank" class="sm-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#08EBF1;color:#0a0d14;font-weight:700;margin-right:8px;padding:6px 12px;border-radius:6px;">🎮 Open Dashboard</a>`
+      : '';
     return `<div class="extension-installed-row" data-extension-id="${esc(id)}">
       <div class="extension-installed-main">
         <div class="extension-installed-title-row">
@@ -9737,7 +9740,10 @@ function _extensionInstalledList(extensions,extensionDirConfigured){
         <div class="extension-installed-meta"><code>${esc(id)}</code><span>${esc(note)}</span></div>
         ${_extensionSettingsControls(entry)}
       </div>
-      <button class="sm-btn extension-toggle-btn" type="button" data-extension-toggle-id="${esc(id)}" data-extension-next-enabled="${nextEnabled}"${disabledAttr}>${esc(buttonText)}</button>
+      <div style="display:flex;align-items:center;gap:8px;align-self:flex-start;">
+        ${dashboardBtn}
+        <button class="sm-btn extension-toggle-btn" type="button" data-extension-toggle-id="${esc(id)}" data-extension-next-enabled="${nextEnabled}"${disabledAttr}>${esc(buttonText)}</button>
+      </div>
     </div>`;
   }).join('')}</div>`;
 }

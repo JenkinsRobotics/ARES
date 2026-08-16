@@ -206,18 +206,6 @@ def _jros_instance_name() -> str | None:
     ).strip() or jros_instance_name()
 
 
-def _jros_ares_tools_enabled() -> bool:
-    """Whether the Companion should boot with Ares's tools reachable over
-    MCP — an opt-in addition on top of the jros backend, not a competing
-    backend mode. See api.jros_ares_mcp for the config-sync side."""
-    try:
-        from api.config import get_config
-
-        return bool(get_config().get("jros_ares_tools_enabled"))
-    except Exception:
-        return False
-
-
 def _bridge_error_message(exc: Exception) -> str:
     message = str(exc).strip()
     lower = message.lower()

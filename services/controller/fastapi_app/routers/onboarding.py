@@ -97,14 +97,11 @@ def setup(
 def companion_tools_status(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
 ):
-    from api.config import get_config
-    from api.jros_ares_mcp import ares_mcp_available
-
     try:
-        enabled = bool(get_config().get("jros_ares_tools_enabled"))
-    except Exception:
-        enabled = False
-    return {"available": ares_mcp_available(), "enabled": enabled}
+        from api.ares_tools_mcp import ares_tools_status
+        return ares_tools_status()
+    except RuntimeError as exc:
+        return {"available": False, "enabled": False, "active": False, "error": str(exc)}
 
 
 @router.post("/companion/ares-tools")
@@ -112,12 +109,12 @@ def companion_tools_update(
     payload: dict[str, Any],
     _identity: Annotated[RequestIdentity, Depends(require_onboarding_mutation)],
 ):
-    from api.jros_ares_mcp import set_ares_tools_enabled
+    from api.ares_tools_mcp import set_ares_tools_enabled
 
     try:
         return set_ares_tools_enabled(bool(payload.get("enabled", True)))
     except RuntimeError as exc:
-        raise CoreApiError(500, str(exc)) from exc
+        raise CoreApiError(502, str(exc)) from exc
 
 
 @router.get("/companion/defaults")
@@ -170,8 +167,9 @@ def companion_create(
     return result
 
 
-@router.post("/jros/install")
-def jros_install(
+@router.post("/jaeger/install")
+@router.post("/jros/install", include_in_schema=False)
+def jaeger_install(
     payload: dict[str, Any],
     _identity: Annotated[RequestIdentity, Depends(require_onboarding_mutation)],
 ):
@@ -182,7 +180,7 @@ def jros_install(
             jaeger_home=str(payload.get("jaeger_home") or "").strip() or None,
         )
     except Exception as exc:
-        raise CoreApiError(500, f"JROS install failed: {exc}") from exc
+        raise CoreApiError(500, f"JaegerAI install failed: {exc}") from exc
 
 
 @router.post("/complete")

@@ -5235,6 +5235,8 @@ const MEMORY_SECTIONS = [
   { key: 'user',   labelKey: 'user_profile', emptyKey: 'no_profile_yet', iconKey: 'user' },
   { key: 'soul',   labelKey: 'agent_soul', emptyKey: 'no_soul_yet', iconKey: 'sparkles' },
   { key: 'project_context', label: 'Project Context', empty: 'No project context file found for this workspace.', iconKey: 'file-text', readOnly: true },
+  { key: 'knowledge_graph', label: 'Knowledge Graph', empty: 'No knowledge graph data.', iconKey: 'git-branch', readOnly: true },
+  { key: 'knowledge_folders', label: 'Knowledge Folders', empty: 'No folders configured.', iconKey: 'folder', readOnly: true },
   { key: 'external_notes', labelKey: 'external_notes_sources', emptyKey: 'external_notes_empty', iconKey: 'book-open' },
 ];
 
@@ -5364,9 +5366,88 @@ function _renderExternalNotesSources() {
   _setMemoryHeaderButtons('read');
 }
 
+function _renderKnowledgeGraphSection() {
+  const title = $('memoryDetailTitle');
+  const body = $('memoryDetailBody');
+  const empty = $('memoryDetailEmpty');
+  if (!title || !body) return;
+  title.textContent = 'Knowledge Graph';
+  body.innerHTML = '<div id="knowledgeGraphContainer" style="width:100%;height:100%;flex:1;position:relative;min-height:550px;display:flex"></div>';
+  body.style.display = 'flex';
+  body.style.flexDirection = 'column';
+  body.style.flex = '1';
+  body.style.height = '100%';
+  body.style.padding = '0';
+  if (empty) empty.style.display = 'none';
+  _memoryMode = 'read';
+  _setMemoryHeaderButtons('read');
+  const container = $('knowledgeGraphContainer');
+  if (window.AresKnowledgeGraph && container) {
+    window.AresKnowledgeGraph.init(container);
+  }
+}
+
+function _renderKnowledgeFoldersSection() {
+  const title = $('memoryDetailTitle');
+  const body = $('memoryDetailBody');
+  const empty = $('memoryDetailEmpty');
+  if (!title || !body) return;
+  title.textContent = 'Knowledge Folders';
+  body.innerHTML = `
+    <div class="main-view-content" style="max-width:840px;margin:0 auto;width:100%">
+      <div class="knowledge-folders-manager" style="padding:16px 0">
+        <div class="folders-manager-header">
+          <h3>Connected Knowledge Folders</h3>
+          <p>Folders indexed by ARES for RAG vector search, Knowledge Graph exploration, and Jarvis recall.</p>
+        </div>
+        
+        <div class="add-folder-card">
+          <label for="newKnowledgeFolderPath">Add Folder to Knowledge Base</label>
+          <div class="add-folder-input-row">
+            <input type="text" id="newKnowledgeFolderPath" placeholder="/Volumes/Jenkins_Robotics/03_Knowledge or local path..." autocomplete="off">
+            <button type="button" class="panel-head-btn primary" onclick="submitAddKnowledgeFolder()">Add Folder</button>
+          </div>
+          <div class="quick-presets-row">
+            <span>Quick Presets:</span>
+            <button type="button" class="preset-chip" onclick="applyFolderPreset('/Volumes/Jenkins_Robotics/03_Knowledge')">NAS 03_Knowledge</button>
+            <button type="button" class="preset-chip" onclick="applyFolderPreset('~/.ares/knowledge')">Local ~/.ares/knowledge</button>
+          </div>
+        </div>
+
+        <div class="folders-list-section">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h4>Active Knowledge Sources</h4>
+            <button type="button" class="panel-head-btn" id="btnTriggerRagScan" onclick="triggerRagKnowledgeScan()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Re-scan & Embed
+            </button>
+          </div>
+          <div id="knowledgeFoldersList" class="folders-card-list">
+            <div style="padding:16px;color:var(--muted);font-size:13px">Loading configured folders...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  body.style.display = '';
+  body.style.padding = '';
+  if (empty) empty.style.display = 'none';
+  _memoryMode = 'read';
+  _setMemoryHeaderButtons('read');
+  loadKnowledgeFoldersList();
+}
+
 function _renderMemoryDetail(section) {
   if (section === 'external_notes') {
     _renderExternalNotesSources();
+    return;
+  }
+  if (section === 'knowledge_graph') {
+    _renderKnowledgeGraphSection();
+    return;
+  }
+  if (section === 'knowledge_folders') {
+    _renderKnowledgeFoldersSection();
     return;
   }
 
@@ -7412,6 +7493,150 @@ async function loadMemory(force) {
     }
   } catch(e) {
     if (panel) panel.innerHTML = `<div style="padding:12px;color:var(--accent);font-size:12px">${esc(t('error_prefix'))}${esc(e.message)}</div>`;
+  }
+}
+
+// ── Memory View Switcher (Notes vs Knowledge Graph vs Folders) ──
+let _currentMemoryView = 'notes'; // 'notes' | 'graph' | 'folders'
+
+async function switchMemoryView(view) {
+  _currentMemoryView = view || 'notes';
+  
+  const notesPane = $('memoryNotesView');
+  const graphPane = $('memoryGraphView');
+  const foldersPane = $('memoryFoldersView');
+  
+  const btnNotes = $('btnMemoryViewNotes');
+  const btnGraph = $('btnMemoryViewGraph');
+  const btnFolders = $('btnMemoryViewFolders');
+  
+  if (notesPane) notesPane.style.display = _currentMemoryView === 'notes' ? '' : 'none';
+  if (graphPane) graphPane.style.display = _currentMemoryView === 'graph' ? '' : 'none';
+  if (foldersPane) foldersPane.style.display = _currentMemoryView === 'folders' ? '' : 'none';
+  
+  if (btnNotes) btnNotes.classList.toggle('active', _currentMemoryView === 'notes');
+  if (btnGraph) btnGraph.classList.toggle('active', _currentMemoryView === 'graph');
+  if (btnFolders) btnFolders.classList.toggle('active', _currentMemoryView === 'folders');
+  
+  if (_currentMemoryView === 'graph') {
+    const container = $('knowledgeGraphContainer');
+    if (window.AresKnowledgeGraph && container) {
+      if (!container.querySelector('canvas')) {
+        await window.AresKnowledgeGraph.init(container);
+      } else {
+        window.AresKnowledgeGraph.resize();
+      }
+    }
+  } else if (_currentMemoryView === 'folders') {
+    await loadKnowledgeFoldersList();
+  }
+}
+
+async function loadKnowledgeFoldersList() {
+  const container = $('knowledgeFoldersList');
+  if (!container) return;
+  try {
+    const res = await fetch('/api/ares/rag-sources');
+    const data = await res.json();
+    const sources = Array.isArray(data.sources) ? data.sources : [];
+    if (!sources.length) {
+      container.innerHTML = '<div class="folders-empty-state">No knowledge folders configured yet. Add a folder above to start indexing.</div>';
+      return;
+    }
+    container.innerHTML = sources.map((s) => {
+      const p = typeof s === 'string' ? s : s.path;
+      return `
+        <div class="folder-card-item">
+          <div class="folder-card-info">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <div>
+              <div class="folder-card-path">${esc(p)}</div>
+              <div class="folder-card-meta">Status: Active RAG Knowledge Source</div>
+            </div>
+          </div>
+          <div class="folder-card-actions">
+            <button type="button" class="folder-action-btn danger" onclick="removeKnowledgeFolder('${esc(p)}')">Remove</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="color:var(--accent);padding:12px">Failed loading folders: ${esc(e.message)}</div>`;
+  }
+}
+
+async function submitAddKnowledgeFolder() {
+  const input = $('newKnowledgeFolderPath');
+  if (!input) return;
+  const path = (input.value || '').trim();
+  if (!path) return;
+  try {
+    const res = await fetch('/api/ares/rag-sources/add-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      input.value = '';
+      if (typeof showToast === 'function') showToast(`Added ${data.path} to Knowledge Base`);
+      await loadKnowledgeFoldersList();
+      if (window.AresKnowledgeGraph) window.AresKnowledgeGraph.reload();
+    } else {
+      if (typeof showToast === 'function') showToast(`Error: ${data.detail || data.error || 'Failed to add folder'}`);
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast(`Error: ${e.message}`);
+  }
+}
+
+function applyFolderPreset(presetPath) {
+  const input = $('newKnowledgeFolderPath');
+  if (input) {
+    input.value = presetPath;
+    submitAddKnowledgeFolder();
+  }
+}
+
+async function removeKnowledgeFolder(folderPath) {
+  if (!folderPath) return;
+  try {
+    const res = await fetch('/api/ares/rag-sources/remove-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderPath }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (typeof showToast === 'function') showToast(`Removed ${folderPath}`);
+      await loadKnowledgeFoldersList();
+      if (window.AresKnowledgeGraph) window.AresKnowledgeGraph.reload();
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast(`Error: ${e.message}`);
+  }
+}
+
+async function triggerRagKnowledgeScan() {
+  const btn = $('btnTriggerRagScan');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;margin-right:6px"></span> Scanning...`;
+  }
+  try {
+    const res = await fetch('/api/ares/rag-sources/scan', { method: 'POST' });
+    const data = await res.json();
+    if (typeof showToast === 'function') {
+      showToast(`Scan complete: ${data.documents_indexed || 0} docs indexed, ${data.chunks_embedded || 0} chunks embedded.`);
+    }
+    if (window.AresKnowledgeGraph) window.AresKnowledgeGraph.reload();
+  } catch (e) {
+    if (typeof showToast === 'function') showToast(`Scan error: ${e.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Re-scan & Embed`;
+    }
   }
 }
 

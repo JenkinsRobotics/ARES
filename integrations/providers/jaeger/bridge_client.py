@@ -126,6 +126,7 @@ class JrosClient:
         self._stderr_thread: threading.Thread | None = None
         self.ready: dict[str, Any] | None = None
         self._io_lock = threading.RLock()
+        self._write_lock = threading.Lock()
         self._request_counter = 0
 
     # ── lifecycle ─────────────────────────────────────────────────
@@ -236,6 +237,20 @@ class JrosClient:
                     raise JrosError(str(frame.get("error", "bridge failed")))
             raise JrosError("bridge exited mid-turn")
 
+    def cancel(self, session: str = "") -> None:
+        """Cooperatively interrupt the current Jaeger bridge turn."""
+        del session  # reserved for a future multi-worker bridge
+        if self._proc is None:
+            raise JrosError("not started")
+        self._write({"op": "cancel"})
+
+    def steer(self, text: str, session: str = "") -> None:
+        """Inject guidance into the current Jaeger bridge turn."""
+        del session  # reserved for a future multi-worker bridge
+        if self._proc is None:
+            raise JrosError("not started")
+        self._write({"op": "steer", "text": str(text or "")})
+
     def query(self, what: str, args: dict[str, Any] | None = None) -> Any:
         """Read Jaeger-owned state through the versioned bridge contract."""
         return self._request({"op": "query", "what": what, "args": args or {}})
@@ -268,5 +283,6 @@ class JrosClient:
     # ── internals ─────────────────────────────────────────────────
     def _write(self, frame: dict[str, Any]) -> None:
         assert self._proc is not None and self._proc.stdin is not None
-        self._proc.stdin.write(_encode(frame))
-        self._proc.stdin.flush()
+        with self._write_lock:
+            self._proc.stdin.write(_encode(frame))
+            self._proc.stdin.flush()

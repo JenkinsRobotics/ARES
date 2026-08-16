@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from api.config import (
+    AGENT_INSTANCES,
     CANCEL_FLAGS,
     PENDING_GOAL_CONTINUATION,
     STREAM_GOAL_RELATED,
@@ -304,7 +305,15 @@ def _get_or_start_bridge_client(instance: str | None = None) -> JrosClient:
                 "legacy ARES_JROS_DIR override to a validated JaegerAI source "
                 "checkout."
             )
-        client = JrosClient(jaeger_home=str(root), instance=instance)
+        env = os.environ.copy()
+        try:
+            from api.config import SESSION_DIR, PORT, ARES_HOME
+            env["ARES_SESSION_DIR"] = str(SESSION_DIR)
+            env["ARES_HOME"] = str(ARES_HOME)
+            env["ARES_CONTROLLER_PORT"] = str(PORT)
+        except Exception:
+            pass
+        client = JrosClient(jaeger_home=str(root), instance=instance, env=env)
         try:
             client.start()
         except Exception as exc:
@@ -427,6 +436,24 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jros_event, stream_id: st
             put_jros_event("reasoning", {"text": message})
 
 
+class _JaegerBridgeTurnControl:
+    """Expose Jaeger's live bridge controls through ARES's existing registry."""
+
+    def __init__(self, client: JrosClient, session_id: str) -> None:
+        self._client = client
+        self.session_id = session_id
+        self._bridge_session = f"webui:{session_id}"
+
+    def interrupt(self, _reason: str = "") -> None:
+        self._client.cancel(self._bridge_session)
+
+    def steer(self, text: str) -> bool:
+        if not str(text or "").strip() or not self._client.is_alive():
+            return False
+        self._client.steer(text, self._bridge_session)
+        return True
+
+
 def _run_local_jros_turn(
     msg_text: str,
     session_id: str,
@@ -444,6 +471,10 @@ def _run_local_jros_turn(
             client = _get_or_start_bridge_client(instance)
             if cancel_event.is_set():
                 return "", "", []
+            control = _JaegerBridgeTurnControl(client, session_id)
+            if stream_id:
+                with STREAMS_LOCK:
+                    AGENT_INSTANCES[stream_id] = control
             lock = _BRIDGE_TURN_LOCKS.setdefault(key, threading.RLock())
             tool_activity: list[str] = []
 
@@ -466,15 +497,38 @@ def _run_local_jros_turn(
                         _translate_bridge_frame(frame, put_jros_event, stream_id)
 
             def _on_request(frame: dict[str, Any]) -> str:
-                """Auto-grant tier-gated tool approvals so ARES keeps parity
-                with Hermes (which had no mid-turn permission screen).  For
-                ``kind=approval`` we answer ``always`` so the skill is persisted
-                and stops asking; clarify/secret are still denied because ARES
-                has no interactive bridge path for them today."""
+                """Route Jaeger's blocking request through ARES's UI controls."""
                 kind = str(frame.get("kind") or "").strip().lower()
-                options = frame.get("options") or []
-                if kind == "approval" and "always" in options:
-                    return "always"
+                request_id = str(frame.get("id") or "").strip()
+                if kind == "approval":
+                    from api.route_approvals import wait_for_external_approval
+
+                    choice = wait_for_external_approval(
+                        session_id,
+                        {
+                            "approval_id": request_id,
+                            "tool": str(frame.get("tool") or "jaeger"),
+                            "description": str(frame.get("prompt") or frame.get("message") or "Jaeger requests permission."),
+                            "pattern_key": str(frame.get("tool") or request_id or "jaeger"),
+                            "pattern_keys": [str(frame.get("tool") or request_id or "jaeger")],
+                            "choices": list(frame.get("options") or []),
+                            "source": "jaeger_bridge",
+                        },
+                    )
+                    return "once" if choice == "session" else choice
+                if kind in {"clarify", "secret"}:
+                    from api.clarify import clear_pending, submit_pending
+
+                    entry = submit_pending(session_id, {
+                        "clarify_id": request_id,
+                        "question": str(frame.get("prompt") or frame.get("message") or "Jaeger needs input."),
+                        "choices_offered": list(frame.get("options") or []),
+                        "kind": kind,
+                        "session_id": session_id,
+                    })
+                    if entry.event.wait(120.0):
+                        return str(entry.result or "deny")
+                    clear_pending(session_id)
                 return "deny"
 
             with lock:
@@ -1196,6 +1250,7 @@ def _run_jros_chat_streaming(
                 logger.debug("Failed to clear JROS stream state", exc_info=True)
         with STREAMS_LOCK:
             CANCEL_FLAGS.pop(stream_id, None)
+            AGENT_INSTANCES.pop(stream_id, None)
             STREAM_GOAL_RELATED.pop(stream_id, None)
             STREAM_PARTIAL_TEXT.pop(stream_id, None)
             STREAM_REASONING_TEXT.pop(stream_id, None)

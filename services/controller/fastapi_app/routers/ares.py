@@ -691,6 +691,110 @@ def set_rag_sources(request: dict):
     return {"ok": True, "count": len(sources)}
 
 
+@router.post("/api/ares/rag-sources/add-folder")
+def add_rag_folder(request: dict):
+    """Add a folder path to configured RAG/knowledge sources."""
+    from pathlib import Path
+    import yaml
+    import time
+
+    folder_path = (request.get("path") or "").strip()
+    if not folder_path:
+        raise CoreApiError(400, "Missing 'path' parameter.", code="invalid_param")
+
+    p = Path(folder_path).expanduser()
+    if not p.exists():
+        raise CoreApiError(404, f"Path '{folder_path}' does not exist.", code="path_not_found")
+
+    config_path = Path.home() / ".ares" / "rag_sources.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config = {}
+    if config_path.exists():
+        try:
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            config = {}
+
+    sources = config.get("sources", [])
+    existing_paths = {
+        (s.get("path") if isinstance(s, dict) else str(s))
+        for s in sources
+    }
+
+    if str(p) not in existing_paths:
+        sources.append({"path": str(p), "enabled": True})
+
+    config["sources"] = sources
+    config["enabled"] = True
+    config["updated_at"] = time.time()
+    config_path.write_text(yaml.dump(config, default_flow_style=False), encoding="utf-8")
+
+    return {"ok": True, "path": str(p), "total_sources": len(sources)}
+
+
+@router.post("/api/ares/rag-sources/remove-folder")
+def remove_rag_folder(request: dict):
+    """Remove a folder path from configured RAG/knowledge sources."""
+    from pathlib import Path
+    import yaml
+    import time
+
+    folder_path = (request.get("path") or "").strip()
+    if not folder_path:
+        raise CoreApiError(400, "Missing 'path' parameter.", code="invalid_param")
+
+    config_path = Path.home() / ".ares" / "rag_sources.yaml"
+    if not config_path.exists():
+        return {"ok": True, "total_sources": 0}
+
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        config = {}
+
+    sources = config.get("sources", [])
+    updated = [
+        s for s in sources
+        if (s.get("path") if isinstance(s, dict) else str(s)) != folder_path
+        and (s.get("path") if isinstance(s, dict) else str(s)) != str(Path(folder_path).expanduser())
+    ]
+
+    config["sources"] = updated
+    config["updated_at"] = time.time()
+    config_path.write_text(yaml.dump(config, default_flow_style=False), encoding="utf-8")
+
+    return {"ok": True, "path": folder_path, "total_sources": len(updated)}
+
+
+@router.get("/api/knowledge/graph")
+def get_knowledge_graph(
+    max_nodes: int = 500,
+    query: str | None = None,
+    tag: str | None = None,
+    cluster: str | None = None,
+):
+    """Get the interactive knowledge graph for the ARES Memory Tab."""
+    from api.knowledge_graph import build_knowledge_graph
+    try:
+        return build_knowledge_graph(
+            max_nodes=max_nodes,
+            query=query,
+            tag=tag,
+            cluster=cluster,
+        )
+    except Exception as exc:
+        logger.error("Failed building knowledge graph: %s", exc, exc_info=True)
+        return {"ok": False, "error": str(exc), "nodes": [], "links": []}
+
+
+@router.get("/api/knowledge/document")
+def get_knowledge_document(path: str):
+    """Read a specific document's content for node inspection."""
+    from api.knowledge_graph import read_knowledge_document
+    return read_knowledge_document(path)
+
+
 @router.post("/api/ares/rag-sources/scan")
 def scan_rag_sources(_identity: Annotated[RequestIdentity, Depends(require_mutation_identity)]):
     """Index every configured RAG source into keyword search and, when the

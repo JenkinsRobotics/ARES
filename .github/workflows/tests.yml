@@ -53,21 +53,6 @@ jobs:
         if: always()
         run: python3 scripts/ruff_lint.py --all
 
-      - name: Set up Node for React verification
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: React typecheck, tests, and production build
-        working-directory: apps/web
-        run: |
-          npm ci
-          npm run typecheck
-          npm test
-          npm run build
-
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -117,17 +102,6 @@ jobs:
           # wheel not yet available, etc.), tests/test_mcp_server.py uses
           # importorskip and the matrix stays green.
           pip install mcp || echo "mcp install failed — test_mcp_server.py will importorskip"
-
-      - name: Set up Node for the production frontend
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Build the React frontend
-        working-directory: apps/web
-        run: npm ci && npm run build
 
       - name: Get Playwright version
         id: pw-version

@@ -1,19 +1,7 @@
-FROM node:22-slim AS frontend-builder
-
-WORKDIR /frontend
-
-# Build the React application once. Node and the source dependency tree stay
-# out of the Python runtime image.
-COPY apps/web/package.json apps/web/package-lock.json ./
-RUN npm ci
-COPY apps/web/ ./
-RUN npm run build
-
-
 FROM python:3.12-slim
 
-LABEL maintainer="nesquena"
-LABEL description="Ares Web UI — browser interface for Ares Agent"
+LABEL maintainer="JenkinsRobotics"
+LABEL description="ARES — Autonomous Robotics & Ecosystem Operating System"
 
 # Install system packages
 ENV DEBIAN_FRONTEND=noninteractive
@@ -99,7 +87,6 @@ USER root
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 COPY --chown=root:root . /apptoo
-COPY --from=frontend-builder --chown=root:root /frontend/dist /apptoo/apps/web/dist
 
 # Bake the git version tag into the image so the settings badge works even
 # when .git is not present (it is excluded by .dockerignore).

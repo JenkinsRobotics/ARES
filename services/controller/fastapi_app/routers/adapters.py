@@ -74,6 +74,15 @@ def mcp_tools(
     identity: Annotated[RequestIdentity, Depends(require_identity)],
     registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
 ):
+    from api.runtime_mcp import list_runtime_tools, selected_runtime_owns_mcp
+    if selected_runtime_owns_mcp():
+        try:
+            return list_runtime_tools()
+        except Exception as exc:
+            from api.runtime_mcp import RuntimeMCPError
+            if isinstance(exc, RuntimeMCPError):
+                raise CoreApiError(exc.status_code, str(exc)) from exc
+            raise
     try:
         return registry.tool_adapter("mcp").list_tools(profile=identity.profile)
     except AdapterError as exc:

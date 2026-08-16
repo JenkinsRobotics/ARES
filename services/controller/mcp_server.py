@@ -76,6 +76,7 @@ _auth_expires: float = 0  # unix timestamp after which we re-auth
 server = Server("ares-webui")
 
 
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Helpers — filesystem (project CRUD via canonical api.models)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -544,18 +545,23 @@ HANDLERS = {
 }
 
 
-@server.list_tools()
 async def list_tools() -> list[Tool]:
     return TOOLS
 
 
-@server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     handler = HANDLERS.get(name)
     if not handler:
         return [TextContent(type="text", text=json.dumps(
             {"error": f"Unknown tool: {name}"}, ensure_ascii=False))]
     return await handler(arguments)
+
+
+if hasattr(server, "list_tools"):
+    list_tools = server.list_tools()(list_tools)
+
+if hasattr(server, "call_tool"):
+    call_tool = server.call_tool()(call_tool)
 
 
 async def main():

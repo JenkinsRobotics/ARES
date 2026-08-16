@@ -80,12 +80,8 @@ def test_html_inline_preview_is_sandboxed(media_client):
     assert '<base target="_blank">' in response.text
 
 
-def test_path_outside_allowed_roots_is_forbidden(media_client, tmp_path):
+def test_path_outside_allowed_roots_is_forbidden(media_client):
     client, _ares_home, _workspace = media_client
-    outside = tmp_path.parent / "outside-ares-media.txt"
-    outside.write_text("private")
-    try:
-        response = client.get("/api/media", params={"path": str(outside)})
-        assert response.status_code == 403
-    finally:
-        outside.unlink(missing_ok=True)
+    outside = Path("/etc/hosts") if Path("/etc/hosts").exists() else Path("/etc/passwd")
+    response = client.get("/api/media", params={"path": str(outside)})
+    assert response.status_code == 403

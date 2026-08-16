@@ -7,7 +7,7 @@ from copy import deepcopy
 from fastapi.testclient import TestClient
 import pytest
 
-from api import mcp_config
+from api import mcp_config, runtime_mcp
 from fastapi_app.main import create_app
 
 
@@ -23,6 +23,9 @@ SAMPLE_MCP = {
 
 @pytest.fixture()
 def mcp_store(monkeypatch):
+    # These tests exercise the legacy ARES-owned store. Runtime routing is
+    # covered independently and must not depend on the developer's selection.
+    monkeypatch.setattr(runtime_mcp, "selected_runtime_owns_mcp", lambda: False)
     state = {"mcp_servers": deepcopy(SAMPLE_MCP)}
 
     def servers():

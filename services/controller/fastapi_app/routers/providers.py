@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from pathlib import Path
 import os
+from api.profiles import profile_env_for_active_request_readonly
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 

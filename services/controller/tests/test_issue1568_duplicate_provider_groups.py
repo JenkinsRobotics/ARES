@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import sys
 import types
+import yaml
 
 import api.config as config
 import api.profiles as profiles
@@ -49,6 +50,9 @@ def _install_fake_ares_cli(monkeypatch):
     fake_auth = types.ModuleType("ares_cli.auth")
     fake_auth.get_auth_status = lambda _pid: {}
 
+    fake_pkg.models = fake_models
+    fake_pkg.auth = fake_auth
+
     monkeypatch.setitem(sys.modules, "ares_cli", fake_pkg)
     monkeypatch.setitem(sys.modules, "ares_cli.models", fake_models)
     monkeypatch.setitem(sys.modules, "ares_cli.auth", fake_auth)
@@ -61,19 +65,24 @@ def _install_fake_ares_cli(monkeypatch):
 def _swap_in_test_config(extra_cfg):
     old_cfg = dict(config.cfg)
     old_mtime = config._cfg_mtime
-    config.cfg.clear()
-    config.cfg["model"] = {}
-    config.cfg.update(extra_cfg)
-    try:
-        config._cfg_mtime = config.Path(config._get_config_path()).stat().st_mtime
-    except Exception:
-        config._cfg_mtime = 0.0
+    old_path = config._cfg_path
+    cfg_file = config._get_config_path()
+    cfg_file.parent.mkdir(parents=True, exist_ok=True)
+    cfg_file.write_text(yaml.safe_dump(extra_cfg), encoding="utf-8")
+    config.reload_config()
     config.invalidate_models_cache()
 
     def _restore():
         config.cfg.clear()
         config.cfg.update(old_cfg)
+        config._cfg_cache.clear()
+        config._cfg_cache.update(old_cfg)
         config._cfg_mtime = old_mtime
+        config._cfg_path = old_path
+        try:
+            cfg_file.unlink()
+        except OSError:
+            pass
         config.invalidate_models_cache()
 
     return _restore

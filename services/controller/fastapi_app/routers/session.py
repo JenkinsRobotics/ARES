@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, Query, Response
 
@@ -741,6 +744,8 @@ def update_session(
 
     session_id = _mutable_session_id(payload.session_id, identity.profile)
     fields = payload.model_fields_set
+    model_was_set = "model" in fields
+    provider_was_set = "model_provider" in fields
     try:
         with profile_scope(identity.profile):
             session = update_session_execution_lane(
@@ -748,8 +753,8 @@ def update_session(
                 workspace=payload.workspace,
                 model=payload.model,
                 model_provider=payload.model_provider,
-                model_was_set="model" in fields,
-                provider_was_set="model_provider" in fields,
+                model_was_set=model_was_set,
+                provider_was_set=provider_was_set,
             )
             if model_was_set or provider_was_set:
                 try:
@@ -763,7 +768,33 @@ def update_session(
                             "provider": session.model_provider or "auto",
                         })
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to sync session model %s (%s) to Jaeger",
+                        getattr(session, "model", None),
+                        getattr(session, "model_provider", None),
+                        exc_info=True,
+                    )
+                # Mutations zero context_length so a leftover 128k does not
+                # follow the new model. Resolve the new window before we
+                # return — otherwise the chat ring gets 0 and stays there.
+                try:
+                    from api.model_context import session_context_projection
+
+                    ctx, thresh = session_context_projection(
+                        session,
+                        getattr(session, "model", None),
+                        getattr(session, "model_provider", None),
+                        resolve_model=True,
+                    )
+                    if ctx:
+                        session.context_length = ctx
+                        session.threshold_tokens = thresh
+                        session.save()
+                except Exception:
+                    logger.warning(
+                        "Failed to resolve context_length after model switch",
+                        exc_info=True,
+                    )
     except KeyError as exc:
         raise CoreApiError(404, "Session not found") from exc
     except SessionMutationError as exc:

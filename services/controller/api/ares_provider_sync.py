@@ -7,6 +7,7 @@ credential files.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import urllib.request
@@ -17,6 +18,8 @@ from typing import Any, Iterable
 import yaml
 
 from api.providers.jaeger.paths import expand_path, jros_config_path
+
+logger = logging.getLogger(__name__)
 
 
 PROVIDER_PRESETS: dict[str, dict[str, str | None]] = {
@@ -263,18 +266,35 @@ def _sync_jros_config(
             if not curr_cred or curr_cred in JROS_CLOUD_CREDENTIAL_MAP.values():
                 external_model["api_key_credential"] = target_cred
 
+    # Tell JaegerAI the model's real window so its pre-flight ContextGuard
+    # budgets against the model actually serving the turn. Which key gets it
+    # matters: ``external_model.ctx`` describes a cloud model's window, while
+    # ``model.ctx`` sizes the LOCAL llama.cpp/MLX KV allocation. Writing a
+    # cloud model's 1M window into ``model.ctx`` would have the local lane
+    # try to allocate a 1M-token KV cache on the next boot — so the local
+    # lane only ever hears about a local model.
     try:
         from api.model_context import resolve_context_length_for_session_model
+
         ctx_len = resolve_context_length_for_session_model(model, provider, base_url=base_url)
-        if ctx_len > 0:
-            external_model["ctx"] = ctx_len
+    except Exception:
+        logger.warning(
+            "Could not resolve a context window for %s (%s); leaving JROS ctx "
+            "untouched so it keeps its previous value rather than a guess",
+            model,
+            provider,
+            exc_info=True,
+        )
+        ctx_len = 0
+    if ctx_len > 0:
+        if provider == "local":
             model_config = updated.get("model")
             if not isinstance(model_config, dict):
                 model_config = {}
                 updated["model"] = model_config
             model_config["ctx"] = ctx_len
-    except Exception:
-        pass
+        else:
+            external_model["ctx"] = ctx_len
     return updated
 
 

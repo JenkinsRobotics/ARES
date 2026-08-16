@@ -94,11 +94,11 @@ def test_settings_whitespace_bot_name_defaults_to_ares():
 # ── Client-rendered login shell ───────────────────────────────────────────
 
 def test_login_page_shows_default_bot_name():
-    """GET /login serves the React shell; React reads the Local Profile."""
+    """GET /login serves the ARES shell."""
     html, status = get_raw("/login")
     assert status == 200
-    assert '<div id="root"></div>' in html
-    assert "/assets/" in html
+    assert "<title>ARES</title>" in html
+    assert "static/" in html
 
 
 def test_login_page_shows_custom_bot_name():
@@ -109,7 +109,7 @@ def test_login_page_shows_custom_bot_name():
         assert status == 200
         settings, _ = get("/api/settings")
         assert settings["bot_name"] == "Aria"
-        assert '<div id="root"></div>' in html
+        assert "<title>ARES</title>" in html
     finally:
         post("/api/settings", {"bot_name": "Ares"})
 
@@ -121,7 +121,7 @@ def test_login_page_empty_name_does_not_crash():
     # Instead, verify that /login returns 200 reliably.
     html, status = get_raw("/login")
     assert status == 200
-    assert '<div id="root"></div>' in html
+    assert "<title>ARES</title>" in html
 
 
 def test_login_page_xss_escaped():
@@ -132,6 +132,7 @@ def test_login_page_xss_escaped():
         assert status == 200
         # Raw tag must not appear unescaped
         assert "<script>alert(1)</script>" not in html
-        assert '<div id="root"></div>' in html
+        assert "<title>ARES</title>" in html
     finally:
         post("/api/settings", {"bot_name": "Ares"})
+

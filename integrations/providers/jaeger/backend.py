@@ -94,7 +94,30 @@ class JaegerBackend(AgenticBackend):
         }
 
     def chat_session_support(self) -> Dict[str, Any]:
-        return {"streaming": True, "context_window": 8192, "multimodal": True}
+        # The leftover local-llama default (8192) is not Jaeger's window.
+        # Report the serving lane: ``external_model.ctx`` when a cloud
+        # model is on, else ``model.ctx``, else a live probe of that
+        # model. 0 means "unknown" — the chat ring then uses the
+        # session resolver instead of displaying a fake 8K.
+        window = 0
+        try:
+            from api.providers.jaeger.active_model import active_model
+            from api.model_context import resolve_context_length_for_session_model
+
+            serving = active_model() or {}
+            window = int(serving.get("ctx") or 0)
+            if window <= 0 and serving.get("model"):
+                window = int(
+                    resolve_context_length_for_session_model(
+                        serving.get("model"),
+                        serving.get("provider"),
+                        base_url=serving.get("base_url"),
+                    )
+                    or 0
+                )
+        except Exception:
+            window = 0
+        return {"streaming": True, "context_window": window, "multimodal": True}
 
     def tools(self) -> List[Dict[str, Any]]:
         # Returns standard list of JROS/Jaeger bridge command tools

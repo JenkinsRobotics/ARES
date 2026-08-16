@@ -5610,7 +5610,11 @@ def _current_webui_version() -> str | None:
 # guarantees that even if a future release accidentally reuses the same
 # WebUI version string (or a debug build doesn't have a version), a structural
 # change still invalidates the cache.
-_MODELS_CACHE_SCHEMA_VERSION = 3
+# v4: catalogue entries carry a real ``context_length`` probed from the
+# provider (Ollama ``/api/show``) instead of leaving cloud models blank.
+# A v3 cache has no window data at all, so it must be rebuilt rather than
+# served — otherwise the context ring keeps showing the keyword guess.
+_MODELS_CACHE_SCHEMA_VERSION = 4
 
 
 _models_cache_path = STATE_DIR / "models_cache.json"

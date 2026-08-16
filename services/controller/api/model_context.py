@@ -351,6 +351,101 @@ def should_accept_context_length_refresh(
     return model_changed or not (resolved == 256_000 and persisted > resolved)
 
 
+_JAEGER_WORKER_IDS = frozenset({"jaeger_local", "jaeger", "jros_local", "jros"})
+
+
+def _ollama_probe_provider(provider: str | None) -> str | None:
+    """Return the Ollama probe slug, or None if this is not an Ollama lane.
+
+    ``normalize_provider_id`` is for first-party families (openai /
+    anthropic / …). It has no ``ollama-cloud`` entry, so feeding it
+    ``ollama-cloud`` used to collapse to ``""`` and then ``"ollama"`` —
+    the session resolver (what the chat-tab context ring reads) asked
+    the local daemon first and under-reported every hosted window.
+    """
+    raw = str(provider or "").strip().lower().replace("_", "-")
+    if raw in {"ollama-cloud", "ollamacloud"}:
+        return "ollama-cloud"
+    if raw.startswith("ollama"):
+        return "ollama"
+    return None
+
+
+def _jaeger_serving_window(model: str, api_key: str | None = None) -> int:
+    """Window of the model Jaeger is actually serving, not the worker id.
+
+    A session stored as ``jaeger_local`` / ``qwen3.5:397b`` is often an
+    Ollama Cloud brain behind Jaeger. The worker slug is not a model
+    family, so probing it as local Ollama is wrong. Prefer the ``ctx``
+    already written onto Jaeger's serving lane, then probe that lane.
+    """
+    try:
+        from api.providers.jaeger.active_model import active_model
+
+        serving = active_model() or {}
+    except Exception:
+        logger.debug("Jaeger serving-model lookup failed", exc_info=True)
+        serving = {}
+    written = _positive_int(serving.get("ctx"))
+    if written:
+        return written
+    serving_model = str(serving.get("model") or model or "").strip()
+    serving_provider = str(serving.get("provider") or "").strip()
+    if (
+        serving_model
+        and serving_provider
+        and serving_provider.lower() not in _JAEGER_WORKER_IDS
+    ):
+        return _probe_provider_context_length(
+            serving_model, serving_provider, api_key=api_key,
+        )
+    return 0
+
+
+def _probe_provider_context_length(
+    model: str,
+    provider: str | None = None,
+    *,
+    api_key: str | None = None,
+) -> int:
+    """Ask the serving provider for the model's real window, or 0.
+
+    Only providers that actually publish the number get probed. Ollama is
+    the one that does — ``/api/show`` returns
+    ``model_info["<arch>.context_length"]`` for local and cloud models
+    alike, which is how ``deepseek-v4-pro:0813`` resolves to its real
+    1048576 instead of the 131072 the keyword table returns for anything
+    spelled "deepseek". OpenAI-compatible ``/v1/models`` responses carry
+    no window at all, so there is nothing to ask those providers for.
+
+    Never raises and never blocks a turn on a slow provider — the probe
+    caches its own results, including misses.
+    """
+    raw = str(provider or "").strip().lower()
+    if raw in _JAEGER_WORKER_IDS:
+        return _jaeger_serving_window(model, api_key=api_key)
+
+    provider_id = _ollama_probe_provider(provider)
+    if not provider_id:
+        # An unqualified model can still be an Ollama one; the local
+        # daemon answers instantly when it is, and 0 when it is not.
+        if raw:
+            return 0
+        provider_id = "ollama"
+    try:
+        from api.providers.ollama.context_probe import context_length
+
+        return context_length(model, provider=provider_id, api_key=api_key)
+    except Exception:
+        logger.debug(
+            "Provider context-length probe failed for %s (%s)",
+            model,
+            provider_id,
+            exc_info=True,
+        )
+        return 0
+
+
 def _estimate_model_context_length(model: str, provider: str | None = None) -> int:
     m = str(model or "").lower()
     p = str(provider or "").lower()
@@ -360,6 +455,8 @@ def _estimate_model_context_length(model: str, provider: str | None = None) -> i
         return 262_144
     if "glm" in m:
         return 131_072
+    if "deepseek-v4" in m or "deepseek_v4" in m:
+        return 1_048_576
     if "deepseek" in m:
         return 131_072
     if "gemma" in m:
@@ -382,15 +479,36 @@ def resolve_context_length_for_session_model(
     base_url: str | None = None,
     api_key: str | None = None,
 ) -> int:
-    """Resolve current context capacity without depending on an HTTP router."""
+    """Resolve current context capacity without depending on an HTTP router.
+
+    Four sources, most trustworthy first:
+
+      1. An explicit ``context_length`` in config for this model.
+      2. The provider itself, asked over its API (see
+         :func:`_probe_provider_context_length`). For Ollama Cloud this
+         is ``/api/show`` — the number the chat-tab ring must display.
+      3. ``agent.model_metadata`` — optional bundled table. A family
+         catch-all here (anything named "qwen" → 131072) must not beat
+         a live probe (qwen3.5:397b is 262144).
+      4. :func:`_estimate_model_context_length` — a keyword guess.
+
+    The agent import used to be the first statement of one big ``try``
+    wrapping all of this, so on an install without that optional package
+    the ``ModuleNotFoundError`` skipped straight to the keyword guess and
+    the operator's own configured value was never read. Each source now
+    fails independently.
+    """
     model_for_lookup = str(model or "").strip()
     if not model_for_lookup:
         return 0
+
     try:
-        from agent.model_metadata import get_model_context_length
         from api.config import get_config
 
         cfg = get_config()
+    except Exception:
+        cfg = {}
+    try:
         lookup = context_length_lookup_inputs_for_model(
             model_for_lookup,
             provider,
@@ -398,23 +516,71 @@ def resolve_context_length_for_session_model(
             api_key=api_key,
             cfg=cfg if isinstance(cfg, dict) else {},
         )
+    except Exception:
+        lookup = ContextLengthLookupInputs()
+
+    serving_provider = lookup.provider or provider
+    ollama_lane = bool(
+        _ollama_probe_provider(serving_provider)
+        or str(serving_provider or "").strip().lower() in _JAEGER_WORKER_IDS
+    )
+
+    # Ollama / Jaeger: a live ``/api/show`` window beats the bundled
+    # family table (qwen → 131072). An explicit config value still wins.
+    if ollama_lane:
+        if lookup.config_context_length:
+            return lookup.config_context_length
+        probed = _probe_provider_context_length(
+            model_for_lookup,
+            serving_provider,
+            api_key=lookup.api_key or api_key,
+        )
+        if probed > 0:
+            return probed
+
+    # Other providers: keep the established metadata → config → probe
+    # order so global caps still flow through get_model_context_length.
+    try:
+        from agent.model_metadata import get_model_context_length
+    except Exception:
+        get_model_context_length = None
+    if get_model_context_length is not None:
         try:
             res = get_model_context_length(
                 model_for_lookup,
                 lookup.base_url,
                 api_key=lookup.api_key,
                 config_context_length=lookup.config_context_length,
+                # Spelled out rather than via ``serving_provider`` so the
+                # #1896 guard can still see the override args at this
+                # callsite; the two are the same value.
                 provider=lookup.provider or provider or "",
                 custom_providers=lookup.custom_providers,
             ) or 0
             if res > 0:
                 return res
         except TypeError:
-            res = get_model_context_length(model_for_lookup, lookup.base_url) or 0
-            if res > 0:
-                return res
-    except Exception:
-        pass
+            try:
+                res = get_model_context_length(model_for_lookup, lookup.base_url) or 0
+                if res > 0:
+                    return res
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    if lookup.config_context_length:
+        return lookup.config_context_length
+
+    if not ollama_lane:
+        probed = _probe_provider_context_length(
+            model_for_lookup,
+            serving_provider,
+            api_key=lookup.api_key or api_key,
+        )
+        if probed > 0:
+            return probed
+
     return _estimate_model_context_length(model_for_lookup, provider)
 
 
@@ -536,6 +702,15 @@ def session_context_projection(
         return persisted, threshold
     if persisted and resolved != persisted and threshold > 0:
         threshold = max(1, int(threshold * resolved / persisted))
+    if resolved and resolved != persisted:
+        try:
+            session.context_length = resolved
+            session.threshold_tokens = threshold
+            save = getattr(session, "save", None)
+            if callable(save):
+                save()
+        except Exception:
+            logger.debug("Could not persist resolved context_length", exc_info=True)
     return resolved, threshold
 
 

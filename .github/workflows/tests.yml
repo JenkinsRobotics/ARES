@@ -90,7 +90,7 @@ jobs:
           # (This includes fastapi, httpx, pytest, and all others needed by the app and tests)
           pip install -r requirements.txt
           # Install test-only dependencies
-          pip install pytest-timeout pytest-shard python-docx openpyxl python-pptx playwright
+          pip install pytest-timeout pytest-shard pytest-asyncio python-docx openpyxl python-pptx playwright
           # ruff is installed so tests/test_ruff_forward_lint.py runs its E9/F821
           # tree-clean assertions in-suite. If install fails the test skips
           # cleanly — it never blocks the matrix.

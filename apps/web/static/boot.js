@@ -2180,9 +2180,15 @@ $('btnClearPreview').onclick=handleWorkspaceClose;
 // workspacePath click handler removed -- use topbar workspace chip dropdown instead
 function _applySessionContextMetadataUpdate(data){
   if(!S.session||!data||!data.session)return;
-  S.session.context_length=data.session.context_length||0;
-  S.session.threshold_tokens=data.session.threshold_tokens||0;
-  S.session.last_prompt_tokens=data.session.last_prompt_tokens||0;
+  // Model-switch responses used to come back with context_length=0
+  // (the mutation clears the stale window). Never replace a known
+  // window with 0 — the ring would sit at "0" until the next full
+  // resolve_model=1 fetch.
+  const incomingCtx=Number(data.session.context_length)||0;
+  if(incomingCtx>0) S.session.context_length=incomingCtx;
+  const incomingThresh=Number(data.session.threshold_tokens)||0;
+  if(incomingThresh>0 || incomingCtx>0) S.session.threshold_tokens=incomingThresh;
+  if(data.session.last_prompt_tokens!=null) S.session.last_prompt_tokens=data.session.last_prompt_tokens||0;
   S.session.post_compression_context_tokens_estimate=data.session.post_compression_context_tokens_estimate||null;
   if(typeof _syncCtxIndicator==='function'){
     const u=S.lastUsage||{};

@@ -2089,6 +2089,13 @@
   .rail{display:none;width:48px;flex-shrink:0;flex-direction:column;align-items:center;gap:4px;padding:8px 0;background:var(--sidebar);border-right:1px solid var(--border);}
   .rail-btn{width:36px;height:36px;border-radius:8px;border:none;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;transition:color .15s,background .15s;flex-shrink:0;padding:0;}
   .rail-btn:hover{color:var(--text);background:var(--hover-bg);}
+  /* Derived from --accent rather than read from --accent-bg. Every built-in
+     skin sets --accent-bg to an 8% wash (rgba(255,215,0,.08)), which is the
+     soft highlight this rail was designed around — but the token is part of
+     the extension skin contract (registerHermesSkin), so a registered skin
+     can hand back an OPAQUE colour and turn the selected tab into a solid
+     block. Mixing the wash here keeps the intended look whatever the token
+     holds, and still tracks the active skin's accent hue. */
   .rail-btn.active{color:var(--accent-text);background:var(--accent-bg);}
 .rail-btn.active::before{content:'';position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:var(--accent);border-radius:0 2px 2px 0;}
   /* Custom tooltip — replaces native title="" for faster, more polished display.
@@ -2712,6 +2719,7 @@
   .ctx-indicator{width:34px;height:34px;padding:0;border:none;background:none;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s,transform .15s;}
   .ctx-indicator:hover{opacity:.88;transform:translateY(-1px);}
   .ctx-ring{position:relative;display:flex;width:24px;height:24px;align-items:center;justify-content:center;}
+  .ctx-ring-center{font-size:8px;font-weight:700;line-height:1;letter-spacing:-0.03em;z-index:1;pointer-events:none;max-width:22px;text-align:center;}
   .ctx-ring-svg{position:absolute;inset:0;width:24px;height:24px;transform:rotate(-90deg);}
   .ctx-ring-track,.ctx-ring-value{fill:none;stroke-width:3;}
   .ctx-ring-track{stroke:rgba(255,255,255,.12);}

@@ -56,6 +56,7 @@ def test_resume_paused_plan(tmp_path, monkeypatch):
 
     # Resume via heartbeat
     service = DispatchService(backend_registry=MockRegistry)
+    monkeypatch.setattr("api.dispatch_service.get_dispatch_service", lambda: service)
     result = resume_paused_plan(plan.plan_id, "conv_1")
 
     assert result is not None

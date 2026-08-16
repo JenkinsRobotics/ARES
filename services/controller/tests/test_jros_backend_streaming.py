@@ -759,7 +759,6 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
             "skills": {"available": True},
         },
     }, None))
-    monkeypatch.setattr(ares_capabilities, "_jros_ares_tools_enabled", lambda: False)
     jros_caps = ares_capabilities.capabilities_for_backend("jros")
     assert jros_caps["character_persona_editing"] is True
     assert jros_caps["cloud_provider_model_settings"] is True
@@ -770,8 +769,7 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     assert jros_caps["voice_settings"] is True
     assert jros_caps["skills"] is True
 
-    monkeypatch.setattr(ares_capabilities, "_jros_ares_tools_enabled", lambda: True)
-    assert ares_capabilities.capabilities_for_backend("jros")["kanban"] is True
+    assert ares_capabilities.capabilities_for_backend("jros")["kanban"] is False
 
     hermes_caps = ares_capabilities.capabilities_for_backend("hermes_local")
     assert hermes_caps["cloud_provider_model_settings"] is True

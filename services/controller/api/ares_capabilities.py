@@ -38,15 +38,6 @@ _CONTRACT_CACHE: dict[str, Any] = {"at": 0.0, "value": None, "error": None}
 _CONTRACT_CACHE_SECONDS = 5.0
 
 
-def _jros_ares_tools_enabled() -> bool:
-    try:
-        from api.config import get_config
-
-        return bool(get_config().get("jros_ares_tools_enabled"))
-    except Exception:
-        return False
-
-
 def reset_capability_contract_cache() -> None:
     _CONTRACT_CACHE.update({"at": 0.0, "value": None, "error": None})
 
@@ -81,9 +72,11 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
             for ui_name, runtime_name in _JAEGER_UI_FEATURES.items()
         }
         flags["messaging_gateway"] = False
-        shared_tools = _jros_ares_tools_enabled()
-        flags["kanban"] = shared_tools
-        flags["delegate_task"] = shared_tools
+        # ARES's controller MCP server currently exposes project/session tools,
+        # not Kanban or delegation. Those tabs remain unavailable until Jaeger
+        # explicitly advertises corresponding runtime features.
+        flags["kanban"] = False
+        flags["delegate_task"] = False
         return {
             "backend": selected,
             "source": "runtime" if contract else "unavailable",

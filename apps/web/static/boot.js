@@ -3870,3 +3870,99 @@ function _showServerStopped() {
   var stoppedMsg = (typeof t === 'function' ? t('settings_shutdown_stopped_message') : 'Server stopped. You can close this tab.');
   document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--muted);font-family:system-ui,ui-sans-serif;font-size:14px"><p>' + stoppedMsg + '</p></div>';
 }
+
+// ── ARES Custom Agent & App Icon Manager ──────────────────────────────────────
+var _DEFAULT_ARES_ICON = 'static/assets/ares-app-icon.png';
+
+function _getEffectiveAppIcon() {
+  try {
+    var custom = localStorage.getItem('ares-custom-icon');
+    if (custom && typeof custom === 'string' && custom.trim()) {
+      return custom.trim();
+    }
+  } catch (_) {}
+  return _DEFAULT_ARES_ICON;
+}
+
+function _applyCustomAppIcon(iconUrl) {
+  var url = (iconUrl && typeof iconUrl === 'string' && iconUrl.trim()) ? iconUrl.trim() : _DEFAULT_ARES_ICON;
+  try {
+    if (url === _DEFAULT_ARES_ICON) {
+      localStorage.removeItem('ares-custom-icon');
+    } else {
+      localStorage.setItem('ares-custom-icon', url);
+    }
+  } catch (_) {}
+
+  // 1. Update Titlebar icon
+  var tbIcon = document.getElementById('appTitlebarIcon');
+  if (tbIcon) {
+    tbIcon.src = url;
+  }
+
+  // 2. Update Welcome / Empty State logo
+  var welcomeLogo = document.getElementById('appWelcomeLogo');
+  if (welcomeLogo) {
+    welcomeLogo.src = url;
+  }
+
+  // 3. Update Settings Preview icon
+  var previewIcon = document.getElementById('settingsIconPreview');
+  if (previewIcon) {
+    previewIcon.src = url;
+  }
+
+  // 4. Update Favicon & Apple Touch Icons
+  try {
+    var icons = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
+    icons.forEach(function(el) {
+      el.href = url;
+    });
+  } catch (_) {}
+}
+
+function _handleCustomIconUpload(event) {
+  var file = event && event.target && event.target.files && event.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    if (typeof showToast === 'function') showToast('Please select a valid image file (PNG, JPG, SVG, WebP).');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    _applyCustomAppIcon(dataUrl);
+    if (typeof showToast === 'function') showToast('Agent icon updated successfully.');
+  };
+  reader.onerror = function() {
+    if (typeof showToast === 'function') showToast('Failed to read image file.');
+  };
+  reader.readAsDataURL(file);
+}
+
+function _resetCustomIconToDefault() {
+  _applyCustomAppIcon(_DEFAULT_ARES_ICON);
+  var fileInput = document.getElementById('settingsCustomIconFile');
+  if (fileInput) fileInput.value = '';
+  if (typeof showToast === 'function') showToast('Agent icon reset to Spartan default.');
+}
+
+window._getEffectiveAppIcon = _getEffectiveAppIcon;
+window._applyCustomAppIcon = _applyCustomAppIcon;
+window._handleCustomIconUpload = _handleCustomIconUpload;
+window._resetCustomIconToDefault = _resetCustomIconToDefault;
+
+// Apply on initial script execution and DOMContentLoaded
+try {
+  var initialIcon = _getEffectiveAppIcon();
+  if (initialIcon !== _DEFAULT_ARES_ICON) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() {
+        _applyCustomAppIcon(initialIcon);
+      });
+    } else {
+      _applyCustomAppIcon(initialIcon);
+    }
+  }
+} catch (_) {}
+

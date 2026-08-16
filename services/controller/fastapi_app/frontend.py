@@ -158,7 +158,7 @@ def _frontend_file(root: Path, path: str) -> Response:
     cache_control = (
         "no-store"
         if is_site_icon
-        else "public, max-age=300"
+        else "no-cache, must-revalidate"
     )
     return FileResponse(
         target,

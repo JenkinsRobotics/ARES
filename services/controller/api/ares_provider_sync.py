@@ -262,6 +262,19 @@ def _sync_jros_config(
             target_cred = JROS_CLOUD_CREDENTIAL_MAP[provider]
             if not curr_cred or curr_cred in JROS_CLOUD_CREDENTIAL_MAP.values():
                 external_model["api_key_credential"] = target_cred
+
+    try:
+        from api.model_context import resolve_context_length_for_session_model
+        ctx_len = resolve_context_length_for_session_model(model, provider, base_url=base_url)
+        if ctx_len > 0:
+            external_model["ctx"] = ctx_len
+            model_config = updated.get("model")
+            if not isinstance(model_config, dict):
+                model_config = {}
+                updated["model"] = model_config
+            model_config["ctx"] = ctx_len
+    except Exception:
+        pass
     return updated
 
 

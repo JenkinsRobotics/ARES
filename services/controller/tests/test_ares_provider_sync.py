@@ -280,7 +280,7 @@ def test_jros_provider_sync_with_no_actual_change_does_not_reset(tmp_path, monke
     _write_yaml(ares_config, {"model": {"provider": "openai", "default": "gpt-4o"}})
     _write_yaml(
         jros_config,
-        {"external_model": {"enabled": True, "provider": "openai", "model": "gpt-4o", "base_url": "https://api.openai.com/v1", "api_key_env": "OPENAI_API_KEY", "ctx": 128000, "api_key_credential": "openai"}},
+        {"external_model": {"enabled": True, "provider": "openai", "model": "gpt-4o", "base_url": "https://api.openai.com/v1", "api_key_env": "OPENAI_API_KEY", "ctx": 128000, "api_key_credential": "openai_api_key"}},
     )
 
     calls: list[str] = []

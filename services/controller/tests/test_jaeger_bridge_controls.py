@@ -24,6 +24,32 @@ def test_bridge_client_writes_cancel_and_steer_without_waiting_for_reply():
     ]
 
 
+def test_bridge_client_validates_integration_contract(monkeypatch):
+    from api.providers.jaeger.bridge_client import JrosClient, JrosError
+
+    client = JrosClient(command=["jaeger", "bridge"])
+    monkeypatch.setattr(client, "query", lambda _what: {
+        "contract": "ares-jaeger",
+        "contract_version": 1,
+        "protocol_version": "1",
+        "features": {"chat": {"available": True}},
+    })
+    assert client.integration_contract()["features"]["chat"]["available"] is True
+
+    monkeypatch.setattr(client, "query", lambda _what: {
+        "contract": "ares-jaeger",
+        "contract_version": 2,
+        "protocol_version": "1",
+        "features": {},
+    })
+    try:
+        client.integration_contract()
+    except JrosError as exc:
+        assert "incompatible ARES-Jaeger contract" in str(exc)
+    else:
+        raise AssertionError("an incompatible integration contract must fail closed")
+
+
 def test_turn_control_delegates_to_the_live_bridge_client():
     from api.providers.jaeger.gateway_streaming import _JaegerBridgeTurnControl
 

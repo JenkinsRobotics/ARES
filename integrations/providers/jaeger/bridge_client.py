@@ -33,6 +33,7 @@ from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launche
 from api.providers.jaeger.paths import jros_instance_name as resolve_jros_instance_name
 
 PROTOCOL_VERSION = "1"
+INTEGRATION_CONTRACT_VERSION = 1
 
 
 class JrosError(RuntimeError):
@@ -155,8 +156,21 @@ class JrosClient:
             if frame is None:
                 continue
             if frame.get("type") == "ready":
-                self.ready = {"instance": frame.get("instance"),
-                              "model": frame.get("model")}
+                received_protocol = str(frame.get("proto") or "")
+                if received_protocol != PROTOCOL_VERSION:
+                    raise JrosError(
+                        "incompatible Jaeger bridge protocol: "
+                        f"expected {PROTOCOL_VERSION}, received {received_protocol or 'missing'}"
+                    )
+                capabilities = frame.get("capabilities")
+                if not isinstance(capabilities, list):
+                    raise JrosError("invalid Jaeger bridge handshake: capabilities must be a list")
+                self.ready = {
+                    "instance": frame.get("instance"),
+                    "model": frame.get("model"),
+                    "protocol_version": received_protocol,
+                    "capabilities": [str(item) for item in capabilities],
+                }
                 return self.ready
             if frame.get("type") == "fatal":
                 # Surface stderr in the error message for diagnostics
@@ -258,6 +272,23 @@ class JrosClient:
     def command(self, cmd: str, args: dict[str, Any] | None = None) -> Any:
         """Ask Jaeger to mutate its own state through a validated command."""
         return self._request({"op": "command", "cmd": cmd, "args": args or {}})
+
+    def integration_contract(self) -> dict[str, Any]:
+        """Return and validate Jaeger's self-described product capabilities."""
+        contract = self.query("contract")
+        if not isinstance(contract, dict) or contract.get("contract") != "ares-jaeger":
+            raise JrosError("Jaeger bridge returned an invalid integration contract")
+        version = contract.get("contract_version")
+        if version != INTEGRATION_CONTRACT_VERSION:
+            raise JrosError(
+                "incompatible ARES-Jaeger contract: "
+                f"expected {INTEGRATION_CONTRACT_VERSION}, received {version!r}"
+            )
+        if str(contract.get("protocol_version") or "") != PROTOCOL_VERSION:
+            raise JrosError("Jaeger integration contract disagrees with the bridge protocol")
+        if not isinstance(contract.get("features"), dict):
+            raise JrosError("Jaeger integration contract is missing its feature map")
+        return contract
 
     def _request(self, frame: dict[str, Any]) -> Any:
         with self._io_lock:

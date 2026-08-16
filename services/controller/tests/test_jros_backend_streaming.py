@@ -749,14 +749,24 @@ def test_backend_availability_local_mode_without_gateway(monkeypatch, tmp_path):
 def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch):
     from api import ares_capabilities
 
+    ares_capabilities.reset_capability_contract_cache()
+    monkeypatch.setattr(ares_capabilities, "_jaeger_contract", lambda: ({
+        "features": {
+            "runtime_settings": {"available": True},
+            "mcp_server_config": {"available": False},
+            "character_persona_editing": {"available": True},
+            "voice_settings": {"available": True},
+        },
+    }, None))
     monkeypatch.setattr(ares_capabilities, "_jros_ares_tools_enabled", lambda: False)
     jros_caps = ares_capabilities.capabilities_for_backend("jros")
     assert jros_caps["character_persona_editing"] is True
-    assert jros_caps["cloud_provider_model_settings"] is False
+    assert jros_caps["cloud_provider_model_settings"] is True
     assert jros_caps["mcp_server_config"] is False
     assert jros_caps["messaging_gateway"] is False
     assert jros_caps["delegate_task"] is False
     assert jros_caps["kanban"] is False
+    assert jros_caps["voice_settings"] is True
 
     monkeypatch.setattr(ares_capabilities, "_jros_ares_tools_enabled", lambda: True)
     assert ares_capabilities.capabilities_for_backend("jros")["kanban"] is True

@@ -4,10 +4,11 @@ ARES is not a "chatbot." It is a **High-Fidelity Interface for Intelligence**.
 It is a professional-grade orchestrator shell designed to bring cutting-edge AI research to the average person, polished as a mass-market software solution.
 
 ## I. The a-priori Model (The "First Law")
-ARES is the **Orchestrator Shell**. It owns the User Relationship, the Identity, and the Memory.
+ARES is the **Orchestrator Shell**. It owns the User Relationship and its own durable product state. Identity, memory, sessions, tools, and settings each have an explicit source owner declared at the adapter boundary; ownership is never inferred from a UI tab or backend name.
 - **Symmetry**: ARES does not compete with LLMs or frameworks (LangGraph, Paperclip, etc.). It **integrates** them via adapters.
 - **Architecture**: `User UI` $\rightarrow$ `ARES Controller` $\rightarrow$ `Worker Adapter` $\rightarrow$ `Inference Engine`.
-- **Identity**: ARES provides a stable identity and session store. Workers are replaceable engines.
+- **Identity**: ARES presents a stable product identity while preserving worker-owned runtime identity and session semantics through versioned contracts.
+- **Discovery**: Runtime capabilities are negotiated and deny-by-default. Unsupported or incompatible features are visible, never guessed or silently emulated.
 
 ## II. The "Glass Box" Principle (Transparency over Magic)
 Magic is not the absence of understanding; magic is the elegance of the mechanism.

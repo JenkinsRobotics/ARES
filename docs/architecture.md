@@ -12,7 +12,7 @@ FastAPI Controller (services/controller/fastapi_app/)
 Worker Adapters (integrations/workers/)
   │  stdio subprocess, local HTTP, or vendor HTTPS SDK
   ▼
-Worker processes: Jaeger AI · Hermes · Claude Code · Codex · Ollama · cloud APIs
+Worker processes: Jaeger AI · Claude Code · Codex · Ollama · cloud APIs
 ```
 
 Three layers, one product:
@@ -240,17 +240,19 @@ Structured result: content, artifacts, tool calls, confidence, cost report, meta
 
 ### Jaeger AI (`jaeger_local`)
 - **Bridge protocol v1** over stdio (NDJSON) — ARES sends a turn, Jaeger resumes its own session, streams output back
+- ARES validates the bridge protocol and negotiates `query: contract`; the returned feature map is authoritative for UI and controller behavior
 - `save_identity` / `select_character` / `make_default` commands for assistant name/persona projection
 - Vestigial gateway client code exists, but JaegerAI does not currently ship the
   corresponding HTTP gateway; stdio is the supported path
 - Validation: discover a real JaegerAI product root; reject legacy JROS installs
 - Contract: `/api/companion` normalized client surface
 
-### Hermes (`hermes_local`)
-- Hermes CLI as subprocess: `hermes --session <id> --prompt "<turn>"` (or `hermes run`)
-- Or gateway mode: HTTP to Hermes gateway, session resume via session ID
-- Skills live in Hermes profiles (`~/.hermes/profiles/<name>/skills/`) — ARES does not duplicate them
-- Delegation inside Hermes uses `delegate_task` (max_concurrent_children 3, max_spawn_depth 1 on this machine)
+### Hermes migration compatibility (`hermes_local`)
+- Retained only to import or resume installations that have not completed the
+  migration to JaegerAI
+- Must not define new ARES behavior or serve as the fallback when Jaeger is
+  unavailable
+- No new feature may depend on Hermes files, commands, gateway state, or docs
 
 ### Claude Code (`claude_local`)
 - CLI subprocess: `claude -p "<prompt>"`; current ARES delegation is single-turn
@@ -288,6 +290,7 @@ client/contract is available. The detailed compatibility inventory remains in
 - ARES never silently selects a worker on a new profile
 - Profile readiness and execution readiness are reported separately
 - Backend selection, model selection, and tool selection remain distinct
+- Runtime capabilities come from a validated, versioned contract and fail closed
 - Every completed turn retains worker and model provenance
 - External stores are opened read-only
 - Worker failure degrades a capability; it must not erase the ARES session

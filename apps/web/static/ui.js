@@ -5612,28 +5612,92 @@ function toggleMobileComposerConfig(){
   openMobileComposerConfig();
 }
 
-function openComposerContextMenu(e){
+function openContextActionMenu(e){
   if(e){
     e.preventDefault();
     e.stopPropagation();
+  }
+  const popup=$('ctxActionPopup');
+  if(!popup) return;
+  if(popup.style.display!=='none'){
+    popup.style.display='none';
+    return;
   }
   const tooltip=$('ctxTooltip');
   if(tooltip){
     tooltip.classList.remove('ctx-tooltip-active');
     tooltip.setAttribute('aria-hidden','true');
   }
-  openMobileComposerConfig();
+  const usage=S.lastUsage||{};
+  const promptTok=usage.last_prompt_tokens||0;
+  const totalTok=(usage.input_tokens||0)+(usage.output_tokens||0);
+  const effectiveTokens=promptTok>0?promptTok:totalTok;
+  const DEFAULT_CTX=128*1024;
+  const ctxWindow=usage.context_length||(S.session&&S.session.context_length)||DEFAULT_CTX;
+  const pct=Math.min(100,Math.round((effectiveTokens/ctxWindow)*100));
+
+  popup.innerHTML=`
+    <div class="ctx-popup-header">
+      <div class="ctx-popup-title">${esc(t('ctx_window_title')||'Context Window & Compaction')}</div>
+      <button type="button" class="ctx-popup-close" onclick="closeContextActionMenu()">&times;</button>
+    </div>
+    <div class="ctx-popup-body">
+      <div class="ctx-popup-metric-grid">
+        <div class="ctx-popup-metric">
+          <div class="ctx-popup-metric-val">${pct}%</div>
+          <div class="ctx-popup-metric-lbl">Used</div>
+        </div>
+        <div class="ctx-popup-metric">
+          <div class="ctx-popup-metric-val">${_fmtTokens(effectiveTokens)}</div>
+          <div class="ctx-popup-metric-lbl">Tokens Used</div>
+        </div>
+        <div class="ctx-popup-metric">
+          <div class="ctx-popup-metric-val">${_fmtTokens(ctxWindow)}</div>
+          <div class="ctx-popup-metric-lbl">Max Limit</div>
+        </div>
+      </div>
+      <div class="ctx-popup-actions">
+        <button type="button" class="btn primary ctx-popup-btn" onclick="closeContextActionMenu(); if(typeof sendSlashCommand==='function') sendSlashCommand('/compress'); else { const inp=$('msg'); if(inp){ inp.value='/compress'; if(typeof sendMessage==='function') sendMessage(); } }">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          Compact Context Now (/compress)
+        </button>
+        <button type="button" class="btn secondary ctx-popup-btn" onclick="closeContextActionMenu(); if(typeof sendSlashCommand==='function') sendSlashCommand('/context'); else { const inp=$('msg'); if(inp){ inp.value='/context'; if(typeof sendMessage==='function') sendMessage(); } }">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Token Breakdown (/context)
+        </button>
+        <button type="button" class="btn secondary ctx-popup-btn" onclick="closeContextActionMenu(); switchPanel('settings'); switchSettingsSection('preferences');">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Edit Context Window Settings
+        </button>
+      </div>
+    </div>
+  `;
+  popup.style.display='block';
+}
+
+function closeContextActionMenu(){
+  const popup=$('ctxActionPopup');
+  if(popup) popup.style.display='none';
+}
+window.openContextActionMenu=openContextActionMenu;
+window.closeContextActionMenu=closeContextActionMenu;
+
+function openComposerContextMenu(e){
+  openContextActionMenu(e);
 }
 window.openComposerContextMenu=openComposerContextMenu;
 
 document.addEventListener('click',function(e){
   if(
+    e.target.closest('#ctxActionPopup') ||
+    e.target.closest('#ctxIndicator') ||
     e.target.closest('#composerMobileConfigBtn') ||
     e.target.closest('#composerMobileConfigPanel') ||
     e.target.closest('#composerWsDropdown') ||
     e.target.closest('#composerModelDropdown') ||
     e.target.closest('#composerReasoningDropdown')
   ) return;
+  closeContextActionMenu();
   closeMobileComposerConfig();
 });
 

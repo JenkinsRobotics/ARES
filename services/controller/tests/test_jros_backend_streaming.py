@@ -756,6 +756,7 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
             "mcp_server_config": {"available": False},
             "character_persona_editing": {"available": True},
             "voice_settings": {"available": True},
+            "skills": {"available": True},
         },
     }, None))
     monkeypatch.setattr(ares_capabilities, "_jros_ares_tools_enabled", lambda: False)
@@ -767,6 +768,7 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     assert jros_caps["delegate_task"] is False
     assert jros_caps["kanban"] is False
     assert jros_caps["voice_settings"] is True
+    assert jros_caps["skills"] is True
 
     monkeypatch.setattr(ares_capabilities, "_jros_ares_tools_enabled", lambda: True)
     assert ares_capabilities.capabilities_for_backend("jros")["kanban"] is True

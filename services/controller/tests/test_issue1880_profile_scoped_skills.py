@@ -29,6 +29,8 @@ class _IsolatedSkillsDirs:
         self.profile_skills = self.profile_home / "skills"
         self._root_was_symlink = False
         self._root_symlink_target = None
+        self._root_config = self.state / "config.yaml"
+        self._root_config_before = None
 
     def __enter__(self):
         self._root_was_symlink = self.root_skills.is_symlink()
@@ -38,11 +40,23 @@ class _IsolatedSkillsDirs:
         _remove_path(self.profile_home)
         self.root_skills.mkdir(parents=True, exist_ok=True)
         self.profile_skills.mkdir(parents=True, exist_ok=True)
+        # This suite verifies ARES profile-store isolation, not selected-runtime
+        # routing. Pin a non-Jaeger runtime so machines with a working Jaeger
+        # install do not implicitly switch these requests to Jaeger's catalog.
+        if self._root_config.exists():
+            self._root_config_before = self._root_config.read_bytes()
+        self._root_config.write_text("ares_backend: claude_local\n", encoding="utf-8")
+        (self.profile_home / "config.yaml").write_text(
+            "ares_backend: claude_local\n", encoding="utf-8")
         return self
 
     def __exit__(self, exc_type, exc, tb):
         _remove_path(self.profile_home)
         _remove_path(self.root_skills)
+        if self._root_config_before is None:
+            self._root_config.unlink(missing_ok=True)
+        else:
+            self._root_config.write_bytes(self._root_config_before)
         if self._root_was_symlink and self._root_symlink_target is not None:
             self.root_skills.symlink_to(self._root_symlink_target)
 

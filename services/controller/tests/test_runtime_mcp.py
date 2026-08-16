@@ -19,13 +19,23 @@ def test_runtime_mcp_queries_and_commands(monkeypatch):
                         lambda cmd, args: calls.append((cmd, args)) or {"ok": True})
 
     assert runtime_mcp.list_runtime_tools()["total"] == 0
-    runtime_mcp.configure_runtime_server("web", {"command": "uvx"})
+    runtime_mcp.configure_runtime_server("web", {
+        "url": "https://mcp.example.test/v1",
+        "headers": {"Authorization": "Bearer secret"},
+    })
     runtime_mcp.toggle_runtime_server("web", False)
     runtime_mcp.toggle_runtime_server("web", True)
     runtime_mcp.remove_runtime_server("web")
     runtime_mcp.reload_runtime_tools()
     assert [row[0] for row in calls] == ["configure_mcp_server", "disable_mcp_server",
                                          "enable_mcp_server", "remove_mcp_server", "reload_tools"]
+    assert calls[0][1] == {
+        "name": "web",
+        "config": {
+            "url": "https://mcp.example.test/v1",
+            "headers": {"Authorization": "Bearer secret"},
+        },
+    }
 
 
 def test_runtime_mcp_fails_closed(monkeypatch):

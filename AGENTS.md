@@ -14,8 +14,10 @@ Read this before changing code. Do not invent Board/Leo/hands/control-plane meta
 
 ARES is the product UI + controller that replaces hermes-webui for daily use.
 It talks to multiple backends through adapters (Jaeger AI primary local path,
-Hermes Agent, Ollama, Claude, Codex, cloud). ARES owns sessions and product
-state under `~/.ares/`. Workers are invoked; their stores are read-only.
+Ollama, Claude, Codex, cloud; Hermes is migration compatibility only). ARES
+owns its product state under `~/.ares/`. Runtime features and mutations are
+discovered through versioned worker contracts; worker stores are never edited
+directly.
 
 ## Folder map (where to edit)
 
@@ -60,6 +62,9 @@ ARES/
 6. **No metaphor product language** in UI or new docs.
 7. After an approved fix: **commit locally**; **do not push** unless asked.
 8. Prove UI with `cd apps/web && npm run build` (and phone check for layout slices).
+9. **Never infer runtime support from a backend name or version.** Negotiate the
+   worker contract, fail closed on incompatibility, and expose why a feature is
+   unavailable.
 
 ## Chat backend gate
 

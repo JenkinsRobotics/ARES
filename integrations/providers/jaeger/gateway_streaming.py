@@ -393,6 +393,13 @@ def query_local_companion(what: str, args: dict[str, Any] | None = None) -> Any:
     return client.query(what, args or {})
 
 
+def local_integration_contract() -> dict[str, Any]:
+    """Negotiate and validate the selected Jaeger runtime's feature contract."""
+    instance = _jros_instance_name()
+    client = _get_or_start_bridge_client(instance)
+    return client.integration_contract()
+
+
 def command_local_companion(cmd: str, args: dict[str, Any] | None = None) -> Any:
     """Ask JaegerAI to mutate its selected Companion through its bridge."""
     instance = _jros_instance_name()

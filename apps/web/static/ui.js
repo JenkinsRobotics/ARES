@@ -6593,8 +6593,8 @@ function _syncCtxIndicator(usage){
   const DEFAULT_CTX=128*1024;
   const ctxWindow=usage.context_length||DEFAULT_CTX;
   const cost=usage.estimated_cost;
-  // Show indicator whenever we have any usage data (tokens or cost)
-  if(!promptTok&&!totalTok&&!cost&&!cacheReadTok&&!cacheWriteTok){
+  // Show indicator whenever we have any usage data (tokens or cost) or a resolved context length
+  if(!promptTok&&!totalTok&&!cost&&!cacheReadTok&&!cacheWriteTok&&!(Number(usage.context_length)>0)){
     if(wrap) wrap.style.display='none';
     _syncMobileCtxDisplay({visible:false});
     return;
@@ -6607,7 +6607,7 @@ function _syncCtxIndicator(usage){
   }
   let hasPromptTok=!!promptTok;
   if(hasPostCompressionEstimate) hasPromptTok=true;
-  const rawPct=hasPromptTok?Math.round((contextPromptTok/ctxWindow)*100):0;
+  const rawPct=hasPromptTok?Math.round((contextPromptTok/ctxWindow)*100):(totalTok?Math.round((totalTok/ctxWindow)*100):0);
   const pct=Math.min(100,rawPct);
   const overflowed=rawPct>100;
   const ring=$('ctxRingValue');
@@ -6621,10 +6621,11 @@ function _syncCtxIndicator(usage){
     ring.style.strokeDasharray=String(circumference);
     ring.style.strokeDashoffset=String(circumference*(1-pct/100));
   }
-  if(center) center.textContent=hasPromptTok?String(pct):'\u00b7';
+  if(center) center.textContent=String(pct);
   const hasExplicitCtx=!!usage.context_length;
   el.classList.toggle('ctx-mid',pct>50&&pct<=75);
   el.classList.toggle('ctx-high',pct>75);
+  el.classList.toggle('ctx-compacted',hasPostCompressionEstimate);
   // ── Compress affordance (#524) ──
   // Show a hint in the tooltip when context usage is high so users
   // discover /compress without having to know the slash command.
@@ -14234,7 +14235,12 @@ function _isContextCompactionMessage(m){
   return _isContextCompactionText(text);
 }
 function _isContextCompactionText(text){
-  return /^\s*\[context compaction/i.test(String(text||'')) || /^\s*context compaction/i.test(String(text||''));
+  const s = String(text||'').trim();
+  return /^\s*\[context (?:compaction|compression|summary)/i.test(s)
+      || /^\s*context (?:compaction|compression|summary)/i.test(s)
+      || /^\s*\[trajectory (?:compaction|compression|summary)/i.test(s)
+      || /^\s*\[earlier turns were (?:compacted|compressed|summarized)/i.test(s)
+      || /^\s*\[summary generation failed/i.test(s);
 }
 function _isPreservedCompressionTaskListMarkerText(text){
   return /^\s*\[your active task list was preserved across context compression\]/i.test(String(text||''));

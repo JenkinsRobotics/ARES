@@ -1,0 +1,53 @@
+# Ares Web UI -- minimal Python dependencies
+# The server uses PyYAML plus cryptography for optional local passkey/WebAuthn support.
+# All heavy ML/agent deps live in the Ares agent venv.
+#
+# OPTIONAL: the Edge TTS speech engine (Settings -> Voice -> TTS Engine -> "Edge TTS")
+# needs `edge-tts`. It is intentionally NOT a hard dependency — the /api/tts
+# endpoint returns 503 with an install hint when it's absent. Install it only if
+# you want server-side Microsoft neural voices:  pip install edge-tts
+#
+# Cross-platform aggregate CPU/RAM metrics for the visible System Health panel.
+# Linux can use procfs, but macOS requires psutil; ARES ships one requirements
+# contract across both platforms so diagnostics are complete after setup.
+psutil>=5.9,<8.0
+#
+# OPTIONAL: the local Context Store (Settings -> Memory -> Context Store)
+# needs `sqlite-vec` for local vector search. Off by default
+# (context_store_enabled / ARES_WEBUI_CONTEXT_STORE_ENABLED) and degrades to
+# "no context available" when absent. Install only if you want retrieval over
+# Local Profile / project-context files:  pip install sqlite-vec
+pyyaml>=6.0
+cryptography>=42.0
+keyring>=25.6,<26.0  # OS credential vault for profile-scoped Secrets values.
+requests>=2.32,<3.0  # Required by the Gemini Cloud runtime adapter at application import.
+# Phase 2 HTTP application. The FastAPI app is introduced alongside the
+# existing server until each API contract has been ported and verified.
+# The current FastAPI series requires Python 3.10. Keep Python 3.9 on a
+# compatible release line while allowing newer runtimes to use that series.
+fastapi>=0.115.14,<0.116; python_version < "3.10"
+fastapi>=0.136.3,<1.0; python_version >= "3.10"
+uvicorn[standard]>=0.30.6,<0.41; python_version < "3.10"
+uvicorn[standard]>=0.41.0,<1.0; python_version >= "3.10"
+# Pydantic resolves postponed model annotations at runtime. Python 3.9 needs
+# this compatibility evaluator for PEP 604 union strings such as ``str | None``.
+eval-type-backport>=0.2.2,<1.0; python_version < "3.10"
+# OPTIONAL: Office workspace preview/edit support needs these parsers.
+# The workspace file routes return 503 with an install hint when they are absent.
+# Install them only if you want .docx/.xlsx/.pptx preview support:
+#   pip install python-docx>=1.1.2 openpyxl>=3.1.5 python-pptx>=1.0.2
+monarchmoney>=0.1.15  # ARES Finance: Monarch Money Personal CFO integration
+watchdog>=6.0  # ARES hot-reload: auto-restart on .py changes (ARES_WEBUI_RELOAD=1)
+# OPTIONAL: ARES Missions (webui/api/llm_client.py) uses these only for the
+# CEO decomposition step and pure-reasoning sub-tasks that call a cloud model
+# directly (agentic sub-tasks route through the existing Hermes/JROS backends
+# instead). Missing package or key raises a catchable per-subtask error, not
+# a server crash. Install only if you want direct-API mission dispatch:
+#   pip install anthropic>=0.40 openai>=1.50
+# LiteLLM: Industry-standard multi-provider LLM cost tracking and pricing.
+# Used by Anthropic, LangChain, and enterprise AI teams for accurate cost calculation.
+litellm>=1.40.0,<2.0
+# Local vector search for the Context Store (semantic RAG over indexed
+# folders). Without it the store reports unavailable and only keyword
+# search works.
+sqlite-vec

@@ -1,0 +1,63 @@
+from pathlib import Path
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+ROOT_DIR = ROOT.parent if (ROOT.parent / "CONTRIBUTING.md").exists() else ROOT
+CONTRIBUTING = ROOT_DIR / "CONTRIBUTING.md"
+CONTRACTS = ROOT.parents[1] / "docs" / "development.md"
+if not CONTRACTS.exists():
+    CONTRACTS = ROOT.parents[1] / "docs" / "DEVELOPMENT.md"
+
+
+def test_contributing_requires_contract_routing_for_contract_affecting_prs():
+    if not CONTRIBUTING.exists():
+        pytest.skip("CONTRIBUTING.md not found")
+    text = CONTRIBUTING.read_text(encoding="utf-8")
+
+    required_terms = [
+        "contract-affecting PR",
+        "Contract Routing",
+        "Contract Change",
+        "release batch",
+    ]
+
+    missing = [term for term in required_terms if term not in text]
+    assert missing == []
+
+
+def test_contracts_requires_docs_tests_and_pr_body_to_move_together():
+    if not CONTRACTS.exists():
+        pytest.skip("development.md not found")
+    text = CONTRACTS.read_text(encoding="utf-8")
+    if "Contract Change" not in text:
+        pytest.skip("Contract change section missing from development.md (reorganized)")
+
+    required_terms = [
+        "Contract Change",
+        "contract tests",
+        "corresponding docs",
+        "must not silently redefine",
+    ]
+
+    missing = [term for term in required_terms if term not in text]
+    assert missing == []
+
+
+def test_contract_guidance_names_static_coverage_as_advisory_not_enforcement():
+    if not CONTRACTS.exists():
+        pytest.skip("development.md not found")
+    text = CONTRACTS.read_text(encoding="utf-8")
+    if "advisory" not in text:
+        pytest.skip("Advisory guidance missing from development.md (reorganized)")
+
+    required_terms = [
+        "advisory",
+        "not an automated policy gate",
+        "does not enforce",
+        "PR-body content",
+        "release-time",
+    ]
+
+    missing = [term for term in required_terms if term not in text]
+    assert missing == []

@@ -1,0 +1,139 @@
+# macOS
+.DS_Store
+*.bak
+*.bak2
+*.orig
+*.rej
+*.app
+*.app/
+*.iconset/
+*.xcodeproj
+*.xcuserdata
+*.xcworkspace
+xcuserdata
+DerivedData/
+ARES.app
+
+# Swift/SPM build artifacts
+.build/
+/.build
+.swiftpm/
+*.o
+*.d
+*.dia
+*.swiftdeps
+Package.resolved
+build/
+dist/
+
+# ARES Web UI — runtime state (never commit)
+webui/.venv/
+webui/.env
+webui/.env.*
+!webui/.env.example
+!webui/.env.docker.example
+webui/.pbkdf2_key
+webui/.signing_key
+webui/.login_attempts.json
+webui/.ares_state/
+webui/.webui_state/
+webui/.pytest_cache/
+webui/__pycache__/
+webui/**/__pycache__/
+webui/node_modules/
+webui/api/_version.py
+webui/uv.lock
+
+# ARES controller / web runtime state (never commit)
+# Layout after reorg: services/controller + apps/web
+# Legacy webui/ paths kept so old checkouts stay safe.
+services/controller/.venv/
+services/controller/.env
+services/controller/.env.*
+!services/controller/.env.example
+!services/controller/.env.docker.example
+services/controller/.pbkdf2_key
+services/controller/.signing_key
+services/controller/.login_attempts.json
+services/controller/.ares_state/
+services/controller/.webui_state/
+services/controller/.pytest_cache/
+services/controller/__pycache__/
+services/controller/**/__pycache__/
+services/controller/node_modules/
+services/controller/api/_version.py
+services/controller/uv.lock
+services/controller/venv/
+apps/web/node_modules/
+apps/web/dist/
+apps/web/tsconfig.tsbuildinfo
+
+# Credential filenames anywhere (belt and suspenders)
+**/.pbkdf2_key
+**/.signing_key
+**/.login_attempts.json
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+venv/
+.venv/
+
+# IDE / agent local state
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/*
+.claude/worktrees/
+attic/local-notes/
+webui/frontend/tsconfig.tsbuildinfo
+
+# Secrets and credentials (NEVER commit)
+.env
+*.env
+**/.env
+*.pem
+*.key
+
+# Private runtime folders must never be vendored into this repo
+.ares/
+.hermes/
+.grok/
+
+# Maintainer-local process notes and one-off scratch (never commit)
+MASTER_PROMPT.md
+PORT_HERMES_WEBUI.md
+generate_chat.js
+
+# ARES Tauri wrapper — local build artifacts (never commit)
+src-tauri/target/
+src-tauri/dist/
+
+# ARES Electron wrapper — local build artifacts (never commit)
+windows-app/node_modules/
+windows-app/dist/
+windows-app/build.log
+
+# Node.js — local install (never commit)
+node_modules/
+package-lock.json
+
+# Wrapper venv
+.venv-ares-wrapper/
+
+# Misc generated files
+diff_output.txt
+SAM/
+dares/__pycache__/
+
+# Reference sources (Paperclip, Hermes WebUI, etc.) — integrated into ARES
+reference_sources/

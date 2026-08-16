@@ -1,0 +1,298 @@
+"""JROS Backend Adapter for ARES.
+
+This adapter wraps the ARES-side JROS gateway bridge
+(``api.providers.jaeger.gateway_streaming``). JROS itself is never modified.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, cast
+
+from api.providers.agentic_backend import AgenticBackend
+
+
+class JaegerBackend(AgenticBackend):
+    name = "jaeger_local"
+    supports_tools = True
+    supports_persona = True
+
+    def is_available(self) -> bool:
+        # Same readiness check the adapter registry uses, so the two registries
+        # cannot disagree about JaegerAI.
+        from api.providers.jaeger.status import check_status
+
+        return check_status().available
+
+    def get_worker_target(self) -> tuple:
+        """Return the JROS streaming worker target."""
+        from api.providers.jaeger.gateway_streaming import run_jros_streaming
+
+        return run_jros_streaming, False, True
+
+    def get_backend_name(self) -> str:
+        return "Jaeger AI"
+
+    def health(self) -> Dict[str, Any]:
+        from api.providers.jaeger.gateway_streaming import jros_gateway_health
+        health_payload = jros_gateway_health(timeout=1.0)
+        if health_payload is not None:
+            return {
+                "status": "ok",
+                "latency_ms": 0.0,
+                "message": "Jaeger AI gateway reachable",
+                "details": health_payload,
+            }
+        
+        # Check local path fallback
+        from api.providers.jaeger.gateway_streaming import local_jros_root
+        if local_jros_root() is not None:
+            return {
+                "status": "degraded",
+                "latency_ms": 0.0,
+                "message": "Gateway offline; falling back to the local Jaeger AI checkout",
+            }
+            
+        return {
+            "status": "error",
+            "latency_ms": 0.0,
+            "message": "Jaeger AI gateway unreachable and local checkout not found",
+        }
+
+    def identity_projection(self) -> Dict[str, Any]:
+        from api.providers.jaeger.paths import jros_instance_name
+        instance = jros_instance_name()
+        
+        if instance:
+            from api.persona import load_persona
+            persona = load_persona(instance)
+            if persona:
+                return {
+                    "name": persona.get("identity", {}).get("display_name") or persona.get("name") or instance.title(),
+                    "description": persona.get("description") or f"Jaeger AI character: {instance}",
+                    "avatar_state": "idle",
+                }
+            return {
+                "name": instance.title(),
+                "description": f"Jaeger AI instance: {instance}",
+                "avatar_state": "idle",
+            }
+            
+        return {
+            "name": "Jaeger AI",
+            "description": "Jaeger AI peer agent runtime",
+            "avatar_state": "idle",
+        }
+
+    def capabilities(self) -> Dict[str, Any]:
+        return {
+            "chat": True,
+            "tools": self.supports_tools,
+            "persona": self.supports_persona,
+            "voice": True,
+            "embodiment": True,
+            "robotics": True,
+        }
+
+    def chat_session_support(self) -> Dict[str, Any]:
+        return {"streaming": True, "context_window": 8192, "multimodal": True}
+
+    def tools(self) -> List[Dict[str, Any]]:
+        # Returns standard list of JROS/Jaeger bridge command tools
+        return [
+            {
+                "name": "jaeger_bridge_tool",
+                "description": "Spawn Jaeger AI subprocess tool execution",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        ]
+
+    def settings_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "jaeger_gateway_url": {
+                    "type": "string",
+                    "title": "Jaeger AI Gateway URL",
+                    "default": "",
+                    "description": "Optional endpoint owned by the connected JaegerAI provider.",
+                },
+                "jaeger_instance_name": {
+                    "type": "string",
+                    "title": "Jaeger AI Instance Name",
+                    "default": "lilith",
+                },
+            },
+        }
+
+    def run_turn(self, message: str, session_id: str, **kwargs) -> Dict[str, Any]:
+        import threading
+
+        from api.providers.jaeger.gateway_streaming import _run_local_jros_turn
+
+        cancel_event = kwargs.get("cancel_event")
+        event = cancel_event if hasattr(cancel_event, "is_set") else threading.Event()
+        return_text, error, tool_activity = _run_local_jros_turn(
+            message,
+            session_id,
+            cast(Any, event),
+        )
+        return {"text": return_text, "error": error, "tool_activity": tool_activity}
+
+    def get_status(self) -> Dict[str, Any]:
+        available = self.is_available()
+        return {
+            "available": available,
+            "label": "Jaeger AI" if available else "Jaeger AI (not found)",
+            "capabilities": {
+                "supports_tools": self.supports_tools,
+                "supports_persona": self.supports_persona,
+            },
+            "inventory": self.inventory(),
+        }
+
+    def inventory(self) -> Dict[str, Any]:
+        """Catalog JaegerAI providers + installed/local models + gateways.
+
+        Scans gateway health, instance config, and ``.jaeger_os/models/*.gguf``.
+        """
+        from api.backends.catalog import (
+            finalize_inventory,
+            gateway_entry,
+            infer_model_location,
+            mcp_entry,
+            transport_entry,
+        )
+        from api.backends.model_discovery import discover_jros_models
+
+        health: dict[str, Any] = {}
+        try:
+            from api.providers.jaeger.gateway_streaming import jros_gateway_health
+
+            health = jros_gateway_health(timeout=1.0) or {}
+        except Exception:
+            health = {}
+
+        instance = str(health.get("instance") or "").strip() or None
+        booted = bool(health.get("booted"))
+        gateway_ok = bool(health.get("ok"))
+        discovered = discover_jros_models(instance=instance, gateway_health=health)
+        models = list(discovered.get("models") or [])
+        providers = list(discovered.get("providers") or [])
+        default = discovered.get("default") or {}
+        model_id = default.get("model")
+        provider = default.get("provider")
+
+        # Use the shared resolver so ARES_JAEGER_GATEWAY_URL is honoured here too.
+        # This path previously read only the schema default, so a gateway
+        # configured on another host was silently ignored and probes went to
+        # localhost.
+        try:
+            from api.providers.jaeger.gateway_streaming import jros_gateway_base_url
+
+            gateway_url = jros_gateway_base_url()
+        except Exception:
+            gateway_url = ""
+
+        transports = [
+            transport_entry(
+                id="http_gateway",
+                kind="http_gateway",
+                label="Jaeger AI HTTP gateway",
+                in_use=True,
+                endpoint=f"{gateway_url}/v1/chat/completions" if gateway_url else "",
+                notes="Active ARES path: OpenAI-compatible chat completions via jros_gateway.py.",
+            ),
+            transport_entry(
+                id="local_checkout",
+                kind="subprocess",
+                label="Local Jaeger AI checkout fallback",
+                in_use=False,
+                notes="Used when the gateway is offline but a local Jaeger AI checkout is present.",
+            ),
+            transport_entry(
+                id="mcp",
+                kind="mcp",
+                label="Jaeger AI MCP (if configured)",
+                in_use=False,
+                notes="Catalog placeholder — declare MCP tools when Jaeger AI exposes them; ARES may not consume yet.",
+            ),
+        ]
+
+        gateways = [
+            gateway_entry(
+                id="ares_jros_gateway",
+                kind="openai_compatible",
+                label="ARES jros_gateway",
+                endpoint=gateway_url,
+                in_use=gateway_ok,
+                protocol="openai-chat-completions",
+                notes="GET /v1/health, POST /v1/chat/completions, POST /v1/reset.",
+            ),
+            gateway_entry(
+                id="jros_native_surfaces",
+                kind="native_app",
+                label="Jaeger AI native TUI / windowed app",
+                in_use=False,
+                protocol="jros-native",
+                notes="JaegerAI desktop/TUI surfaces; not the ARES WebUI transport.",
+            ),
+        ]
+
+        mcp = [
+            mcp_entry(
+                id="jros_mcp_optional",
+                label="Jaeger AI MCP tools (optional)",
+                in_use_by_ares=False,
+                used_by=["external_mcp_clients"],
+                notes="Reserved catalog slot for Jaeger AI MCP tools when present.",
+            )
+        ]
+
+        return finalize_inventory(
+            {
+                "worker_id": self.name,
+                "display_name": "Jaeger AI",
+                "models": models,
+                "providers": providers,
+                "default": default,
+                "transports": transports,
+                "gateways": gateways,
+                "mcp": mcp,
+                "tools_summary": self.tools(),
+                "active_execution": {
+                    "available": self.is_available(),
+                    "transport": "http_gateway",
+                    "gateway_ok": gateway_ok,
+                    "booted": booted,
+                    "instance": instance or default.get("instance"),
+                    "model": model_id,
+                    "provider": provider,
+                    "model_location": infer_model_location(provider, model_id),
+                    "gateway_url": gateway_url,
+                },
+                "notes": (
+                    "Models = gateway live model + instance config + installed GGUF under "
+                    ".jaeger_os/models. Providers = local llama.cpp and any external_model."
+                ),
+            }
+        )
+
+
+# Import compatibility for extensions written against the pre-split class
+# name. The registered and persisted identity remains ``jaeger_local``.
+#
+# Defined BEFORE the BackendRegistry import below, deliberately. That import
+# re-enters the ``integrations.workers`` package, whose ``__init__`` does
+# ``from api.providers.jaeger.backend import JROSBackend`` — i.e. it reaches
+# back into THIS module while it is still partially initialized. With the
+# alias defined after that import, whichever module got imported first
+# decided whether the name existed yet, so importing this module directly
+# raised "cannot import name 'JROSBackend' from partially initialized
+# module". Binding the alias first makes the cycle resolvable from either
+# entry point.
+JROSBackend = JaegerBackend
+
+# Register with the dynamic backend registry
+from api.backends.cli_backends import BackendRegistry  # noqa: E402
+
+BackendRegistry.register(JaegerBackend)

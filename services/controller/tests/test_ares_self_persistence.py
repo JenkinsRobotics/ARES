@@ -1,0 +1,73 @@
+import pathlib
+
+
+REPO = pathlib.Path(__file__).parent.parent
+
+
+def read(path: str) -> str:
+    return (REPO / path).read_text(encoding="utf-8")
+
+
+def test_self_persistence_contract_exports_durable_ares_layer(monkeypatch):
+    from api import backend_selector
+    from api.ares_self_persistence import build_self_persistence_contract
+
+    # `active_backend` answers "what would run a turn now", which depends on
+    # whether JaegerAI is installed on this machine. Pin the probe so the
+    # contract assertions do not change with the developer's setup.
+    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: False)
+
+    contract = build_self_persistence_contract({})
+
+    assert contract["identity_owner"] == "active_runtime"
+    assert contract["identity_policy"] == "projection-only"
+    assert contract["backend_policy"] == "adapter-first"
+    assert contract["fork_decision"] == "deferred"
+    assert contract["prevents_redo_work"] is True
+    assert contract["runtime_required"] is True
+    assert contract["active_backend"] == ""
+    assert "identity_projection" in contract["capabilities"]
+    assert "self_audit" in contract["capabilities"]
+    assert "promise_to_task_capture" in contract["capabilities"]
+    assert "autonomous_follow_through" in contract["capabilities"]
+    assert "embodied_presence" in contract["capabilities"]
+
+
+def test_self_persistence_prompt_section_instructs_ares_not_backend():
+    from api.ares_self_persistence import render_self_persistence_prompt
+
+    prompt = render_self_persistence_prompt({"ares_backend": "claude_local"})
+
+    assert "ARES owns shared resources, routing, permissions, and task continuity" in prompt
+    assert "selected external runtime supplies inference" in prompt
+    assert "Ares supplies the agent loop" not in prompt
+    assert "ARES identity APIs are projections of the active runtime" in prompt
+    assert "Do not bury task continuity inside a swappable backend" in prompt
+    assert "Active runtime: claude_local" in prompt
+
+
+def test_self_persistence_route_is_registered_with_other_ares_routes():
+    routes = read("fastapi_app/routers/ares.py")
+
+    assert '"/api/ares/self-persistence"' in routes
+    assert "build_self_persistence_contract" in routes
+
+
+def test_streaming_wires_self_persistence_into_agent_prompt():
+    streaming = read("api/streaming.py")
+
+    assert "render_self_persistence_prompt" in streaming
+    assert "should_inject_self_persistence" in streaming
+    assert "_self_persistence_prompt" in streaming
+
+
+def test_self_persistence_contract_reports_jaeger_when_it_is_the_live_default(monkeypatch):
+    """With nothing elected, an available JaegerAI is what would serve a turn."""
+    from api import backend_selector
+    from api.ares_self_persistence import build_self_persistence_contract
+
+    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: True)
+
+    contract = build_self_persistence_contract({})
+
+    assert contract["active_backend"] == backend_selector.BACKEND_JAEGER

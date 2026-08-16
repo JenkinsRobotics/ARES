@@ -86,7 +86,7 @@ jobs:
       - name: Build and cache Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: services/controller
           file: services/controller/Dockerfile
           load: true
           tags: ghcr.io/nesquena/ares-webui:latest
@@ -116,7 +116,7 @@ jobs:
       - name: Restore Docker image from cache
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: services/controller
           file: services/controller/Dockerfile
           load: true
           tags: ghcr.io/nesquena/ares-webui:latest

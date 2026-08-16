@@ -19,6 +19,31 @@ def _read_yaml(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
+@pytest.fixture(autouse=True)
+def _pinned_context_window(monkeypatch):
+    """Make the ``ctx`` these syncs write a property of the sync, not the host.
+
+    ``_sync_jros_config`` stamps the resolved context window into the config
+    it writes, and ``resolve_context_length_for_session_model`` resolves that
+    from whatever the ambient environment happens to offer — the operator's
+    own config, a live probe of the provider's API, a bundled metadata table,
+    then a keyword guess. So the bytes landing in the config file depended on
+    the machine running the test. That is what broke the no-op sync test: it
+    seeded the file with a literal pinned to the local answer for gpt-4o
+    (128000), which matched here and did not match in CI, so the second sync
+    saw a differing ``ctx``, rewrote the file, and reported a change that the
+    test asserted could not happen.
+
+    Pinning the resolver keeps that whole source of drift out of this file.
+    Tests that care about *which* lane the window lands in stub it themselves
+    and live in test_jros_ctx_sync_targets_the_serving_lane.py.
+    """
+    monkeypatch.setattr(
+        "api.model_context.resolve_context_length_for_session_model",
+        lambda *args, **kwargs: 128_000,
+    )
+
+
 def test_gemini_sync_updates_ares_and_jros_preserving_unrelated_keys(tmp_path):
     ares_config = tmp_path / "ares" / "config.yaml"
     jros_config = tmp_path / "jros" / "config.yaml"

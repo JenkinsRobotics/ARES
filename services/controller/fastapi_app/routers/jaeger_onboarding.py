@@ -75,9 +75,12 @@ class OnboardingCompleteRequest(BaseModel):
 
 def _character_search_roots() -> list[Path]:
     """The character library owned by the selected JaegerAI dependency."""
-    from api.providers.jaeger.paths import character_dir
+    try:
+        from api.providers.jaeger.paths import character_dir
 
-    return [character_dir()]
+        return [character_dir()]
+    except Exception:
+        return []
 
 
 def _instance_search_roots() -> list[Path]:

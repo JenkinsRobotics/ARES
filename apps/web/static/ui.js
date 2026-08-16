@@ -6671,12 +6671,19 @@ function _syncCtxIndicator(usage){
   const totalTok=(usage.input_tokens||0)+(usage.output_tokens||0);
   const cacheReadTok=usage.cache_read_tokens||0;
   const cacheWriteTok=usage.cache_write_tokens||0;
-  // Default context window to 128K when not provided by backend
+  // Default context window to 128K when not provided by backend.
+  // Prefer the usage payload, then the session's resolved window
+  // (what /api/session already probed). Without the session fallback
+  // a 1M Ollama Cloud model rendered as 128K the moment lastUsage
+  // arrived without a context_length field.
   const DEFAULT_CTX=128*1024;
-  const ctxWindow=usage.context_length||DEFAULT_CTX;
+  const sessionCtx=Number(S.session&&S.session.context_length)||0;
+  const usageCtx=Number(usage.context_length)||0;
+  const explicitCtx=usageCtx>0?usageCtx:sessionCtx;
+  const ctxWindow=explicitCtx||DEFAULT_CTX;
   const cost=usage.estimated_cost;
   // Show indicator whenever we have any usage data (tokens or cost) or a resolved context length
-  if(!promptTok&&!totalTok&&!cost&&!cacheReadTok&&!cacheWriteTok&&!(Number(usage.context_length)>0)){
+  if(!promptTok&&!totalTok&&!cost&&!cacheReadTok&&!cacheWriteTok&&!explicitCtx){
     if(wrap) wrap.style.display='none';
     _syncMobileCtxDisplay({visible:false});
     return;
@@ -6702,8 +6709,17 @@ function _syncCtxIndicator(usage){
     ring.style.strokeDasharray=String(circumference);
     ring.style.strokeDashoffset=String(circumference*(1-pct/100));
   }
-  if(center) center.textContent=String(pct);
-  const hasExplicitCtx=!!usage.context_length;
+  if(center){
+    // Empty chats used to show a bare "0", which looks like "no
+    // context window" — the user never sees the 1M/256k limit unless
+    // they open the tooltip. Show the window size until tokens exist.
+    if(!effectiveTokens && explicitCtx){
+      center.textContent=_fmtTokens(ctxWindow);
+    }else{
+      center.textContent=String(pct);
+    }
+  }
+  const hasExplicitCtx=explicitCtx>0;
   el.classList.toggle('ctx-mid',pct>50&&pct<=75);
   el.classList.toggle('ctx-high',pct>75);
   el.classList.toggle('ctx-compacted',hasPostCompressionEstimate);

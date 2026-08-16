@@ -137,6 +137,9 @@ def reset_jros_boot() -> None:
     dropped here, and the gateway is asked to re-boot via POST /v1/reset.
     Best-effort: an unreachable gateway just means the next operator-run
     gateway boots fresh from disk anyway."""
+    # The serving lane is fixed at boot, so a re-boot invalidates whatever we
+    # cached about which model is answering.
+    reset_serving_model_cache()
     _reset_local_bridge_clients()
     base_url = jros_gateway_base_url()
     if not base_url:
@@ -325,6 +328,53 @@ def _reset_local_bridge_clients() -> None:
             client.close()
         except Exception:
             logger.debug("Local JaegerAI bridge cleanup failed", exc_info=True)
+
+
+_SERVING_MODEL_CACHE: dict[str, Any] = {"at": 0.0, "value": None}
+_SERVING_MODEL_TTL = 30.0
+
+
+def _serving_model_truth() -> dict[str, Any] | None:
+    """What JaegerAI says is actually answering, or ``None`` if it won't say.
+
+    Asked over the bridge's ``serving_model`` query rather than inferred from
+    ARES's own selection, because the two can disagree: JaegerAI picks its
+    serving lane at boot, and a cloud lane that failed to start leaves the
+    request in its config while a local model answers. ARES showing the
+    requested model there would be a lie of exactly the kind the operator
+    cannot see through.
+
+    Cached briefly — the serving lane changes on model switch or restart, not
+    within a turn — and never raises, because a display value must not be
+    able to fail a turn.
+    """
+    now = time.time()
+    if (
+        _SERVING_MODEL_CACHE["value"] is not None
+        and now - float(_SERVING_MODEL_CACHE["at"]) < _SERVING_MODEL_TTL
+    ):
+        return _SERVING_MODEL_CACHE["value"]
+    try:
+        payload = query_local_companion("serving_model")
+    except Exception:
+        logger.debug("serving_model query failed", exc_info=True)
+        return None
+    if not isinstance(payload, dict):
+        return None
+    serving = payload.get("serving")
+    if not isinstance(serving, dict):
+        # Pre-boot: JaegerAI reports its configured intent but nothing is
+        # serving yet. Don't cache that as truth.
+        return None
+    _SERVING_MODEL_CACHE["at"] = now
+    _SERVING_MODEL_CACHE["value"] = serving
+    return serving
+
+
+def reset_serving_model_cache() -> None:
+    """Drop the cached serving lane — call after a model switch or restart."""
+    _SERVING_MODEL_CACHE["at"] = 0.0
+    _SERVING_MODEL_CACHE["value"] = None
 
 
 def query_local_companion(what: str, args: dict[str, Any] | None = None) -> Any:
@@ -594,6 +644,84 @@ def _merge_and_save_jros_turn(
         s.workspace = str(workspace)
         s.model = model or getattr(s, "model", "") or ""
         s.model_provider = selected_model_provider
+        # Record what ACTUALLY served the turn, not what we asked for.
+        # JaegerAI decides the serving lane at boot and can end up on a
+        # different model than the config requests (a cloud lane that failed
+        # to start leaves ``external_model.enabled: true`` in the file while a
+        # local model answers). Reporting the requested model in that case
+        # tells the operator they are on a cloud brain when they are not, so
+        # ask the bridge and record the answer through ARES's existing
+        # requested-vs-used contract, which the WebUI already renders.
+        _served = _serving_model_truth()
+        if _served:
+            used_model = str(_served.get("name") or "").strip()
+            used_provider = str(_served.get("provider") or "").strip()
+            if used_model:
+                s.model = used_model
+            if used_provider:
+                s.model_provider = used_provider
+            try:
+                from api.streaming import _normalize_gateway_routing_metadata
+
+                routing = _normalize_gateway_routing_metadata(
+                    {
+                        "used_model": used_model,
+                        "used_provider": used_provider,
+                        "requested_model": model or used_model,
+                        "requested_provider": selected_model_provider or used_provider,
+                    },
+                    requested_model=model or used_model,
+                    requested_provider=selected_model_provider or used_provider,
+                )
+                if routing:
+                    routing["serving_fallback"] = bool(_served.get("fallback_active"))
+                    routing["serving_detail"] = str(_served.get("status") or "")
+                    s.gateway_routing = routing
+                    history = getattr(s, "gateway_routing_history", None)
+                    if isinstance(history, list):
+                        history.append(routing)
+                    else:
+                        s.gateway_routing_history = [routing]
+            except Exception:
+                logger.debug("Could not record jros serving-model routing", exc_info=True)
+
+        # Persist the serving model's real context window so the WebUI ring
+        # has something true to draw. Without this the jros path never wrote
+        # ``context_length`` at all and ui.js fell through to its hardcoded
+        # ``DEFAULT_CTX = 128*1024`` — the ring read 131072 for every model,
+        # which is why a 1M-window cloud model looked stuck at 128K no matter
+        # what the catalogue or the config said. The window the serving lane
+        # reports wins; the resolver is the fallback. Never fails a turn over
+        # a display value.
+        try:
+            from api.model_context import (
+                resolve_context_length_for_session_model,
+                should_accept_context_length_refresh,
+            )
+
+            resolved_ctx = 0
+            if _served:
+                try:
+                    resolved_ctx = int(_served.get("context_length") or 0)
+                except (TypeError, ValueError):
+                    resolved_ctx = 0
+            if resolved_ctx <= 0:
+                resolved_ctx = resolve_context_length_for_session_model(
+                    s.model, getattr(s, "model_provider", None) or selected_model_provider,
+                )
+            persisted_ctx = int(getattr(s, "context_length", 0) or 0)
+            if should_accept_context_length_refresh(
+                persisted_ctx,
+                resolved_ctx,
+                model_changed=persisted_ctx > 0 and resolved_ctx != persisted_ctx,
+            ):
+                s.context_length = resolved_ctx
+        except Exception:
+            logger.debug(
+                "Could not resolve a context window for jros session %s",
+                session_id,
+                exc_info=True,
+            )
         if usage:
             # JaegerAI's usage dict is per-turn (an OpenAI-style chunk's
             # prompt/completion_tokens, or a fresh word-count estimate), unlike

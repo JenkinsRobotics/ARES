@@ -70,6 +70,7 @@ def describe_config(config: dict[str, Any]) -> dict[str, Any]:
         "location": None,
         "base_url": None,
         "source": None,
+        "ctx": None,
     }
     if not isinstance(config, dict):
         return unknown
@@ -85,6 +86,7 @@ def describe_config(config: dict[str, Any]) -> dict[str, Any]:
                 "location": "cloud" if provider in CLOUD_PROVIDERS else "local",
                 "base_url": str(external.get("base_url") or "").strip() or None,
                 "source": "external_model",
+                "ctx": _positive_ctx(external.get("ctx")),
             }
         # enabled with no model is a broken selection, not a local one: fall
         # through to report unknown rather than silently naming the on-device
@@ -105,8 +107,17 @@ def describe_config(config: dict[str, Any]) -> dict[str, Any]:
                 "base_url": None,
                 "source": "model.model_path",
                 "model_path": model_path,
+                "ctx": _positive_ctx(model_block.get("ctx")),
             }
     return unknown
+
+
+def _positive_ctx(value: Any) -> int | None:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def active_model(config_path: Path | None = None) -> dict[str, Any]:
@@ -129,6 +140,7 @@ def active_model(config_path: Path | None = None) -> dict[str, Any]:
                 "location": None,
                 "base_url": None,
                 "source": None,
+                "ctx": None,
                 "config_path": None,
             }
 

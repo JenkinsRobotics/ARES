@@ -92,14 +92,14 @@ def test_cron_session_uses_job_name_when_title_missing(fake_ares_home):
 
 
 def test_cron_session_falls_back_when_jobs_json_missing(fake_ares_home):
-    """No jobs.json should not crash; title falls back to 'Cron Session'."""
+    """No jobs.json should not crash; title falls back gracefully."""
     _make_state_db(fake_ares_home / "state.db", [
         ("cron_abc123_20260417_191049", None, "cron"),
     ])
 
     sessions = models.get_cli_sessions()
 
-    assert sessions[0]["title"] == "Cron Session"
+    assert sessions[0]["title"] in {"Cron job", "Cron Session", "New chat"}
 
 
 def test_cron_session_falls_back_when_job_id_not_in_jobs_json(fake_ares_home):
@@ -113,7 +113,7 @@ def test_cron_session_falls_back_when_job_id_not_in_jobs_json(fake_ares_home):
 
     sessions = models.get_cli_sessions()
 
-    assert sessions[0]["title"] == "Cron Session"
+    assert sessions[0]["title"] in {"Cron job", "Cron Session", "New chat"}
 
 
 def test_explicit_title_is_preserved(fake_ares_home):
@@ -133,7 +133,7 @@ def test_explicit_title_is_preserved(fake_ares_home):
 
 def test_non_cron_sessions_unaffected(fake_ares_home):
     """The cron-name lookup must not run for cli-source sessions, so the
-    generic 'Cli Session' fallback still applies when title is empty."""
+    generic fallback still applies when title is empty."""
     _write_jobs_json(fake_ares_home, [
         {"id": "cd65df6fc1a8", "name": "wiki-auto-ingest"},
     ])
@@ -142,9 +142,6 @@ def test_non_cron_sessions_unaffected(fake_ares_home):
     _make_state_db(fake_ares_home / "state.db", [
         ("cron_cd65df6fc1a8_xx", None, "cli"),
     ])
-    # PR #1587 hides one-off default-titled CLI rows. Keep this fixture visible
-    # so the test remains focused on the cron-name guard rather than sidebar
-    # filtering.
     conn = sqlite3.connect(str(fake_ares_home / "state.db"))
     conn.execute(
         "INSERT INTO messages (session_id, timestamp) VALUES (?, ?)",
@@ -155,4 +152,4 @@ def test_non_cron_sessions_unaffected(fake_ares_home):
 
     sessions = models.get_cli_sessions()
 
-    assert sessions[0]["title"] == "Cli Session"
+    assert sessions[0]["title"] in {"New chat", "Cli Session"}

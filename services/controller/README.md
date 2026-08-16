@@ -17,13 +17,13 @@ providers, local tools, and future body/avatar renderers.
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shuwalker/ARES/main/webui/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/JenkinsRobotics/ARES/main/webui/scripts/install.sh | bash
 ```
 
 ### Windows PowerShell
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/shuwalker/ARES/main/webui/scripts/install.ps1)
+iex (irm https://raw.githubusercontent.com/JenkinsRobotics/ARES/main/webui/scripts/install.ps1)
 ```
 
 ### Windows no-terminal path

@@ -134,7 +134,7 @@ def test_fallback_ids_all_exist_in_the_worker_registry():
 
 def test_fallback_order_prefers_local_assistants():
     assert FALLBACK_BACKEND_IDS[0] == "jaeger_local"
-    assert "hermes_local" in FALLBACK_BACKEND_IDS
+    assert "ollama_local" in FALLBACK_BACKEND_IDS
 
 
 # ── worker boot errors ───────────────────────────────────────────────────────

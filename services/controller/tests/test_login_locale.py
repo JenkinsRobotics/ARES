@@ -42,7 +42,7 @@ def test_login_page_uses_simplified_chinese_for_zh_cn_alias():
         assert saved.get("language") == "zh-CN"
         html, status2 = get_raw("/login")
         assert status2 == 200
-        assert '<div id="root"></div>' in html
+        assert "<title>ARES</title>" in html
         assert saved["language"] == "zh-CN"
     finally:
         restored, restore_status = post("/api/settings", {"language": prev_lang})
@@ -58,7 +58,7 @@ def test_login_page_uses_traditional_chinese_for_zh_hant():
         assert saved.get("language") == "zh-Hant"
         html, status2 = get_raw("/login")
         assert status2 == 200
-        assert '<div id="root"></div>' in html
+        assert "<title>ARES</title>" in html
         assert saved["language"] == "zh-Hant"
     finally:
         restored, restore_status = post("/api/settings", {"language": prev_lang})
@@ -74,7 +74,7 @@ def test_login_page_uses_russian_for_ru():
         assert saved.get("language") == "ru"
         html, status2 = get_raw("/login")
         assert status2 == 200
-        assert '<div id="root"></div>' in html
+        assert "<title>ARES</title>" in html
         assert saved["language"] == "ru"
     finally:
         restored, restore_status = post("/api/settings", {"language": prev_lang})

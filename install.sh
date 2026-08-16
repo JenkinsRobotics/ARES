@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-REPO_URL="${ARES_REPO_URL:-https://github.com/shuwalker/ARES.git}"
+REPO_URL="${ARES_REPO_URL:-https://github.com/JenkinsRobotics/ARES.git}"
 ARES_REF="${ARES_REF:-main}"
 NO_START=false
 NO_CLI=false

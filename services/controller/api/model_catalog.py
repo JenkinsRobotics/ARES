@@ -80,9 +80,60 @@ def _fetch_ollama_local_models() -> list[dict]:
                 "context_length": details.get("context_length", 0),
                 "capabilities": caps,
             })
-        return models
+        # ``/api/tags`` reports a window for GGUF models but leaves it null
+        # for MLX ones, so probe whatever came back empty.
+        return _stamp_ollama_context_lengths(models)
     except Exception:
         return []
+
+
+def _stamp_ollama_context_lengths(models: list[dict], api_key: str | None = None) -> list[dict]:
+    """Fill in each entry's real ``context_length`` from Ollama.
+
+    ``/v1/models`` — the OpenAI-compatible listing this catalogue is built
+    from — carries no window, so without this every cloud model reached
+    the resolver with nothing and fell back to a keyword guess (anything
+    matching "deepseek" → 131072, when ``deepseek-v4-pro:0813`` is really
+    1048576). ``/api/show`` does publish it, so ask.
+
+    Probed concurrently because a cloud listing is ~20 models and each
+    probe is a round trip; the probe layer caches per model id, so this
+    costs one burst per catalogue rebuild rather than one call per model
+    per request. Any model that won't answer keeps whatever it had —
+    a missing window is the resolver's problem to fall back on, not a
+    reason to fail the catalogue.
+    """
+    if not models:
+        return models
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+
+        from api.providers.ollama.context_probe import context_length
+    except Exception:
+        return models
+
+    pending = [m for m in models if not m.get("context_length")]
+    if not pending:
+        return models
+
+    def _probe(entry: dict) -> tuple[dict, int]:
+        try:
+            return entry, context_length(
+                str(entry.get("id") or ""),
+                provider=str(entry.get("provider_id") or entry.get("provider") or ""),
+                api_key=api_key,
+            )
+        except Exception:
+            return entry, 0
+
+    try:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for entry, window in pool.map(_probe, pending):
+                if window > 0:
+                    entry["context_length"] = window
+    except Exception:
+        logger.debug("Ollama context-length stamping failed", exc_info=True)
+    return models
 
 
 def _fetch_ollama_cloud_models(api_key: str | None) -> list[dict]:
@@ -98,7 +149,7 @@ def _fetch_ollama_cloud_models(api_key: str | None) -> list[dict]:
         )
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read())
-        return [
+        return _stamp_ollama_context_lengths([
             {
                 "id": m.get("id", ""),
                 "label": m.get("id", ""),
@@ -108,7 +159,7 @@ def _fetch_ollama_cloud_models(api_key: str | None) -> list[dict]:
             }
             for m in data.get("data", [])
             if m.get("id")
-        ]
+        ], api_key)
     except Exception:
         return [
             {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},

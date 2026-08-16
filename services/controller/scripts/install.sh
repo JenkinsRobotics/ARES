@@ -5,7 +5,7 @@
 # Installation script for Linux, macOS, and Windows (via WSL/Cygwin).
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/shuwalker/ARES/main/services/controller/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/JenkinsRobotics/ARES/main/services/controller/scripts/install.sh | bash
 #
 # Or with options:
 #   curl -fsSL ... | bash -s -- --port 9000 --host 0.0.0.0 --skip-setup
@@ -34,8 +34,8 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:shuwalker/ARES.git"
-REPO_URL_HTTPS="https://github.com/shuwalker/ARES.git"
+REPO_URL_SSH="git@github.com:JenkinsRobotics/ARES.git"
+REPO_URL_HTTPS="https://github.com/JenkinsRobotics/ARES.git"
 ARES_HOME="${ARES_HOME:-$HOME/.ares}"
 INSTALL_DIR="${ARES_INSTALL_DIR:-$ARES_HOME}"
 WEBUI_DIR="$INSTALL_DIR/services/controller"
@@ -256,7 +256,7 @@ detect_os() {
             OS="windows"
             DISTRO="windows"
             log_error "Windows detected. Please use the PowerShell installer:"
-            log_info "  iex (irm https://raw.githubusercontent.com/shuwalker/ARES/main/services/controller/scripts/install.ps1)"
+            log_info "  iex (irm https://raw.githubusercontent.com/JenkinsRobotics/ARES/main/services/controller/scripts/install.ps1)"
             exit 1 ;;
         *) OS="unknown"; DISTRO="unknown"; log_warn "Unknown operating system" ;;
     esac

@@ -492,10 +492,18 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
         def close(self):
             pass
 
-        def turn(self, text, session="", *, on_event=None, on_request=None):
-            calls.append((text, session))
+        def turn(self, text, session="", *, workspace="", on_event=None, on_request=None):
+            calls.append((text, session, workspace))
             if on_event:
-                on_event({"type": "tool", "name": "demo", "status": "completed", "preview": "  demo(x)"})
+                on_event({
+                    "type": "tool", "name": "write_file", "phase": "start",
+                    "preview": "write_file(workspace/session_summary.md)",
+                    "args": {"path": "workspace/session_summary.md"},
+                })
+                on_event({
+                    "type": "tool", "name": "write_file", "phase": "done",
+                    "preview": "write_file(workspace/session_summary.md)",
+                })
                 on_event({"type": "state", "message": "thinking"})
             return {"text": "local JROS says hi", "error": None}
 
@@ -508,7 +516,7 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
         model_provider="test-provider",
     )
 
-    assert calls == [("hello jros", f"webui:{sid}")]
+    assert calls == [("hello jros", f"webui:{sid}", "/tmp")]
     events = [item[0] for item in stream._offline_buffer]
     assert "tool" in events
     assert any(
@@ -519,6 +527,9 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
     saved = Session.load(sid)
     assert saved.messages[-1]["content"] == "local JROS says hi"
     assert saved.messages[-1]["backend"] == "jros"
+    assert saved.messages[-1]["tool_calls"] == [{
+        "name": "write_file", "args": {"path": "workspace/session_summary.md"}, "done": True,
+    }]
 
 
 def test_local_fallback_lock_error_is_actionable(monkeypatch, tmp_path):
@@ -631,7 +642,7 @@ def test_broken_pipe_retries_with_fresh_bridge(monkeypatch, tmp_path):
         def close(self):
             pass
 
-        def turn(self, text, session="", *, on_event=None, on_request=None):
+        def turn(self, text, session="", *, workspace="", on_event=None, on_request=None):
             turns.append(text)
             if len(turns) == 1:
                 raise BrokenPipeError(32, "Broken pipe")

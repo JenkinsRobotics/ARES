@@ -951,60 +951,9 @@ function _gatewayStatusReason(status) {
   return typeof health.reason === 'string' ? health.reason.trim() : '';
 }
 
-function _cronGatewayNoticeHtml(status) {
-  if (!status || (status.configured && status.running)) return '';
-  const reason = _gatewayStatusReason(status);
-  const isStaleMetadata = reason === 'gateway_stale_running_state';
-  const isRemoteUnreachable = reason === 'remote_gateway_unreachable';
-  const notConfigured = !status.configured;
-  const title = notConfigured
-    ? 'Gateway not configured'
-    : isStaleMetadata
-      ? 'Gateway metadata stale'
-      : isRemoteUnreachable
-        ? 'Gateway endpoint not reachable'
-        : 'Gateway not running';
-  const body = notConfigured
-    ? 'In Hermes WebUI, scheduled jobs require the Hermes gateway daemon. If this is a single-container Docker install, jobs can be created and run manually here, but scheduled ticks need a gateway container or `hermes gateway` running outside the WebUI.'
-    : isStaleMetadata
-      ? 'The gateway is marked as configured, but its health metadata has gone stale. In Docker, scheduled jobs require a live gateway daemon that refreshes runtime metadata while ticking cron.'
-      : isRemoteUnreachable
-        ? 'The gateway health endpoint is not reachable from WebUI. Verify the configured gateway URL env var (`GATEWAY_HEALTH_URL`, `HERMES_GATEWAY_HEALTH_URL`, `HERMES_API_URL`, or `HERMES_WEBUI_GATEWAY_BASE_URL`) points to a reachable gateway service and network path before relying on cron ticking.'
-        : 'In Hermes WebUI, scheduled jobs require the Hermes gateway daemon to be running. Start the gateway container or `hermes gateway` before relying on offline scheduled runs.';
-  const docsHref = 'https://github.com/nesquena/hermes-webui/blob/master/docs/docker.md#scheduled-jobs-and-the-gateway-daemon';
-  const helpLink = notConfigured || isRemoteUnreachable || isStaleMetadata
-    ? `<p><a href="${docsHref}" target="_blank" rel="noopener">How to enable scheduled jobs in Docker ↗</a></p>`
-    : '';
-  return `
-    <div class="detail-alert-title">${esc(title)}</div>
-    <p>${esc(body)}</p>
-    ${helpLink}
-  `;
-}
-
-async function loadCronGatewayNotice() {
-  const box = $('cronGatewayNotice');
-  if (!box) return;
-  try {
-    const status = await api('/api/gateway/status');
-    const html = _cronGatewayNoticeHtml(status);
-    if (html) {
-      box.innerHTML = html;
-      box.style.display = '';
-    } else {
-      box.innerHTML = '';
-      box.style.display = 'none';
-    }
-  } catch (_) {
-    box.innerHTML = '';
-    box.style.display = 'none';
-  }
-}
-
 async function loadCrons(animate) {
   const box = $('cronList');
   const refreshBtn = $('cronRefreshBtn');
-  loadCronGatewayNotice();
   if (animate && refreshBtn) {
     refreshBtn.style.opacity = '0.5';
     refreshBtn.disabled = true;
@@ -1176,7 +1125,7 @@ function _cronScriptCardHtml(job){
         <div class="detail-card-title">${esc(t('cron_script_card_title') || 'Script')}</div>
         <div class="detail-script">${esc(script)}</div>
         ${workdirRow}
-        <div class="detail-hint cron-script-card-hint">${esc(t('cron_script_path_hint') || 'Resolved under ~/.hermes/scripts/ unless an absolute path. Edit the script file on the server to change behavior.')}</div>
+        <div class="detail-hint cron-script-card-hint">${esc(t('cron_script_path_hint') || 'Legacy script job. The script path is preserved for compatibility; new ARES schedules run through the selected runtime.')}</div>
       </div>`;
 }
 
@@ -1591,7 +1540,7 @@ function _renderCronForm({ name, schedule, prompt, deliver, profile, toast_notif
         <div class="detail-form-row">
           <label for="cronFormScript">${esc(t('cron_script_path_label') || 'Script path')}</label>
           <input type="text" id="cronFormScript" value="${esc(script || '')}" readonly autocomplete="off">
-          <div class="detail-form-hint">${esc(t('cron_script_path_hint') || 'Resolved under ~/.hermes/scripts/ unless an absolute path. Edit the script file on the server to change behavior.')}</div>
+          <div class="detail-form-hint">${esc(t('cron_script_path_hint') || 'Legacy script job. The script path is preserved for compatibility; new ARES schedules run through the selected runtime.')}</div>
         </div>` : '';
   const skillsBlock = isNoAgent ? '' : `
         <div class="detail-form-row">
@@ -3238,7 +3187,7 @@ async function _kanbanPopulateAssigneeSelect(currentValue){
   // it last so the default-selected option is the first profile, not "no one".
   let html = '';
   if (profiles.length) {
-    html += `<optgroup label="${esc(t('kanban_assignee_profiles_label') || 'Hermes profiles')}">`;
+    html += `<optgroup label="${esc(t('kanban_assignee_profiles_label') || 'ARES profiles')}">`;
     html += profiles.map(v => `<option value="${esc(v)}"${v === currentValue ? ' selected' : ''}>${esc(v)}</option>`).join('');
     html += '</optgroup>';
   }
@@ -4457,7 +4406,7 @@ function _renderLlmWikiStatus(d) {
   // becomes config-driven. esc() HTML-escapes but doesn't validate URL scheme.
   const docsUrl = /^https?:\/\//i.test(rawDocsUrl) ? rawDocsUrl : '#';
   const toggleNote = status.toggle_available
-    ? 'Toggle available from configured Hermes Agent setting.'
+    ? 'Toggle available from the selected runtime setting.'
     : (status.toggle_reason || 'No stable LLM Wiki on/off config flag was detected, so this panel is read-only.');
   const statusNote = isReady
     ? 'LLM Wiki is configured and page metadata is visible without exposing wiki content.'

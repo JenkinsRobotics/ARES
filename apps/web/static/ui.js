@@ -1856,7 +1856,7 @@ async function saveDashboardSettings(opts){
     if(opts.raiseOnError) throw err;
   }
 }
-function openHermesDashboard(event){
+function openExternalDashboard(event){
   if(event){event.preventDefault();event.stopPropagation();}
   const btn=event&&event.currentTarget?event.currentTarget:document.querySelector('[data-dashboard-link]');
   const url=(btn&&btn.dataset&&btn.dataset.dashboardUrl)||_dashboardBrowserUrl(_dashboardStatusCache);
@@ -1864,6 +1864,8 @@ function openHermesDashboard(event){
   window.open(url,'_blank','noopener,noreferrer');
   return false;
 }
+// Compatibility alias for extensions and cached pages using the inherited name.
+const openHermesDashboard=openExternalDashboard;
 function _initDashboardLinkProbe(){
   loadDashboardSettings();
   refreshDashboardStatus(true);
@@ -9551,7 +9553,7 @@ document.addEventListener('visibilitychange',_syncSystemHealthMonitorVisibility)
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startSystemHealthMonitor);
 else startSystemHealthMonitor();
 
-// ── Hermes agent/gateway heartbeat alert (#716) ──
+// ── Optional ARES messaging gateway heartbeat alert (#716) ──
 const AGENT_HEALTH_INTERVAL_MS=30000;
 const AGENT_HEALTH_DISMISSED_KEY='agent-health-dismissed';
 let _agentHealthTimer=null;
@@ -9577,7 +9579,7 @@ function _showAgentHealthAlert(payload){
   const title=$('agentHealthTitle');
   const details=$('agentHealthDetails');
   if(!banner) return;
-  if(title) title.textContent='Hermes agent is not responding';
+  if(title) title.textContent='ARES messaging gateway is not responding';
   const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
   if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
   banner.hidden=false;

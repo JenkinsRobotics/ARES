@@ -351,6 +351,30 @@ def should_accept_context_length_refresh(
     return model_changed or not (resolved == 256_000 and persisted > resolved)
 
 
+def _estimate_model_context_length(model: str, provider: str | None = None) -> int:
+    m = str(model or "").lower()
+    p = str(provider or "").lower()
+    if "qwen" in m:
+        return 131_072
+    if "kimi" in m:
+        return 262_144
+    if "glm" in m:
+        return 131_072
+    if "deepseek" in m:
+        return 131_072
+    if "gemma" in m:
+        return 131_072
+    if "grok" in m or p == "xai":
+        return 131_072
+    if "gemini" in m or p == "google" or p == "gemini":
+        return 1_048_576
+    if "claude" in m or p == "anthropic":
+        return 200_000
+    if "gpt-4" in m or "o1" in m or "o3" in m or "o4" in m or p == "openai":
+        return 128_000
+    return 131_072
+
+
 def resolve_context_length_for_session_model(
     model: str | None,
     provider: str | None = None,
@@ -375,7 +399,7 @@ def resolve_context_length_for_session_model(
             cfg=cfg if isinstance(cfg, dict) else {},
         )
         try:
-            return get_model_context_length(
+            res = get_model_context_length(
                 model_for_lookup,
                 lookup.base_url,
                 api_key=lookup.api_key,
@@ -383,10 +407,15 @@ def resolve_context_length_for_session_model(
                 provider=lookup.provider or provider or "",
                 custom_providers=lookup.custom_providers,
             ) or 0
+            if res > 0:
+                return res
         except TypeError:
-            return get_model_context_length(model_for_lookup, lookup.base_url) or 0
+            res = get_model_context_length(model_for_lookup, lookup.base_url) or 0
+            if res > 0:
+                return res
     except Exception:
-        return 0
+        pass
+    return _estimate_model_context_length(model_for_lookup, provider)
 
 
 # Compatibility names preserve the established regression-test vocabulary while

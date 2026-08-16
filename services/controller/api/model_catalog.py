@@ -111,11 +111,11 @@ def _fetch_ollama_cloud_models(api_key: str | None) -> list[dict]:
         ]
     except Exception:
         return [
-            {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud"},
-            {"id": "glm-5.1", "label": "glm-5.1", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud"},
-            {"id": "kimi-k2.7-code", "label": "kimi-k2.7-code", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud"},
-            {"id": "deepseek-v4-pro:0813", "label": "deepseek-v4-pro:0813", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud"},
-            {"id": "gemma4:31b", "label": "gemma4:31b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud"},
+            {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+            {"id": "glm-5.1", "label": "glm-5.1", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+            {"id": "kimi-k2.7-code", "label": "kimi-k2.7-code", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 262144},
+            {"id": "deepseek-v4-pro:0813", "label": "deepseek-v4-pro:0813", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+            {"id": "gemma4:31b", "label": "gemma4:31b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
         ]
 
 

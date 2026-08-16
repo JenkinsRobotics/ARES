@@ -9,7 +9,7 @@ You talk to one thing — one conversation, one memory, one place that knows you
 ## Quick Start
 
 ```bash
-git clone https://github.com/shuwalker/ARES.git
+git clone https://github.com/JenkinsRobotics/ARES.git
 cd ARES
 bash install.sh
 ./start.sh

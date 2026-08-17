@@ -371,6 +371,7 @@ const ARES_PANEL_CAPABILITIES={
 let _aresCapabilityFlags=null;
 let _aresCapabilityRequest=null;
 let _aresCapabilityPayload=null;
+window._hideUnavailableFeatures=window._hideUnavailableFeatures===true;
 
 function _renderRuntimeCapabilityState(payload){
   const banner=$('runtimeCapabilityBanner');
@@ -394,20 +395,27 @@ function _applyAresCapabilityFlags(flags,payload){
   _aresCapabilityFlags=(flags&&typeof flags==='object')?flags:{};
   _aresCapabilityPayload=payload&&typeof payload==='object'?payload:null;
   const ownership=(_aresCapabilityPayload&&_aresCapabilityPayload.capability_ownership)||{};
+  const features=(_aresCapabilityPayload&&_aresCapabilityPayload.capability_features)||{};
+  const hideUnavailable=window._hideUnavailableFeatures===true;
   document.querySelectorAll('[data-requires-capability]').forEach(el=>{
     const capability=String(el.dataset.requiresCapability||'').trim();
     const available=_aresCapabilityFlags[capability]===true;
+    const reason=String((features[capability]&&features[capability].reason)||'').trim();
     el.dataset.capabilityAvailable=available?'true':'false';
     el.dataset.capabilityOwner=String(ownership[capability]||'none');
-    el.hidden=!available;
-    el.setAttribute('aria-hidden',available?'false':'true');
+    el.classList.toggle('capability-unavailable',!available);
+    el.hidden=hideUnavailable&&!available;
+    el.setAttribute('aria-hidden',el.hidden?'true':'false');
+    if(!available&&reason)el.setAttribute('aria-description',`Unavailable: ${reason}`);
+    else el.removeAttribute('aria-description');
   });
   document.querySelectorAll('[data-requires-any-capability]').forEach(el=>{
     const capabilities=String(el.dataset.requiresAnyCapability||'').split(',').map(value=>value.trim()).filter(Boolean);
     const available=capabilities.some(capability=>_aresCapabilityFlags[capability]===true);
     el.dataset.capabilityAvailable=available?'true':'false';
-    el.hidden=!available;
-    el.setAttribute('aria-hidden',available?'false':'true');
+    el.classList.toggle('capability-unavailable',!available);
+    el.hidden=hideUnavailable&&!available;
+    el.setAttribute('aria-hidden',el.hidden?'true':'false');
   });
   document.documentElement.dataset.aresCapabilitiesReady='true';
   document.documentElement.dataset.aresRuntimeState=(
@@ -415,14 +423,20 @@ function _applyAresCapabilityFlags(flags,payload){
   )?'negotiated':'unavailable';
   _renderRuntimeCapabilityState(_aresCapabilityPayload);
   const required=ARES_PANEL_CAPABILITIES[_currentPanel]||[];
-  if(required.length&&!required.some(capability=>_aresCapabilityFlags[capability]===true)){
+  if(hideUnavailable&&required.length&&!required.some(capability=>_aresCapabilityFlags[capability]===true)){
     switchPanel('chat',{bypassCapabilityGuard:true});
   }
-  if(_currentPanel==='settings'&&_settingsSection==='providers'&&_aresCapabilityFlags.cloud_provider_model_settings!==true){
+  if(hideUnavailable&&_currentPanel==='settings'&&_settingsSection==='providers'&&_aresCapabilityFlags.cloud_provider_model_settings!==true){
     switchSettingsSection('conversation');
   }
   return _aresCapabilityFlags;
 }
+
+function setHideUnavailableFeatures(enabled){
+  window._hideUnavailableFeatures=enabled===true;
+  if(_aresCapabilityFlags)_applyAresCapabilityFlags(_aresCapabilityFlags,_aresCapabilityPayload);
+}
+window.setHideUnavailableFeatures=setHideUnavailableFeatures;
 
 async function refreshAresCapabilities(){
   if(_aresCapabilityRequest)return _aresCapabilityRequest;
@@ -434,7 +448,7 @@ async function refreshAresCapabilities(){
       const payload=await response.json();
       return _applyAresCapabilityFlags(payload&&payload.capabilities,payload);
     }catch(error){
-      console.warn('ARES capability negotiation failed; gated UI remains unavailable',error);
+      console.warn('ARES capability negotiation failed; runtime features marked unavailable',error);
       return _applyAresCapabilityFlags({}, {
         capability_negotiated:false,
         capability_error:error&&error.message?error.message:String(error),
@@ -458,7 +472,7 @@ async function switchPanel(name, opts = {}) {
   const nextPanel = name || 'chat';
   const prevPanel = _currentPanel;
   const requiredCapabilities=ARES_PANEL_CAPABILITIES[nextPanel]||[];
-  if(requiredCapabilities.length&&!opts.bypassCapabilityGuard){
+  if(window._hideUnavailableFeatures===true&&requiredCapabilities.length&&!opts.bypassCapabilityGuard){
     const capabilities=await _ensureAresCapabilities();
     if(!requiredCapabilities.some(capability=>capabilities[capability]===true)){
       if(typeof showToast==='function')showToast(`${nextPanel} is unavailable for the selected runtime`,'error');
@@ -9144,6 +9158,8 @@ function _preferencesPayloadFromUi(){
   if(showConversationOutlineCb) payload.show_conversation_outline=showConversationOutlineCb.checked;
   const hideSuggestionsCb=$('settingsHideSuggestions');
   if(hideSuggestionsCb) payload.hide_empty_state_suggestions=hideSuggestionsCb.checked;
+  const hideUnavailableCb=$('settingsHideUnavailableFeatures');
+  if(hideUnavailableCb) payload.hide_unavailable_features=hideUnavailableCb.checked;
   const hideEmptyStatePanelCb=$('settingsHideEmptyStatePanel');
   if(hideEmptyStatePanelCb) payload.hide_empty_state_panel=hideEmptyStatePanelCb.checked;
   const virtualizeTranscriptCb=$('settingsVirtualizeTranscript');
@@ -9298,6 +9314,9 @@ async function _autosavePreferencesSettings(payload){
     if(payload&&payload.hide_empty_state_suggestions!==undefined){
       window._hideEmptyStateSuggestions=!!(saved&&saved.hide_empty_state_suggestions);
       if(typeof applyEmptyStateSuggestionPref==='function') applyEmptyStateSuggestionPref();
+    }
+    if(payload&&payload.hide_unavailable_features!==undefined){
+      setHideUnavailableFeatures(saved&&saved.hide_unavailable_features===true);
     }
     if(payload&&payload.hide_empty_state_panel!==undefined){
       window._hideEmptyStatePanel=!!(saved&&saved.hide_empty_state_panel);
@@ -9705,6 +9724,15 @@ async function loadSettingsPanel(){
       hideSuggestionsCb.addEventListener('change',()=>{
         window._hideEmptyStateSuggestions=hideSuggestionsCb.checked;
         if(typeof applyEmptyStateSuggestionPref==='function') applyEmptyStateSuggestionPref();
+        _schedulePreferencesAutosave();
+      },{once:false});
+    }
+    const hideUnavailableCb=$('settingsHideUnavailableFeatures');
+    if(hideUnavailableCb){
+      hideUnavailableCb.checked=settings.hide_unavailable_features===true;
+      setHideUnavailableFeatures(hideUnavailableCb.checked);
+      hideUnavailableCb.addEventListener('change',()=>{
+        setHideUnavailableFeatures(hideUnavailableCb.checked);
         _schedulePreferencesAutosave();
       },{once:false});
     }

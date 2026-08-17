@@ -57,6 +57,7 @@ class SettingsUpdate(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1)
     context_store_enabled: bool | None = Field(default=None)
     show_cli_sessions: bool | None = Field(default=None)
+    hide_unavailable_features: bool | None = Field(default=None)
     owner_name: str | None = Field(default=None, max_length=120)
     local_profile_voice: Literal["system-default", "disabled"] | None = None
     local_profile_reachability: Literal["this-device", "local-network", "private-network"] | None = None

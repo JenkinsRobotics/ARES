@@ -3242,6 +3242,11 @@ window._mirrorSpeechSettingsFromServer=_mirrorSpeechSettingsFromServer;
     if(typeof applyConversationOutlinePreference==='function') applyConversationOutlinePreference();
     window._hideEmptyStateSuggestions=s.hide_empty_state_suggestions===true;
     applyEmptyStateSuggestionPref();
+    if(typeof setHideUnavailableFeatures==='function'){
+      setHideUnavailableFeatures(s.hide_unavailable_features===true);
+    }else{
+      window._hideUnavailableFeatures=s.hide_unavailable_features===true;
+    }
     window._hideEmptyStatePanel=s.hide_empty_state_panel===true;
     applyEmptyStatePanelPref();
     // #4343: transcript virtualization is EXPERIMENTAL/opt-IN (default OFF).

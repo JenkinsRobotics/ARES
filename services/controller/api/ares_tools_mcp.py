@@ -30,8 +30,13 @@ def _server_config() -> dict[str, Any]:
     if not python.is_file() or not os.access(python, os.X_OK):
         raise AresToolsMCPError(f"ARES Python executable is unavailable: {python}")
     from api.config import ARES_HOME, PORT, STATE_DIR
+    from api.profiles import get_active_profile_name
+
+    profile = get_active_profile_name() or "default"
     return {
-        "command": str(python), "args": [str(script)], "enabled": True,
+        "command": str(python),
+        "args": [str(script), "--profile", profile],
+        "enabled": True,
         "env": {
             "ARES_HOME": str(ARES_HOME),
             "ARES_WEBUI_STATE_DIR": str(STATE_DIR),

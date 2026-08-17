@@ -9,6 +9,7 @@ RED phase: all tests should FAIL until implementation is written.
 from __future__ import annotations
 
 import json
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -142,6 +143,29 @@ class TestToolAdapter:
         with pytest.raises(ValueError, match="Unknown target"):
             register_ares_tools(target="unknown_backend")
 
+    def test_stdio_mcp_server_publishes_canonical_ares_tools(self):
+        from api.ares_tools import ARES_TOOL_DEFS
+        from mcp_server import HANDLERS, TOOLS
+
+        published = {tool.name for tool in TOOLS}
+        expected = {tool["name"] for tool in ARES_TOOL_DEFS}
+        assert expected.issubset(published)
+        assert expected.issubset(HANDLERS)
+
+    def test_stdio_mcp_dispatches_canonical_ares_tool(self, monkeypatch):
+        import mcp_server
+
+        monkeypatch.setattr(
+            "api.workspace_artifacts.list_artifacts",
+            lambda session_id: {"session_id": session_id, "count": 0, "items": []},
+        )
+        result = asyncio.run(mcp_server.call_tool(
+            "ares_list_artifacts", {"session_id": "session-1"}
+        ))
+        assert json.loads(result[0].text) == {
+            "session_id": "session-1", "count": 0, "items": [],
+        }
+
 
 # ── ARES Tools (the actual callable tools) ────────────────────────
 
@@ -154,11 +178,19 @@ class TestAresTools:
             ares_get_runtime_context,
             ares_create_task,
             ares_update_task,
+            ares_extract_pdf,
+            ares_ingest_youtube,
+            ares_edit_image,
+            ares_create_visual_report,
         )
 
         assert callable(ares_get_runtime_context)
         assert callable(ares_create_task)
         assert callable(ares_update_task)
+        assert callable(ares_extract_pdf)
+        assert callable(ares_ingest_youtube)
+        assert callable(ares_edit_image)
+        assert callable(ares_create_visual_report)
 
     def test_get_runtime_context_returns_json(self):
         """ares_get_runtime_context returns valid JSON string."""

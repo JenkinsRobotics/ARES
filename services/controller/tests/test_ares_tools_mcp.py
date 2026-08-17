@@ -6,7 +6,7 @@ def test_enable_configures_and_reloads_through_jaeger(monkeypatch):
 
     calls = []
     monkeypatch.setattr(ares_tools_mcp, "_server_config",
-                        lambda: {"command": "/python", "args": ["/mcp_server.py"], "enabled": True})
+                        lambda: {"command": "/python", "args": ["/mcp_server.py", "--profile", "default"], "enabled": True})
     monkeypatch.setattr(ares_tools_mcp, "_command",
                         lambda command, args: calls.append((command, args)) or {"ok": True})
     monkeypatch.setattr(ares_tools_mcp, "ares_tools_status",
@@ -16,7 +16,7 @@ def test_enable_configures_and_reloads_through_jaeger(monkeypatch):
     assert result["active"] is True
     assert calls == [
         ("configure_mcp_server", {"name": "ares-controller", "config": {
-            "command": "/python", "args": ["/mcp_server.py"], "enabled": True,
+            "command": "/python", "args": ["/mcp_server.py", "--profile", "default"], "enabled": True,
         }}),
         ("reload_tools", {}),
     ]

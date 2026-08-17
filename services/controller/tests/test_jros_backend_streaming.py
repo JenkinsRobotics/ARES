@@ -863,6 +863,11 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     ares_capabilities.reset_capability_contract_cache()
     monkeypatch.setattr(
         ares_capabilities,
+        "_ares_owned_feature_health",
+        lambda _feature: (True, None),
+    )
+    monkeypatch.setattr(
+        ares_capabilities,
         "_jaeger_contract",
         lambda: (
             {
@@ -873,13 +878,6 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
                     "voice_settings": {"available": True},
                     "skills": {"available": True},
                     "tool_inventory": {"available": True, "owner": "jaeger"},
-                    "delegation": {"available": True, "owner": "ares"},
-                    "schedules": {"available": True, "owner": "ares"},
-                    "kanban": {"available": True, "owner": "ares"},
-                    "caldav": {"available": True, "owner": "ares"},
-                    "model_compare": {"available": True, "owner": "ares"},
-                    "teacher_escalation": {"available": True, "owner": "ares"},
-                    "cookbook_model_serving": {"available": True, "owner": "ares"},
                 },
             },
             None,
@@ -900,8 +898,10 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     assert jros_caps["model_compare"] is True
     assert jros_caps["teacher_escalation"] is True
     assert jros_caps["cookbook_model_serving"] is True
+    # ARES-owned capabilities are composed from ARES health, not copied from
+    # Jaeger's provider contract.
     assert all(
-        jros_caps[name] is False
+        jros_caps[name] is True
         for name in (
             "deep_research",
             "image_gallery",
@@ -911,6 +911,9 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
             "youtube_ingest",
         )
     )
+    contract = ares_capabilities.capability_contract_for_backend("jros")
+    assert contract["features"]["image_editor"]["owner"] == "ares"
+    assert contract["features"]["skills"]["owner"] == "runtime"
 
     hermes_caps = ares_capabilities.capabilities_for_backend("hermes_local")
     assert hermes_caps["cloud_provider_model_settings"] is True

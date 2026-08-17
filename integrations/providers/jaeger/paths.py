@@ -76,6 +76,42 @@ def jaeger_launcher() -> Path:
     return jaeger_home() / "jaeger"
 
 
+def jaeger_instances_roots() -> list[Path]:
+    """Return read-only instance discovery roots for the selected install."""
+    explicit = os.environ.get(JAEGER_INSTANCE_DIR_ENV, "").strip()
+    if explicit:
+        return [expand_path(explicit).parent]
+    home = jaeger_home()
+    return [home / ".jaeger_os" / "instances", home / "instances"]
+
+
+def jaeger_models_roots() -> list[Path]:
+    """Return read-only model discovery roots for the selected install."""
+    home = jaeger_home()
+    return [home / ".jaeger_os" / "models", home / "models"]
+
+
+def jaeger_instance_dir(instance: str | None = None) -> Path | None:
+    """Resolve an existing instance directory without guessing a persona name."""
+    explicit = os.environ.get(JAEGER_INSTANCE_DIR_ENV, "").strip()
+    if explicit:
+        return expand_path(explicit)
+    name = str(instance or jros_instance_name() or "").strip()
+    if not name:
+        return None
+    for root in jaeger_instances_roots():
+        candidate = root / name
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def jaeger_identity_candidates(instance: str | None = None) -> list[Path]:
+    """Return identity paths derived exclusively from the selected resolver."""
+    resolved = jaeger_instance_dir(instance)
+    return [resolved / "identity.yaml"] if resolved is not None else []
+
+
 def configured_root_override() -> tuple[str, str] | None:
     """Return ``(env_var_name, raw_value)`` for an explicit root override.
 
@@ -199,7 +235,7 @@ def _read_first_existing_text(paths: list[Path]) -> str | None:
     return None
 
 
-def _active_instance_files() -> list[Path]:
+def jaeger_active_instance_files() -> list[Path]:
     """Known JROS active-instance marker locations, newest runtime first."""
     home = jaeger_home()
     return [
@@ -233,7 +269,7 @@ def jros_instance_name() -> str | None:
     native = os.environ.get("JAEGER_INSTANCE_NAME", "").strip()
     if native:
         return native
-    return _read_first_existing_text(_active_instance_files())
+    return _read_first_existing_text(jaeger_active_instance_files())
 
 
 def jros_config_path() -> Path:

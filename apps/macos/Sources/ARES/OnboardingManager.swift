@@ -13,9 +13,9 @@ final class OnboardingManager: ObservableObject {
     static let shared = OnboardingManager()
     
     @Published var needsOnboarding: Bool = true
-    @Published var agentName: String = "Jarvis"
+    @Published var agentName: String = "My Assistant"
     @Published var agentRole: String = "AI Butler & Companion"
-    @Published var selectedCharacterId: String? = "jarvis"
+    @Published var selectedCharacterId: String?
     @Published var selectedAwakeModel: String? = "qwen2.5-coder:7b"
     @Published var selectedAsleepModel: String? = "llama3.2:1b"
     @Published var networkMode: String = "local"
@@ -72,6 +72,12 @@ final class OnboardingManager: ObservableObject {
             }
             if let recAsleep = json["recommended_asleep_model"] as? String, !recAsleep.isEmpty {
                 self.selectedAsleepModel = recAsleep
+            }
+            if self.selectedCharacterId == nil,
+               let characters = json["characters"] as? [[String: Any]],
+               let firstId = characters.first?["id"] as? String,
+               !firstId.isEmpty {
+                self.selectedCharacterId = firstId
             }
         } catch {
             self.jaegerStatusText = "Jaeger AI: Active"

@@ -240,6 +240,8 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
     from api.models import Session
     from api.providers.jaeger import gateway_streaming as jros_gateway_chat
 
+    monkeypatch.setattr(jros_gateway_chat, "_serving_model_truth", lambda: None)
+
     server, base = _start_fake_gateway()
     _FakeJrosGateway.seen = []
     monkeypatch.setenv("ARES_JROS_GATEWAY_URL", base)

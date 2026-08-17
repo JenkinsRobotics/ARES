@@ -22,13 +22,13 @@ def test_persona_names_apply_only_to_the_elected_jros_runtime(monkeypatch):
     assert jros["identity_kind"] == "character"
 
 
-def test_incomplete_setup_falls_back_to_jarvis(monkeypatch):
+def test_incomplete_setup_uses_neutral_product_fallback(monkeypatch):
     monkeypatch.setattr(identity, "_jros_default_agent_name", lambda: None)
 
     payload = identity.build_identity_payload(bot_name="Ares", backend="jros")
 
-    assert payload["display_name"] == "Jarvis"
-    assert payload["default_display_name"] == "Jarvis"
+    assert payload["display_name"] == "ARES Assistant"
+    assert payload["default_display_name"] == "ARES Assistant"
 
 
 def test_backend_badges_describe_external_runtime_selection(monkeypatch):

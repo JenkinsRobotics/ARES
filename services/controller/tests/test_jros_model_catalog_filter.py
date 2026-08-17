@@ -69,8 +69,8 @@ def test_jros_backend_enriches_available_models(monkeypatch):
 
     monkeypatch.setattr("api.config.get_config", lambda: {"ares_backend": "jaeger_local"})
     monkeypatch.setattr(backend_selector, "get_active_backend", lambda config: config["ares_backend"])
-    monkeypatch.setattr(model_catalog, "_read_jaeger_credential", lambda name: "fake_key" if name == "xai_api_key" else "")
-    monkeypatch.setattr(model_catalog, "_fetch_xai_models", lambda key: [{"id": "grok-4.6", "label": "grok-4.6", "provider": "xai", "provider_id": "xai"}])
+    monkeypatch.setattr(model_catalog, "_jaeger_credential_names", lambda: {"xai_api_key"})
+    monkeypatch.setattr(model_catalog, "_xai_models", lambda: [{"id": "grok-4.6", "label": "grok-4.6", "provider": "xai", "provider_id": "xai"}])
     monkeypatch.setattr(model_catalog, "_fetch_ollama_local_models", lambda: [])
 
     result = model_catalog.filter_catalog_for_active_backend({"groups": []}, enrich=True)

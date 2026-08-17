@@ -10,7 +10,7 @@ existing JaegerAI install by spawning its
         reply = companion.turn("hello", session="myapp")
         print(reply["text"])
 
-Pick an agent:       JrosClient(instance="jarvis")
+Pick an agent:       JrosClient(instance="my-agent")
 Non-default install: JrosClient(jaeger_home="/opt/jaeger")
 Full control:        JrosClient(command=["/path/to/jaeger", "bridge"])
 

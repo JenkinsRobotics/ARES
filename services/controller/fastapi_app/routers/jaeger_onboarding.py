@@ -85,15 +85,9 @@ def _character_search_roots() -> list[Path]:
 
 def _instance_search_roots() -> list[Path]:
     """Instance roots belonging only to the selected JaegerAI dependency."""
-    import os
+    from api.providers.jaeger.paths import jaeger_instances_roots
 
-    from api.providers.jaeger.paths import jaeger_home
-
-    explicit_instance = os.environ.get("JAEGER_INSTANCE_DIR", "").strip()
-    if explicit_instance:
-        path = Path(explicit_instance).expanduser().resolve()
-        return [path.parent]
-    return [jaeger_home() / ".jaeger_os" / "instances"]
+    return jaeger_instances_roots()
 
 
 def _discover_instances() -> list[dict[str, Any]]:
@@ -285,104 +279,28 @@ async def get_jaeger_model_recommendations() -> ModelListResponse:
 
 @router.post("/create-instance")
 async def create_jaeger_instance(request: OnboardingCompleteRequest) -> Dict[str, Any]:
-    """Create a new JaegerAI instance with the specified configuration."""
+    """Ask Jaeger to create its own instance through the onboarding service."""
     try:
-        from jaeger_ai.core.instance.instance import resolve_instance_dir
-        from jaeger_ai.core.instance.schemas import (
-            SCHEMA_VERSION,
-            Config,
-            DisplayConfig,
-            DistributionConfig,
-            Identity,
-            InteractionConfig,
-            Manifest,
-            ModelConfig,
-            PermissionsConfig,
-            RetentionConfig,
-            SkillsConfig,
-            WarmupConfig,
-            dump_yaml,
-        )
+        from api.providers.jaeger.companion import create_companion
 
-        instance_name = request.agent_name.lower().replace(" ", "_").replace("-", "_")
-        instance_dir = resolve_instance_dir(instance_name)
-
-        if instance_dir.exists():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Instance '{instance_name}' already exists at {instance_dir}",
-            )
-
-        identity = Identity(
+        result = create_companion(
+            character_id=request.character_id,
+            name=request.agent_name,
             display_name=request.agent_name,
             role=request.role,
-            personality=f"Plays the {request.character_id} character.",
+            voice_id=request.voice_id,
+            awake_model=request.awake_model,
+            asleep_model=request.asleep_model,
+            make_default=True,
         )
-
-        config = Config(
-            schema_version=SCHEMA_VERSION,
-            model=ModelConfig(
-                awake=request.awake_model,
-                asleep=request.asleep_model if request.asleep_model else request.awake_model,
-            ),
-            permissions=PermissionsConfig(),
-            interaction=InteractionConfig(),
-            skills=SkillsConfig(),
-            warmup=WarmupConfig(),
-            retention=RetentionConfig(),
-            distribution=DistributionConfig(),
-            display=DisplayConfig(),
-        )
-
-        manifest = Manifest(
-            schema_version=SCHEMA_VERSION,
-            name=instance_name,
-            created_by="ares-webui-onboarding",
-        )
-
-        instance_dir.mkdir(parents=True, exist_ok=True)
-
-        (instance_dir / "identity.yaml").write_text(
-            dump_yaml(identity.model_dump()),
-            encoding="utf-8",
-        )
-        (instance_dir / "config.yaml").write_text(
-            dump_yaml(config.model_dump()),
-            encoding="utf-8",
-        )
-        (instance_dir / "manifest.json").write_text(
-            manifest.model_dump_json(indent=2),
-            encoding="utf-8",
-        )
-
-        import subprocess
-
-        try:
-            subprocess.run(
-                ["git", "init"],
-                cwd=instance_dir,
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
-        except Exception as e:
-            logger.warning("Failed to init git repo: %s", e)
-
-        logger.info("Created JaegerAI instance '%s' at %s", instance_name, instance_dir)
-
         return {
             "success": True,
-            "instance_name": instance_name,
-            "instance_path": str(instance_dir),
+            "instance_name": result.get("name"),
+            "instance_path": result.get("instance_dir"),
             "character": request.character_id,
         }
-
-    except ImportError as e:
-        logger.error("JaegerAI not available: %s", e)
-        raise HTTPException(
-            status_code=503,
-            detail="JaegerAI is not installed or not accessible",
-        ) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:

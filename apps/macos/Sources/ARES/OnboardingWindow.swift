@@ -88,7 +88,7 @@ struct OnboardingView: View {
                         onFinish: {
                             Task {
                                 try? await onboardingManager.saveOnboardingState(
-                                    characterId: onboardingManager.selectedCharacterId ?? "jarvis",
+                                    characterId: onboardingManager.selectedCharacterId ?? "default",
                                     awakeModel: onboardingManager.selectedAwakeModel ?? "qwen2.5-coder:7b",
                                     asleepModel: onboardingManager.selectedAsleepModel ?? "llama3.2:1b"
                                 )

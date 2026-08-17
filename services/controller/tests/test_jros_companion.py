@@ -1,258 +1,99 @@
-"""api.providers.jaeger.companion — the "Name your Companion" onboarding step's call
-
-into JROS's own ``create_instance``/``setup_defaults``.
-
-These pin the subprocess contract discovered by live-testing against a real
-JROS checkout: cross-importing ``jaeger_os`` into ARES's own venv fails with
-``ModuleNotFoundError`` (msgspec, llama-cpp-python, ...) because JROS's
-native/ML dependencies only ever get installed into JROS's *own* venv, never
-ARES's. The fix run through ``<jros_root>/.venv/bin/python`` as a subprocess
-instead of importing jaeger_os in-process — these tests mock
-``subprocess.run`` so they never need a real JROS install.
-"""
-from __future__ import annotations
-
-import json
-import types
+"""Companion onboarding uses Jaeger's bridge contract exclusively."""
 
 import pytest
 
 
 def _fake_local_jros_root(root, monkeypatch):
-    # jros_companion does `from api.providers.jaeger.gateway_streaming import local_jros_root`,
-    # so the name lives in jros_companion's own namespace — patch it there,
-    # not on the source module (sys.modules swaps don't reach an already
-    #-bound `from X import Y` name).
-    from api.providers.jaeger import companion as jros_companion
+    from api.providers.jaeger import companion
 
-    monkeypatch.setattr(jros_companion, "local_jros_root", lambda: root)
+    monkeypatch.setattr(companion, "local_jros_root", lambda: root)
 
 
-def _completed_process(stdout="", stderr="", returncode=0):
-    return types.SimpleNamespace(stdout=stdout, stderr=stderr, returncode=returncode)
-
-
-def test_companion_available_false_without_local_jros(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
+def test_companion_availability_uses_install_resolver(monkeypatch, tmp_path):
+    from api.providers.jaeger import companion
 
     _fake_local_jros_root(None, monkeypatch)
-    assert jros_companion.companion_available() is False
-
-
-def test_companion_available_true_with_local_jros(monkeypatch, tmp_path):
-    from api.providers.jaeger import companion as jros_companion
-
+    assert companion.companion_available() is False
     _fake_local_jros_root(tmp_path, monkeypatch)
-    assert jros_companion.companion_available() is True
+    assert companion.companion_available() is True
 
 
-def test_jros_python_prefers_jros_own_venv(tmp_path):
-    from api.providers.jaeger import companion as jros_companion
+def test_setup_defaults_and_exists_are_bridge_queries(monkeypatch):
+    from api.providers.jaeger import companion
 
-    venv_python = tmp_path / ".venv" / "bin" / "python"
-    venv_python.parent.mkdir(parents=True)
-    venv_python.write_text("#!/bin/sh\n")
+    calls = []
 
-    assert jros_companion._jros_python(tmp_path) == venv_python
+    def query(name, args):
+        calls.append((name, args))
+        if name == "instance_exists":
+            return {"exists": True}
+        return {"characters": [{"id": "alpha", "name": "Alpha"}]}
 
-
-def test_jros_python_falls_back_to_ares_interpreter_without_jros_venv(tmp_path):
-    import sys
-
-    from api.providers.jaeger import companion as jros_companion
-
-    assert jros_companion._jros_python(tmp_path) == jros_companion.Path(sys.executable)
-
-
-def test_run_in_jros_venv_uses_jros_own_python(monkeypatch, tmp_path):
-    """The exact bug found live: this must NOT be sys.executable (ARES's
-    venv) when JROS has its own venv — that's what raised
-    ModuleNotFoundError: msgspec against a real install."""
-    from api.providers.jaeger import companion as jros_companion
-
-    _fake_local_jros_root(tmp_path, monkeypatch)
-    venv_python = tmp_path / ".venv" / "bin" / "python"
-    venv_python.parent.mkdir(parents=True)
-    venv_python.write_text("#!/bin/sh\n")
-
-    captured = {}
-
-    def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        captured["cwd"] = kwargs.get("cwd")
-        captured["env"] = kwargs.get("env")
-        return _completed_process(stdout=json.dumps({"ok": True}))
-
-    monkeypatch.setattr(jros_companion.subprocess, "run", fake_run)
-    monkeypatch.setattr(jros_companion, "jros_instance_name", lambda: None)
-
-    result = jros_companion._run_in_jros_venv("print('hi')")
-
-    assert result == {"ok": True}
-    assert captured["cmd"][0] == str(venv_python)
-    assert captured["cwd"] == str(tmp_path)
-
-
-def test_run_in_jros_venv_passes_configured_instance_name(monkeypatch, tmp_path):
-    from api.providers.jaeger import companion as jros_companion
-
-    _fake_local_jros_root(tmp_path, monkeypatch)
-
-    captured = {}
-
-    def fake_run(cmd, **kwargs):
-        captured["env"] = kwargs.get("env")
-        return _completed_process(stdout="{}")
-
-    monkeypatch.setattr(jros_companion.subprocess, "run", fake_run)
-    monkeypatch.setattr(jros_companion, "jros_instance_name", lambda: "jros-dev")
-
-    jros_companion._run_in_jros_venv("...")
-
-    assert captured["env"]["ARES_JROS_INSTANCE"] == "jros-dev"
-
-
-def test_run_in_jros_venv_raises_on_nonzero_exit(monkeypatch, tmp_path):
-    from api.providers.jaeger import companion as jros_companion
-
-    _fake_local_jros_root(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        jros_companion.subprocess, "run",
-        lambda *a, **k: _completed_process(stderr="boom", returncode=1),
+        "api.providers.jaeger.gateway_streaming.query_local_companion", query)
+    assert companion.companion_exists() is True
+    assert companion.list_characters() == [{"id": "alpha", "name": "Alpha"}]
+    assert calls == [("instance_exists", {}), ("setup_defaults", {})]
+
+
+def test_companion_exists_fails_closed(monkeypatch):
+    from api.providers.jaeger import companion
+
+    monkeypatch.setattr(
+        "api.providers.jaeger.gateway_streaming.query_local_companion",
+        lambda *args: (_ for _ in ()).throw(RuntimeError("offline")),
     )
-    monkeypatch.setattr(jros_companion, "jros_instance_name", lambda: None)
-
-    with pytest.raises(RuntimeError, match="boom"):
-        jros_companion._run_in_jros_venv("...")
+    assert companion.companion_exists() is False
 
 
-def test_run_in_jros_venv_raises_without_local_jros(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
-
-    _fake_local_jros_root(None, monkeypatch)
-
-    with pytest.raises(RuntimeError, match="No local JaegerAI install"):
-        jros_companion._run_in_jros_venv("...")
-
-
-def test_companion_setup_defaults_parses_subprocess_json(monkeypatch, tmp_path):
-    from api.providers.jaeger import companion as jros_companion
-
-    payload = {
-        "host_memory_gb": 32.0,
-        "default_character": "jarvis",
-        "voices": [{"id": "am_michael", "label": "Michael"}],
-        "permission_modes": [{"id": "confirm", "label": "Ask me before each action"}],
-        "characters": [{"id": "jarvis", "name": "Jarvis", "role": "", "voice_id": "", "voice_tone": ""}],
-    }
-    monkeypatch.setattr(jros_companion, "_run_in_jros_venv", lambda *a, **k: payload)
-
-    assert jros_companion.companion_setup_defaults() == payload
-    assert jros_companion.list_characters() == payload["characters"]
-
-
-def test_companion_exists_true(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
-
-    monkeypatch.setattr(jros_companion, "_run_in_jros_venv", lambda *a, **k: {"exists": True})
-    assert jros_companion.companion_exists() is True
-
-
-def test_companion_exists_swallows_errors(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
-
-    def raise_it(*a, **k):
-        raise RuntimeError("no jros")
-
-    monkeypatch.setattr(jros_companion, "_run_in_jros_venv", raise_it)
-    assert jros_companion.companion_exists() is False
-
-
-def test_create_companion_fallback_to_first_character_when_blank(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
+def test_create_companion_is_bridge_command(monkeypatch):
+    from api.providers.jaeger import companion
 
     captured = {}
+    monkeypatch.setattr(
+        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        lambda command, payload: captured.update(command=command, payload=payload) or {
+            "instance": "alpha-agent", "root": "/runtime/alpha-agent"},
+    )
 
-    def fake_run(script, *, stdin_payload=None):
-        captured["payload"] = stdin_payload
-        return {"ok": True, "name": "test-soul", "instance_dir": "/x/y/test-soul"}
+    result = companion.create_companion(
+        character_id="alpha",
+        display_name="Alpha",
+        role="Assistant",
+        voice_id="voice-1",
+        awake_model="awake-model",
+        asleep_model="asleep-model",
+        make_default=False,
+    )
 
-    def fake_defaults():
-        return {
-            "characters": [
-                {"id": "jarvis", "name": "Jarvis"},
-                {"id": "tars", "name": "TARS"},
-            ]
-        }
-
-    monkeypatch.setattr(jros_companion, "_run_in_jros_venv", fake_run)
-    monkeypatch.setattr(jros_companion, "companion_setup_defaults", fake_defaults)
-
-    # Empty character_id falls back to the first available character.
-    result = jros_companion.create_companion(character_id="", display_name="Test Soul")
-    assert result["ok"] is True
-    assert captured["payload"]["character_id"] == "jarvis"
-
-    # "default" also falls back.
-    captured.clear()
-    result = jros_companion.create_companion(character_id="default", display_name="Test Soul")
-    assert captured["payload"]["character_id"] == "jarvis"
+    assert result == {
+        "ok": True, "name": "alpha-agent",
+        "instance_dir": "/runtime/alpha-agent", "owner": "jaeger"}
+    assert captured["command"] == "create_instance"
+    assert captured["payload"]["character_id"] == "alpha"
+    assert captured["payload"]["display_name"] == "Alpha"
+    assert captured["payload"]["role"] == "Assistant"
+    assert captured["payload"]["awake_model"] == "awake-model"
+    assert captured["payload"]["asleep_model"] == "asleep-model"
+    assert captured["payload"]["make_default"] is False
 
 
-def test_create_companion_fails_when_no_characters_installed(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
+def test_blank_character_uses_runtime_roster(monkeypatch):
+    from api.providers.jaeger import companion
 
-    def fake_defaults():
-        return {"characters": []}
+    monkeypatch.setattr(companion, "list_characters", lambda: [{"id": "alpha"}])
+    captured = {}
+    monkeypatch.setattr(
+        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        lambda command, payload: captured.update(payload) or {"instance": "a", "root": "/a"},
+    )
+    companion.create_companion(character_id="default")
+    assert captured["character_id"] == "alpha"
 
-    monkeypatch.setattr(jros_companion, "companion_setup_defaults", fake_defaults)
 
+def test_blank_character_fails_when_roster_is_empty(monkeypatch):
+    from api.providers.jaeger import companion
+
+    monkeypatch.setattr(companion, "list_characters", lambda: [])
     with pytest.raises(ValueError, match="No characters are installed"):
-        jros_companion.create_companion(character_id="")
-
-
-def test_create_companion_success(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
-
-    captured = {}
-
-    def fake_run(script, *, stdin_payload=None):
-        captured["payload"] = stdin_payload
-        return {"ok": True, "name": "jarvis-jaeger", "instance_dir": "/x/y/jarvis-jaeger"}
-
-    monkeypatch.setattr(jros_companion, "_run_in_jros_venv", fake_run)
-
-    result = jros_companion.create_companion(
-        character_id="jarvis", display_name="Jarvis", voice_id="am_michael",
-    )
-
-    assert result == {"ok": True, "name": "jarvis-jaeger", "instance_dir": "/x/y/jarvis-jaeger"}
-    assert captured["payload"]["character_id"] == "jarvis"
-    assert captured["payload"]["display_name"] == "Jarvis"
-    assert captured["payload"]["voice_id"] == "am_michael"
-    assert captured["payload"]["permission_mode"] == "confirm"
-    assert captured["payload"]["make_default"] is True
-
-
-def test_create_companion_raises_friendly_error_when_name_taken(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
-
-    monkeypatch.setattr(
-        jros_companion, "_run_in_jros_venv",
-        lambda *a, **k: {"ok": False, "error": "exists", "message": "instance exists"},
-    )
-
-    with pytest.raises(ValueError, match="already exists"):
-        jros_companion.create_companion(character_id="jarvis", name="jarvis-jaeger")
-
-
-def test_create_companion_raises_on_unknown_character(monkeypatch):
-    from api.providers.jaeger import companion as jros_companion
-
-    monkeypatch.setattr(
-        jros_companion, "_run_in_jros_venv",
-        lambda *a, **k: {"ok": False, "error": "unknown_character", "message": "unknown character: 'nope'"},
-    )
-
-    with pytest.raises(ValueError, match="unknown character"):
-        jros_companion.create_companion(character_id="nope")
+        companion.create_companion(character_id="")

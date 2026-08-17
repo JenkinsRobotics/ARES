@@ -136,109 +136,40 @@ def _stamp_ollama_context_lengths(models: list[dict], api_key: str | None = None
     return models
 
 
-def _fetch_ollama_cloud_models(api_key: str | None) -> list[dict]:
-    """Fetch available models from Ollama Cloud."""
-    if not api_key:
-        return []
-    import json
-    import urllib.request
+def _ollama_cloud_models() -> list[dict]:
+    """Curated catalog; ARES never receives Jaeger's raw provider secret."""
+    return [
+        {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+        {"id": "glm-5.1", "label": "glm-5.1", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+        {"id": "kimi-k2.7-code", "label": "kimi-k2.7-code", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 262144},
+        {"id": "deepseek-v4-pro:0813", "label": "deepseek-v4-pro:0813", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+        {"id": "gemma4:31b", "label": "gemma4:31b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+    ]
+
+
+def _jaeger_credential_names() -> set[str]:
+    """Return names only through Jaeger's credential bridge contract."""
     try:
-        req = urllib.request.Request(
-            "https://ollama.com/v1/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read())
-        return _stamp_ollama_context_lengths([
-            {
-                "id": m.get("id", ""),
-                "label": m.get("id", ""),
-                "provider": "ollama-cloud",
-                "provider_id": "ollama-cloud",
-                "location": "cloud",
-            }
-            for m in data.get("data", [])
-            if m.get("id")
-        ], api_key)
+        from api.runtime_credentials import list_runtime_credentials
+
+        return list_runtime_credentials()
     except Exception:
-        return [
-            {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
-            {"id": "glm-5.1", "label": "glm-5.1", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
-            {"id": "kimi-k2.7-code", "label": "kimi-k2.7-code", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 262144},
-            {"id": "deepseek-v4-pro:0813", "label": "deepseek-v4-pro:0813", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
-            {"id": "gemma4:31b", "label": "gemma4:31b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
-        ]
+        logger.debug("Jaeger credential inventory unavailable", exc_info=True)
+        return set()
 
 
-def _read_jaeger_credential(name: str) -> str:
-    """Read a credential from the Jaeger instance credentials store or process env."""
-    try:
-        from api.providers.jaeger.paths import jaeger_home
-        jhome = jaeger_home()
-        candidates = [
-            jhome / ".jaeger_os" / "instances" / "jarvis" / "credentials",
-            jhome / ".jaeger_os" / "credentials",
-            jhome / "instances" / "jarvis" / "credentials",
-            Path.home() / "GitHub" / "JaegerAI" / ".jaeger_os" / "instances" / "jarvis" / "credentials",
-            Path.home() / ".jaeger" / "credentials",
-            Path.home() / ".jaeger_os" / "credentials",
-        ]
-        for cand_dir in candidates:
-            cred_file = cand_dir / name
-            if cred_file.is_file():
-                txt = cred_file.read_text(encoding="utf-8").strip()
-                if txt:
-                    return txt
-    except Exception:
-        pass
-    env_map = {
-        "xai_api_key": "XAI_API_KEY",
-        "ollama_cloud_api_key": "OLLAMA_API_KEY",
-        "openai_api_key": "OPENAI_API_KEY",
-        "anthropic_api_key": "ANTHROPIC_API_KEY",
-        "gemini_api_key": "GEMINI_API_KEY",
-    }
-    env_var = env_map.get(name)
-    if env_var:
-        return os.environ.get(env_var, "").strip()
-    return ""
-
-
-def _fetch_xai_models(api_key: str | None) -> list[dict]:
-    """Fetch live or curated xAI models."""
-    if not api_key:
-        return []
-    import json
-    import urllib.request
-    try:
-        req = urllib.request.Request(
-            "https://api.x.ai/v1/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read())
-        return [
-            {
-                "id": m.get("id", ""),
-                "label": m.get("id", ""),
-                "provider": "xai",
-                "provider_id": "xai",
-                "location": "cloud",
-            }
-            for m in data.get("data", [])
-            if m.get("id")
-        ]
-    except Exception:
-        return [
-            {
-                "id": m["id"],
-                "label": m["label"],
-                "provider": "xai",
-                "provider_id": "xai",
-                "location": "cloud",
-            }
-            for m in XAI_CURATED_MODELS
-        ]
+def _xai_models() -> list[dict]:
+    """Curated catalog; live authentication remains inside Jaeger."""
+    return [
+        {
+            "id": m["id"],
+            "label": m["label"],
+            "provider": "xai",
+            "provider_id": "xai",
+            "location": "cloud",
+        }
+        for m in XAI_CURATED_MODELS
+    ]
 
 
 def _get_jaeger_local_models() -> list[dict]:
@@ -409,11 +340,11 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
     default_info = discovered.get("default") or {}
     configured_default_model = str(default_info.get("model") or "").strip()
     configured_default_provider = str(default_info.get("provider") or "").strip().lower()
+    credential_names = _jaeger_credential_names()
 
     # Append xAI if configured
-    xai_key = _read_jaeger_credential("xai_api_key")
-    if xai_key and "xai" not in existing_pids:
-        xai_models = _fetch_xai_models(xai_key)
+    if "xai_api_key" in credential_names and "xai" not in existing_pids:
+        xai_models = _xai_models()
         if xai_models:
             groups.append({
                 "provider": "xAI (Grok)",
@@ -424,9 +355,8 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             existing_pids.add("xai")
 
     # Append Ollama Cloud if configured
-    ollama_cloud_key = _read_jaeger_credential("ollama_cloud_api_key")
-    if ollama_cloud_key and "ollama-cloud" not in existing_pids:
-        cloud_models = _fetch_ollama_cloud_models(ollama_cloud_key)
+    if "ollama_cloud_api_key" in credential_names and "ollama-cloud" not in existing_pids:
+        cloud_models = _ollama_cloud_models()
         if cloud_models:
             groups.append({
                 "provider": "Ollama Cloud",
@@ -461,8 +391,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             existing_pids.add("local")
 
     # Append OpenAI if configured
-    openai_key = _read_jaeger_credential("openai_api_key")
-    if openai_key and "openai" not in existing_pids:
+    if "openai_api_key" in credential_names and "openai" not in existing_pids:
         groups.append({
             "provider": "OpenAI",
             "provider_id": "openai",
@@ -481,8 +410,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
         existing_pids.add("openai")
 
     # Append Anthropic if configured
-    anthropic_key = _read_jaeger_credential("anthropic_api_key")
-    if anthropic_key and "anthropic" not in existing_pids:
+    if "anthropic_api_key" in credential_names and "anthropic" not in existing_pids:
         groups.append({
             "provider": "Anthropic",
             "provider_id": "anthropic",
@@ -501,8 +429,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
         existing_pids.add("anthropic")
 
     # Append Gemini if configured
-    gemini_key = _read_jaeger_credential("gemini_api_key")
-    if gemini_key and "gemini" not in existing_pids:
+    if "gemini_api_key" in credential_names and "gemini" not in existing_pids:
         groups.append({
             "provider": "Google Gemini",
             "provider_id": "gemini",

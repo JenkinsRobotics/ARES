@@ -16,17 +16,14 @@ from __future__ import annotations
 import logging
 import datetime
 import json
-from pathlib import Path
 from typing import Any, Dict
-
-import yaml
 
 from api.paths import HOME
 
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_AI_FALLBACK = "Jarvis"
+_DEFAULT_AI_FALLBACK = "ARES Assistant"
 
 
 def _clean_text(value: Any) -> str:
@@ -63,45 +60,17 @@ def _persona_display_name(persona_id: str | None) -> str | None:
     return pid.replace("_", " ").replace("-", " ").title()
 
 
-def _jros_identity_path_candidates() -> list[Path]:
-    candidates: list[Path] = []
-    try:
-        from api.providers.jaeger.paths import jaeger_home, jros_config_path, jros_instance_name
-
-        config_path = jros_config_path()
-        candidates.append(config_path.with_name("identity.yaml"))
-        instance_name = jros_instance_name()
-        if instance_name:
-            candidates.append(jaeger_home() / ".jaeger_os" / "instances" / instance_name / "identity.yaml")
-            candidates.append(Path("~/.jaeger/instances").expanduser() / instance_name / "identity.yaml")
-        candidates.append(jaeger_home() / ".jaeger_os" / "instances" / "default" / "identity.yaml")
-    except Exception:
-        logger.debug("Failed to resolve JROS identity path candidates", exc_info=True)
-    candidates.append(Path("~/.jaeger/instances/default/identity.yaml").expanduser())
-    return candidates
-
-
 def _jros_default_agent_name() -> str | None:
-    seen: set[Path] = set()
-    for path in _jros_identity_path_candidates():
-        try:
-            resolved = path.expanduser().resolve(strict=False)
-        except OSError:
-            continue
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        try:
-            if not resolved.exists():
-                continue
-            data = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
-        except Exception:
-            logger.debug("Failed to read JROS identity file %s", resolved, exc_info=True)
-            continue
-        if isinstance(data, dict):
-            name = _clean_text(data.get("name")) or _clean_text(data.get("display_name"))
+    try:
+        from api.providers.jaeger.gateway_streaming import query_local_companion
+
+        identity = query_local_companion("identity", {})
+        if isinstance(identity, dict):
+            name = _clean_text(identity.get("agent_name"))
             if name:
                 return name
+    except Exception:
+        logger.debug("Failed to query Jaeger identity", exc_info=True)
     return None
 
 
@@ -156,7 +125,7 @@ def get_assistant_display_name(
       2. If JROS is active and a character is selected, show the
          character/person being messaged.
       3. Otherwise show the user's default AI name from settings/JROS identity.
-      4. Fall back to Jarvis for incomplete setup.
+      4. Fall back to a neutral product label for incomplete setup.
     """
     profile_name = _profile_display_name(profile)
     if profile_name:

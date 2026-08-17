@@ -117,6 +117,9 @@ def rename_session(session_id: str, title: str):
     from api.session_ops import apply_session_title_rename
 
     session = get_or_materialize_session(session_id)
+    from api.session_contract import require_operation
+
+    require_operation("rename", session=session)
     with _get_session_agent_lock(session_id):
         apply_session_title_rename(session, title)
         session.save()
@@ -196,6 +199,13 @@ def clear_session(session_id: str):
     from api.session_ops import apply_session_title_rename, truncate_session_at_keep
 
     session = get_session(session_id)
+    from api.session_contract import require_operation, runtime_command, runtime_owns_transcript
+
+    require_operation("clear", session=session)
+    if runtime_owns_transcript(session):
+        runtime_command("clear", session_id)
+        session.transcript_owner = "jaeger"
+        session.runtime_message_count = 0
     with _get_session_agent_lock(session_id):
         had_messages = bool(session.messages or [])
         truncate_session_at_keep(session, 0)
@@ -525,6 +535,9 @@ def set_session_archived(session_id: str, archived: bool = True):
                 updated_at=metadata.get("updated_at"),
             )
             apply_source_metadata(session, metadata)
+    from api.session_contract import require_operation
+
+    require_operation("archive", session=session)
     with _get_session_agent_lock(session_id):
         session.archived = bool(archived)
         session.save(touch_updated_at=False)
@@ -617,7 +630,10 @@ def delete_session(session_id: str) -> dict[str, Any]:
             loaded = get_session(session_id)
         except Exception:
             loaded = None
-    jaeger_owned = bool(
+    from api.session_contract import require_operation, runtime_command, runtime_owns_transcript
+
+    canonical_jaeger_owned = runtime_owns_transcript(loaded)
+    jaeger_owned = canonical_jaeger_owned or bool(
         loaded is not None
         and any(
             isinstance(message, dict) and message.get("backend") == "jros"
@@ -629,9 +645,9 @@ def delete_session(session_id: str) -> dict[str, Any]:
         # preserve the ARES copy so refresh cannot resurrect a half-deleted
         # conversation and the operator gets an actionable error.
         try:
-            from api.providers.jaeger.gateway_streaming import command_local_companion
-
-            command_local_companion("delete_session", {"id": f"webui:{session_id}"})
+            if canonical_jaeger_owned:
+                require_operation("delete", session=loaded, backend="jaeger_local")
+            runtime_command("delete", session_id)
         except Exception as exc:
             raise SessionMutationError(
                 f"Jaeger session deletion failed; nothing was removed: {exc}", 502,
@@ -665,7 +681,7 @@ def delete_session(session_id: str) -> dict[str, Any]:
         prune_session_from_index(session_id)
     except Exception:
         logger.debug("Failed to prune session index for %s", session_id, exc_info=True)
-    if sidecar_deleted and not is_messaging:
+    if sidecar_deleted:
         try:
             _record_webui_deleted_session_tombstone(session_id)
         except Exception:

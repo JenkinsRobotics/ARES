@@ -1120,6 +1120,8 @@ class Session:
                  truncation_boundary=None,
                  clear_generation=None,
                  ares_backend=None,
+                 transcript_owner=None,
+                 runtime_message_count=None,
                  gateway_routing=None, gateway_routing_history=None,
                  llm_title_generated: bool=False,
                  manual_title: bool=False,
@@ -1196,6 +1198,8 @@ class Session:
             if str(ares_backend or "").strip()
             else None
         )
+        self.transcript_owner = str(transcript_owner or "").strip().lower() or None
+        self.runtime_message_count = _parse_nonnegative_int(runtime_message_count)
         self.gateway_routing = gateway_routing if isinstance(gateway_routing, dict) else None
         self.gateway_routing_history = gateway_routing_history if isinstance(gateway_routing_history, list) else []
         self.llm_title_generated = bool(llm_title_generated)
@@ -1282,6 +1286,7 @@ class Session:
             'truncation_boundary',
             'clear_generation',
             'ares_backend',
+            'transcript_owner', 'runtime_message_count',
             'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
             'parent_session_id',
             'worktree_path', 'worktree_branch', 'worktree_repo_root', 'worktree_created_at',
@@ -1297,7 +1302,12 @@ class Session:
         # scene bodies. message_count is placed BEFORE anchor_scene_index so a
         # legacy-format reader that stops at a scene key still finds the count.
         # The full anchor_activity_scenes bodies serialize AFTER messages.
-        meta['message_count'] = len(self.messages or [])
+        canonical_runtime_transcript = self.transcript_owner == 'jaeger'
+        meta['message_count'] = (
+            int(self.runtime_message_count or 0)
+            if canonical_runtime_transcript
+            else len(self.messages or [])
+        )
         meta['anchor_scene_index'] = _anchor_scene_index_from_records(self.anchor_activity_scenes)
         # Keep the in-memory fingerprint aligned with what we just persisted, so a
         # later metadata-only reload of THIS object (or any fingerprint reader)
@@ -1305,8 +1315,11 @@ class Session:
         # defense-in-depth; the cached-side freshness check reads real records,
         # not this, so this is belt-and-suspenders).
         self._anchor_scene_index = dict(meta['anchor_scene_index'])
-        meta['messages'] = self.messages
-        meta['tool_calls'] = self.tool_calls
+        # Runtime-owned transcripts never enter the ARES product-state file.
+        # The in-memory rows may briefly carry a live projection for SSE/UI
+        # rendering, but Jaeger remains the sole durable transcript store.
+        meta['messages'] = [] if canonical_runtime_transcript else self.messages
+        meta['tool_calls'] = [] if canonical_runtime_transcript else self.tool_calls
         meta['anchor_activity_scenes'] = self.anchor_activity_scenes if isinstance(self.anchor_activity_scenes, dict) else {}
         # Fields not in METADATA_FIELDS (e.g. last_usage) go at the end. Exclude
         # the keys we placed explicitly above so they aren't emitted twice.
@@ -1349,6 +1362,8 @@ class Session:
                     existing_msg_count = -1  # corrupt → always back up
                 incoming_msg_count = len(self.messages or [])
                 if (
+                    not canonical_runtime_transcript
+                    and
                     existing_msg_count > 0
                     and incoming_msg_count == 0
                     and (self.active_stream_id or self.pending_user_message)
@@ -1362,7 +1377,7 @@ class Session:
                         self.active_stream_id,
                     )
                     return
-                if existing_msg_count > incoming_msg_count:
+                if not canonical_runtime_transcript and existing_msg_count > incoming_msg_count:
                     bak_path = self.path.with_suffix('.json.bak')
                     # SHOULD-FIX #2 (Opus): atomic write via tmp+replace,
                     # mirroring the main save() pattern below. Prevents a
@@ -1403,7 +1418,7 @@ class Session:
             except Exception:
                 pass
             raise
-        if not skip_index and len(self.messages) > 0:
+        if not skip_index and (len(self.messages) > 0 or canonical_runtime_transcript):
             title_lower = (self.title or "").lower()
             is_probe = (
                 "reply with" in title_lower
@@ -1615,7 +1630,9 @@ class Session:
         active_stream_ids = active_stream_ids if active_stream_ids is not None else set()
         has_pending_user_message = bool(self.pending_user_message)
         message_count = (
-            self._metadata_message_count
+            self.runtime_message_count
+            if self.transcript_owner == 'jaeger' and self.runtime_message_count is not None
+            else self._metadata_message_count
             if self._metadata_message_count is not None
             else len(self.messages)
         )
@@ -1661,6 +1678,8 @@ class Session:
             'compression_recovery': self.compression_recovery,
             'recommended_recovery_action': self.recommended_recovery_action,
             'ares_backend': self.ares_backend,
+            'transcript_owner': self.transcript_owner,
+            'session_contract_version': 2 if self.transcript_owner == 'jaeger' else None,
             'gateway_routing': self.gateway_routing,
             'gateway_routing_history': self.gateway_routing_history,
             'manual_title': self.manual_title,

@@ -19,6 +19,57 @@ _TOOL_CONTENT_NOTICE = (
 )
 
 
+def _authoritative_jaeger_transcript(session) -> tuple[list[dict], list[dict]] | None:
+    """Load the canonical transcript when the selected runtime owns it."""
+    from api.backend_catalog import JAEGER_BACKEND_ID
+    from api.session_contract import (
+        backend_for_session,
+        require_operation,
+        runtime_owns_transcript,
+        runtime_query,
+    )
+
+    if (
+        backend_for_session(session) != JAEGER_BACKEND_ID
+        or not runtime_owns_transcript(session)
+    ):
+        return None
+    require_operation("load", session=session)
+    rows = runtime_query("load", session_id=session.session_id)
+    if not isinstance(rows, list):
+        raise RuntimeError("Jaeger returned an invalid session transcript")
+    messages: list[dict] = []
+    tool_calls: list[dict] = []
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        role = str(raw.get("role") or "").strip().lower()
+        if role not in {"user", "assistant", "system", "tool"}:
+            continue
+        message = {
+            "role": role,
+            "content": str(raw.get("text") or ""),
+            "timestamp": float(raw.get("ts") or 0),
+        }
+        if role == "assistant":
+            message["backend"] = "jros"
+        metadata = raw.get("metadata")
+        runtime_tools = metadata.get("tool_calls") if isinstance(metadata, dict) else None
+        if isinstance(runtime_tools, list) and runtime_tools:
+            normalized = []
+            for item in runtime_tools:
+                if isinstance(item, dict):
+                    call = dict(item)
+                else:
+                    call = {"name": "jaeger", "args": {"activity": str(item)}, "done": True}
+                call.setdefault("assistant_msg_idx", len(messages))
+                normalized.append(call)
+                tool_calls.append(call)
+            message["tool_calls"] = normalized
+        messages.append(message)
+    return messages, tool_calls
+
+
 def metadata_only_message_summary(session_id: str, profile: str | None = None) -> dict:
     """Return a profile-scoped transcript summary without loading full rows."""
 
@@ -192,7 +243,11 @@ def project_session_detail(
 
     metadata = lookup_cli_session_metadata(session.session_id) if session_requires_cli_metadata_lookup(session) else {}
     messaging = is_messaging_session_record(session) or is_messaging_session_record(metadata)
-    if messaging:
+    canonical_runtime = _authoritative_jaeger_transcript(session) if load_messages else None
+    runtime_tool_calls: list[dict] | None = None
+    if canonical_runtime is not None:
+        all_messages, runtime_tool_calls = canonical_runtime
+    elif messaging:
         all_messages = merged_session_messages_for_display(
             session,
             get_cli_session_messages(session.session_id, profile=getattr(session, "profile", None)),
@@ -243,9 +298,17 @@ def project_session_detail(
         messages_start=offset,
         messages_has_more=offset > 0,
         tool_calls=(
-            tool_calls_for_message_window(getattr(session, "tool_calls", []), offset, len(messages))
+            tool_calls_for_message_window(
+                runtime_tool_calls if runtime_tool_calls is not None else getattr(session, "tool_calls", []),
+                offset,
+                len(messages),
+            )
             if message_limit is not None
-            else list(getattr(session, "tool_calls", []) or [])
+            else list(
+                runtime_tool_calls
+                if runtime_tool_calls is not None
+                else (getattr(session, "tool_calls", []) or [])
+            )
         ) if load_messages else [],
         active_stream_id=getattr(session, "active_stream_id", None),
         pending_user_message=getattr(session, "pending_user_message", None),

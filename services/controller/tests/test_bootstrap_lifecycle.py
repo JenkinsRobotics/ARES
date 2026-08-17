@@ -11,7 +11,32 @@ from pathlib import Path
 
 import pytest
 
+import bootstrap
 from bootstrap import check_port_in_use, install_child_signal_handlers, write_pid_file
+
+
+class _Response:
+    def __init__(self, body: bytes):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def read(self):
+        return self.body
+
+
+def test_health_ok_parses_compact_json(monkeypatch):
+    monkeypatch.setattr(
+        bootstrap.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _Response(b'{"status":"ok"}'),
+    )
+
+    assert bootstrap._health_ok("http://127.0.0.1:8788/health") is True
 
 
 def test_check_port_in_use():

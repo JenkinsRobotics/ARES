@@ -609,6 +609,14 @@ def delete_session(session_id: str) -> dict[str, Any]:
         loaded = Session.load(session_id)
     except Exception:
         loaded = None
+    if loaded is None:
+        # Jaeger-backed WebUI sessions can be reconstructed from the runtime
+        # and journals without having a JSON sidecar.  Load through the public
+        # resolver before deciding whether a peer-runtime copy exists.
+        try:
+            loaded = get_session(session_id)
+        except Exception:
+            loaded = None
     jaeger_owned = bool(
         loaded is not None
         and any(

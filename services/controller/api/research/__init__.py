@@ -1,14 +1,27 @@
-"""Compatibility package: sources live under core/knowledge/research."""
-from __future__ import annotations
+"""ARES-owned research service."""
 
-import sys
-from pathlib import Path
+from .deep_researcher import DeepResearcher
+from .handler import ResearchHandler
 
-_MONOREPO_ROOT = Path(__file__).resolve().parents[4]
-_REAL_DIR = _MONOREPO_ROOT / "core" / "knowledge" / "research"
-if str(_MONOREPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_MONOREPO_ROOT))
 
-__path__ = [str(_REAL_DIR)]  # type: ignore[name-defined]
+def health_probe() -> None:
+    """Raise when ARES cannot execute the local half of deep research."""
+    from api.backend_selector import get_active_backend
+    from api.backends.router import get_router
+    from api.config import get_config
 
-from core.knowledge.research import *  # noqa: E402,F401,F403
+    config = get_config()
+    search = config.get("search") if isinstance(config, dict) else None
+    search_url = (
+        search.get("searxng_url") or search.get("search_url")
+        if isinstance(search, dict)
+        else None
+    )
+    if not str(search_url or "").strip():
+        raise RuntimeError("Deep Research requires a configured search service")
+    backend_id = get_active_backend(config)
+    if get_router().select(backend_id) is None:
+        raise RuntimeError(f"Runtime unavailable: {backend_id}")
+
+
+__all__ = ["DeepResearcher", "ResearchHandler", "health_probe"]

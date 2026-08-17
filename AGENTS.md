@@ -23,17 +23,12 @@ directly.
 
 ```
 ARES/
-├── apps/web/                  # React UI (what you see in the browser)
-│   └── src/
-│       ├── features/chat/     # Chat page (messages, composer, send)
-│       ├── components/shell/  # Frame: session list, drawers, workbench
-│       ├── styles/
-│       │   ├── chat-layout.css    # ★ padding / gaps / phone safe-area / toolbar
-│       │   ├── shell-drawers.css  # ★ left/right mobile drawers
-│       │   ├── settings-layout.css
-│       │   └── island-backdrop.css
-│       ├── index.css          # colors/tokens + imports the files above
-│       └── shared/            # API contracts, translators, context
+├── apps/web/static/           # Browser UI: HTML, JavaScript, CSS, icons
+│   ├── index.html             # Shell, panels, capability-gated controls
+│   ├── sessions.js            # Conversation and session behavior
+│   ├── panels.js              # Feature panels and settings
+│   ├── ui.js                  # Shared UI behavior
+│   └── style.css              # Current consolidated styling
 ├── apps/macos/                # Native shell (WKWebView → :8788)
 ├── services/controller/       # FastAPI backend
 ├── integrations/              # Worker adapters (jaeger, hermes, ollama, …)
@@ -45,12 +40,11 @@ ARES/
 
 | Change this look | Edit this file |
 | --- | --- |
-| Chat message list padding, composer safe-area, toolbar density on phone | `apps/web/src/styles/chat-layout.css` |
-| Left/right drawers on phone | `apps/web/src/styles/shell-drawers.css` |
-| Colors / theme tokens | `apps/web/src/index.css` |
-| Chat behavior (send, backends, bubbles content) | `apps/web/src/features/chat/ConversationPage.tsx` |
-| Session list | `apps/web/src/components/shell/SessionSidebar.tsx` |
-| Overall 3-pane frame | `apps/web/src/components/shell/WorkspaceShell.tsx` |
+| Page structure and capability-gated controls | `apps/web/static/index.html` |
+| Chat and session behavior | `apps/web/static/sessions.js` |
+| Feature panels and settings | `apps/web/static/panels.js` |
+| Shared browser behavior | `apps/web/static/ui.js` |
+| Layout, colors, responsive rules | `apps/web/static/style.css` |
 
 ## Rules
 
@@ -58,21 +52,13 @@ ARES/
 2. **Research → plan in `~/Desktop/ARES-agent-docs/` → wait for go** before product code (unless user already said go/fix it).
 3. **Do not edit hermes-webui** unless the task is explicitly about that repo.
 4. **ARES writes only ARES state.** Worker DBs are read-only.
-5. **UI uses ARES contracts** in `apps/web/src/shared/` — translate worker payloads at the boundary.
+5. **UI uses ARES HTTP contracts** — translate worker payloads in the controller, never in browser code.
 6. **No metaphor product language** in UI or new docs.
 7. After an approved fix: **commit locally**; **do not push** unless asked.
-8. Prove UI with `cd apps/web && npm run build` (and phone check for layout slices).
+8. Prove UI with controller tests and `./scripts/smoke_test.sh` (plus a phone check for layout slices).
 9. **Never infer runtime support from a backend name or version.** Negotiate the
    worker contract, fail closed on incompatibility, and expose why a feature is
    unavailable.
-
-## Chat backend gate
-
-In `ConversationPage.tsx`, selected backend must be:
-
-`local selectedBackend || snapshot.selectedBackend || snapshot.connections selected id`
-
-Empty local alone is not "no models."
 
 ## Docs to read by task
 
@@ -118,7 +104,6 @@ Full check: `./scripts/smoke_test.sh` (~1 min).
 ## Verification
 
 ```bash
-cd apps/web && npm run typecheck && npm test -- --run && npm run build
 cd services/controller && ./scripts/test.sh   # or targeted pytest
 ```
 

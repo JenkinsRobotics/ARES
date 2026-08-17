@@ -1,6 +1,9 @@
 """Modular FastAPI router registration."""
 
+from dataclasses import dataclass
+
 from fastapi import FastAPI
+from fastapi.routing import APIRouter
 
 from .adapters import router as adapters_router
 from .analytics import router as analytics_router
@@ -60,81 +63,93 @@ from .native_system import router as native_system_router
 from .companion import router as companion_router
 from .hermes_compat import router as hermes_compat_router
 from .harness import router as harness_router
-from .providers import router as providers_router
+from .inventory import router as inventory_router
+
+
+@dataclass(frozen=True)
+class RouterRegistration:
+    """One controller router registration and its maintenance-facing name."""
+
+    name: str
+    router: APIRouter
+    legacy: bool = False
+
+
+# Registration order is part of route precedence. This tuple is the only place
+# a controller router is installed; counts and inventory are derived from it.
+CORE_ROUTER_REGISTRY = (
+    RouterRegistration("harness", harness_router),
+    RouterRegistration("providers", providers_router),
+    RouterRegistration("adapters", adapters_router),
+    RouterRegistration("analytics", analytics_router),
+    RouterRegistration("health", health_router),
+    RouterRegistration("interactions", interactions_router),
+    RouterRegistration("kanban", kanban_router),
+    RouterRegistration("caldav", caldav_router),
+    RouterRegistration("model_intelligence", model_intelligence_router),
+    RouterRegistration("library", library_router),
+    RouterRegistration("git", git_router),
+    RouterRegistration("legacy_git", legacy_git_router, legacy=True),
+    RouterRegistration("gateway", gateway_router),
+    RouterRegistration("hatchery", hatchery_router),
+    RouterRegistration("files", files_router),
+    RouterRegistration("file_delivery", file_delivery_router),
+    RouterRegistration("models", models_router),
+    RouterRegistration("notes", notes_router),
+    RouterRegistration("maintenance", maintenance_router),
+    RouterRegistration("media", media_router),
+    RouterRegistration("memory", memory_router),
+    RouterRegistration("mcp", mcp_router),
+    RouterRegistration("auth", auth_router),
+    RouterRegistration("controls", controls_router),
+    RouterRegistration("discovery", discovery_router),
+    RouterRegistration("email", email_router),
+    RouterRegistration("ares", ares_router),
+    RouterRegistration("secrets", secrets_router),
+    RouterRegistration("onboarding", onboarding_router),
+    RouterRegistration("profiles", profiles_router),
+    RouterRegistration("projects", projects_router),
+    RouterRegistration("prompts", prompts_router),
+    RouterRegistration("pairing", pairing_router),
+    RouterRegistration("schedules", schedules_router),
+    RouterRegistration("settings", settings_router),
+    RouterRegistration("env", env_router),
+    RouterRegistration("shares", shares_router),
+    RouterRegistration("si", si_router),
+    RouterRegistration("skills", skills_router),
+    RouterRegistration("uploads", uploads_router),
+    RouterRegistration("session", session_router),
+    RouterRegistration("webhooks", webhooks_router),
+    RouterRegistration("workspaces", workspaces_router),
+    RouterRegistration("wiki", wiki_router),
+    RouterRegistration("journal", journal_router),
+    RouterRegistration("readiness", readiness_router),
+    RouterRegistration("delegation", delegation_router),
+    RouterRegistration("dispatch", dispatch_router),
+    RouterRegistration("product_state", product_state_router),
+    RouterRegistration("rankings", rankings_router),
+    RouterRegistration("jaeger_onboarding", jaeger_onboarding_router),
+    RouterRegistration("organizer", organizer_router),
+    RouterRegistration("native_system", native_system_router),
+    RouterRegistration("companion", companion_router),
+    RouterRegistration("backends", backends_router),
+    RouterRegistration("realtime", realtime_router),
+    RouterRegistration("research", research_router),
+    RouterRegistration("sam_conversation", sam_conversation_router),
+    RouterRegistration("inventory", inventory_router),
+    RouterRegistration("hermes_compat", hermes_compat_router, legacy=True),
+)
+
 
 def install_core_routers(application: FastAPI) -> None:
-    application.include_router(harness_router)
-    application.include_router(providers_router)
-    application.include_router(adapters_router)
-    application.include_router(analytics_router)
-    application.include_router(health_router)
-    application.include_router(interactions_router)
-    application.include_router(kanban_router)
-    application.include_router(caldav_router)
-    application.include_router(model_intelligence_router)
-    application.include_router(library_router)
-    application.include_router(git_router)
-    application.include_router(legacy_git_router)
-    application.include_router(gateway_router)
-    application.include_router(hatchery_router)
-    application.include_router(files_router)
-    application.include_router(file_delivery_router)
-    application.include_router(models_router)
-    application.include_router(notes_router)
-    application.include_router(maintenance_router)
-    application.include_router(media_router)
-    application.include_router(memory_router)
-    application.include_router(mcp_router)
-    application.include_router(auth_router)
-    application.include_router(controls_router)
-    application.include_router(discovery_router)
-    application.include_router(email_router)
-    application.include_router(ares_router)
-    application.include_router(secrets_router)
-    application.include_router(onboarding_router)
-    application.include_router(profiles_router)
-    application.include_router(projects_router)
-    application.include_router(prompts_router)
-    application.include_router(providers_router)
-    application.include_router(pairing_router)
-    application.include_router(schedules_router)
-    application.include_router(settings_router)
-    application.include_router(env_router)
-    application.include_router(shares_router)
-    application.include_router(si_router)
-    application.include_router(skills_router)
-    application.include_router(uploads_router)
-    application.include_router(session_router)
-    application.include_router(webhooks_router)
-    application.include_router(workspaces_router)
-    application.include_router(wiki_router)
-    application.include_router(journal_router)
-    application.include_router(readiness_router)
-    application.include_router(delegation_router)
-    application.include_router(dispatch_router)
-    application.include_router(product_state_router)
-    application.include_router(rankings_router)
-    application.include_router(jaeger_onboarding_router)
-    application.include_router(organizer_router)
-    application.include_router(native_system_router)
-    application.include_router(companion_router)
-    application.include_router(wiki_router)
-    application.include_router(backends_router)
-    application.include_router(realtime_router)
-    application.include_router(research_router)
-    application.include_router(sam_conversation_router)
-    application.include_router(journal_router)
-    application.include_router(readiness_router)
-    application.include_router(delegation_router)
-    application.include_router(dispatch_router)
-    application.include_router(product_state_router)
-    application.include_router(rankings_router)
-    application.include_router(jaeger_onboarding_router)
-    application.include_router(organizer_router)
-    application.include_router(native_system_router)
-    application.include_router(companion_router)
+    names = [entry.name for entry in CORE_ROUTER_REGISTRY]
+    if len(names) != len(set(names)):
+        raise RuntimeError("Duplicate controller router name")
+    routers = [id(entry.router) for entry in CORE_ROUTER_REGISTRY]
+    if len(routers) != len(set(routers)):
+        raise RuntimeError("The same controller router was registered more than once")
+    for entry in CORE_ROUTER_REGISTRY:
+        application.include_router(entry.router)
 
 
-    application.include_router(hermes_compat_router)
-
-__all__ = ["install_core_routers"]
+__all__ = ["CORE_ROUTER_REGISTRY", "RouterRegistration", "install_core_routers"]

@@ -1141,6 +1141,80 @@ async function loadCrons(animate) {
   }
 }
 
+async function openCalDav() {
+  const body = $('taskDetailBody');
+  const empty = $('taskDetailEmpty');
+  const title = $('taskDetailTitle');
+  if (!body || !title) return;
+  document.querySelectorAll('#mainTasks .main-view-actions > button').forEach(button => {
+    button.style.display = button.id === 'btnOpenCalDav' ? '' : 'none';
+  });
+  title.textContent = 'CalDAV calendar';
+  if (empty) empty.style.display = 'none';
+  body.style.display = '';
+  body.innerHTML = '<div class="settings-loading">Loading calendar…</div>';
+  try {
+    const [config, cache] = await Promise.all([api('/api/caldav/config'), api('/api/caldav/events')]);
+    const events = Array.isArray(cache.events) ? cache.events : [];
+    body.innerHTML = `
+      <div class="settings-section" data-requires-capability="caldav">
+        <h3>CalDAV connection</h3>
+        <p class="settings-hint">Credentials are stored in your operating system keychain. Leave password blank to keep the saved credential.</p>
+        <div class="form-row"><label>Calendar URL</label><input id="caldavUrl" type="url" value="${esc(config.calendar_url || '')}" placeholder="https://calendar.example.com/user/calendar/"></div>
+        <div class="form-row"><label>Username</label><input id="caldavUsername" value="${esc(config.username || '')}" autocomplete="username"></div>
+        <div class="form-row"><label>Password</label><input id="caldavPassword" type="password" value="" autocomplete="current-password" placeholder="${config.configured ? 'Saved in keychain' : 'Required'}"></div>
+        <div class="form-actions"><button class="btn primary" onclick="saveCalDavConfig()">Save connection</button><button class="btn secondary" onclick="syncCalDav()" ${config.configured ? '' : 'disabled'}>Sync now</button></div>
+      </div>
+      <div class="settings-section">
+        <h3>Calendar events</h3>
+        <p class="settings-hint">${cache.synced_at ? `Last synchronized ${esc(cache.synced_at)}` : 'Not synchronized yet.'}</p>
+        <div class="form-row"><label>Title</label><input id="caldavEventSummary" maxlength="1024"></div>
+        <div class="form-row"><label>Start (iCalendar)</label><input id="caldavEventStart" placeholder="20260818T170000Z"></div>
+        <div class="form-row"><label>End (iCalendar)</label><input id="caldavEventEnd" placeholder="20260818T180000Z"></div>
+        <div class="form-actions"><button class="btn primary" onclick="createCalDavEvent()" ${config.configured ? '' : 'disabled'}>Create event</button></div>
+        <div class="cron-list">${events.length ? events.map(event => `<div class="cron-item"><div class="cron-header"><span class="cron-name">${esc(event.summary || 'Untitled event')}</span></div><div class="settings-hint">${esc(event.start || '')} – ${esc(event.end || '')}</div></div>`).join('') : '<div class="settings-hint">No cached events.</div>'}</div>
+      </div>`;
+  } catch (error) {
+    body.innerHTML = `<div class="settings-error">${esc(error.message || String(error))}</div>`;
+  }
+}
+
+async function saveCalDavConfig() {
+  const payload = {
+    calendar_url: ($('caldavUrl')?.value || '').trim(),
+    username: ($('caldavUsername')?.value || '').trim(),
+    password: ($('caldavPassword')?.value || '').trim() || null,
+  };
+  try {
+    await api('/api/caldav/config', {method:'PUT', body:JSON.stringify(payload)});
+    toast('CalDAV connection saved', 'success');
+    await openCalDav();
+  } catch (error) { toast(error.message || String(error), 'error'); }
+}
+
+async function syncCalDav() {
+  try {
+    await api('/api/caldav/sync', {method:'POST', body:'{}'});
+    toast('Calendar synchronized', 'success');
+    await openCalDav();
+  } catch (error) { toast(error.message || String(error), 'error'); }
+}
+
+async function createCalDavEvent() {
+  const payload = {
+    summary: ($('caldavEventSummary')?.value || '').trim(),
+    start: ($('caldavEventStart')?.value || '').trim(),
+    end: ($('caldavEventEnd')?.value || '').trim(),
+    description: '', uid: null, etag: null,
+  };
+  try {
+    await api('/api/caldav/events', {method:'PUT', body:JSON.stringify(payload)});
+    await api('/api/caldav/sync', {method:'POST', body:'{}'});
+    toast('Calendar event created', 'success');
+    await openCalDav();
+  } catch (error) { toast(error.message || String(error), 'error'); }
+}
+
 function _cronPanelExpandKey(jobId, suffix){
   return `hermes-webui-cron-${suffix}-expanded-${encodeURIComponent(String(jobId||''))}`;
 }

@@ -955,7 +955,7 @@ const LOCALES = {
     kanban_include_archived: 'Include archived',
     kanban_no_matching_tasks: 'No matching tasks',
     kanban_no_data: 'No Kanban data',
-    kanban_work_queue_hint: 'This is the Hermes Agent work queue. Create or triage a task, assign it, move it to Ready, then let the dispatcher claim it.',
+    kanban_work_queue_hint: 'This is the ARES work queue. Create or triage a task, assign it, move it to Ready, then let the dispatcher send it to the selected runtime.',
     kanban_tasks_hidden_by_filters: 'Tasks hidden by filters',
     kanban_clear_filters: 'Clear filters',
     kanban_unavailable: 'Kanban unavailable',

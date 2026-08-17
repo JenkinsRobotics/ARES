@@ -17,6 +17,7 @@ from .email import router as email_router
 from .health import router as health_router
 from .interactions import router as interactions_router
 from .kanban import router as kanban_router
+from .caldav import router as caldav_router
 from .library import router as library_router
 from .git import legacy_router as legacy_git_router, router as git_router
 from .gateway import router as gateway_router
@@ -68,6 +69,7 @@ def install_core_routers(application: FastAPI) -> None:
     application.include_router(health_router)
     application.include_router(interactions_router)
     application.include_router(kanban_router)
+    application.include_router(caldav_router)
     application.include_router(library_router)
     application.include_router(git_router)
     application.include_router(legacy_git_router)

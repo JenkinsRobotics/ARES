@@ -42,6 +42,17 @@ def test_terminal_status_is_immutable(tasks_mod):
     assert final["error"] is None
 
 
+def test_cancel_is_idempotent_and_blocks_late_completion(tasks_mod):
+    task = tasks_mod.create_task(prompt="p", backend="b")
+    first = tasks_mod.cancel_task(task["id"])
+    second = tasks_mod.cancel_task(task["id"])
+    tasks_mod.update_status(task["id"], tasks_mod.STATUS_COMPLETED, result="late")
+
+    assert first["status"] == tasks_mod.STATUS_CANCELED
+    assert second == first
+    assert tasks_mod.get_task(task["id"])["status"] == tasks_mod.STATUS_CANCELED
+
+
 class _FakeBackend:
     def __init__(self, result):
         self._result = result
@@ -70,7 +81,9 @@ def test_delegate_completes(tmp_path, monkeypatch):
     importlib.reload(delegation_tasks)
     importlib.reload(delegation_runner)
 
-    _patch_router(monkeypatch, {"hermes_local": _FakeBackend({"text": "42", "error": None})})
+    _patch_router(
+        monkeypatch, {"hermes_local": _FakeBackend({"text": "42", "error": None})}
+    )
 
     task = delegation_runner.delegate(prompt="what is 6*7", backend="hermes_local")
     result = _await_terminal(delegation_tasks, task["id"])
@@ -85,7 +98,9 @@ def test_delegate_failed_backend_error(tmp_path, monkeypatch):
     importlib.reload(delegation_tasks)
     importlib.reload(delegation_runner)
 
-    _patch_router(monkeypatch, {"hermes_local": _FakeBackend({"text": "", "error": "boom"})})
+    _patch_router(
+        monkeypatch, {"hermes_local": _FakeBackend({"text": "", "error": "boom"})}
+    )
 
     task = delegation_runner.delegate(prompt="x", backend="hermes_local")
     result = _await_terminal(delegation_tasks, task["id"])

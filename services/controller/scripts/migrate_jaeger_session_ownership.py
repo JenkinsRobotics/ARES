@@ -43,7 +43,7 @@ def _is_subsequence(values: list[str], candidates: list[str]) -> bool:
 def migrate(*, apply: bool) -> dict:
     from api.config import SESSION_DIR
     from api.models import Session, delete_cli_session
-    from api.providers.jaeger.gateway_streaming import (
+    from api.providers.jaeger.streaming import (
         _reset_local_bridge_clients,
         command_local_companion,
         query_local_companion,
@@ -77,7 +77,7 @@ def migrate(*, apply: bool) -> dict:
                 getattr(session, "transcript_owner", None) == "jaeger"
                 or getattr(session, "ares_backend", None) == "jaeger_local"
                 or any(
-                    isinstance(row, dict) and row.get("backend") == "jros"
+                    isinstance(row, dict) and row.get("backend") == "jaeger"
                     for row in messages
                 )
             )

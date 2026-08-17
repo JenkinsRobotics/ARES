@@ -67,8 +67,6 @@ public struct ARESSettingsView: View {
     @State private var activeBackend = UserDefaults.standard.string(forKey: "ares.backend.selected") ?? ""
     @State private var runtimeOptions: [RuntimeConnectionOption] = []
     @State private var backendSelectionError: String? = nil
-    @State private var jrosLive = false
-    @State private var hermesLive = false
     @State private var checkTimer: Timer? = nil
     
     // Safety & Approvals
@@ -369,22 +367,10 @@ public struct ARESSettingsView: View {
                 }
             }
             
-            Section(header: Text("Backend Liveness").font(.headline)) {
-                HStack(spacing: 24) {
-                    statusCard(title: "Hermes Gateway", isLive: hermesLive, url: config.hermesURL)
-                    statusCard(title: "Jaeger AI Gateway", isLive: jrosLive, url: config.jrosURL)
-                }
-            }
-            
-            Section(header: Text("Gateway Configurations").font(.headline)) {
-                TextField("Hermes Gateway URL", text: $config.hermesURL)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("Hermes API Key", text: $config.hermesAPIKey)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Jaeger AI Gateway URL", text: $config.jrosURL)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("Jaeger AI Gateway Key", text: $config.jrosAPIKey)
-                    .textFieldStyle(.roundedBorder)
+            Section(header: Text("Runtime Status").font(.headline)) {
+                Text("Runtime availability and capabilities come from the ARES controller's negotiated connection contract.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .padding()
@@ -664,57 +650,11 @@ public struct ARESSettingsView: View {
     private func startLivenessChecks() {
         checkTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true) { _ in
             Task { @MainActor in
-                await performLivenessProbes()
                 refreshBackendSelection()
                 refreshApprovalsAndLogs()
             }
         }
-        Task {
-            await performLivenessProbes()
-        }
-    }
-    
-    private func performLivenessProbes() async {
-        // Probe Hermes
-        if let hermesUrl = endpointURL(base: config.hermesURL, path: "/health") {
-            var request = URLRequest(url: hermesUrl)
-            request.timeoutInterval = 1.0
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
-                    self.hermesLive = true
-                } else {
-                    self.hermesLive = false
-                }
-            } catch {
-                self.hermesLive = false
-            }
-        } else {
-            self.hermesLive = false
-        }
-        
-        // Probe Jaeger AI
-        if let jrosUrl = endpointURL(base: config.jrosURL, path: "/v1/health") {
-            var request = URLRequest(url: jrosUrl)
-            request.timeoutInterval = 1.0
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let ok = json["ok"] as? Bool {
-                        self.jrosLive = ok
-                    } else {
-                        self.jrosLive = false
-                    }
-                } else {
-                    self.jrosLive = false
-                }
-            } catch {
-                self.jrosLive = false
-            }
-        } else {
-            self.jrosLive = false
-        }
+        refreshBackendSelection()
     }
     
     private func refreshApprovalsAndLogs() {

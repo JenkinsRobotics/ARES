@@ -40,8 +40,8 @@ logger = logging.getLogger(__name__)
 
 
 # Ordered fallback workers used when the session's selected runtime is missing
-# from the registry. Jaeger is the primary assistant backend, Hermes secondary;
-# both are preferred over any cloud worker so a local-first install stays local.
+# from the registry. Jaeger is the primary assistant backend and is preferred
+# over cloud workers so a local-first install stays local.
 # Every entry must be a real key in ``integrations/workers/router.py``.
 # The same typed-user-text value is passed under every spelling the stream
 # targets have grown. `_filter_kwargs_for_callable` keeps whichever a given
@@ -64,7 +64,7 @@ def resolve_backend_execution_model(
 ) -> tuple[str, str | None]:
     """Keep a model selection inside the selected framework's catalog.
 
-    A session can retain a Hermes/Ollama model when its framework changes. A
+    A session can retain an unrelated model when its framework changes. A
     CLI must never receive that unrelated identifier. Prefer the backend's
     active catalog entry; an empty catalog leaves the requested state alone.
     """
@@ -419,7 +419,7 @@ def _backend_for_session(session: Any):
     #
     # Every id here MUST be a real key of ``integrations/workers/router.py``'s
     # registry. Ids that match nothing are silently skipped by ``.get()``, which
-    # previously let a missing worker slide past Hermes onto Ollama with no
+    # previously let a missing worker slide onto Ollama with no
     # signal to the user — a different brain answering behind the same UI.
     # ``tests/test_worker_invoke_contract.py`` pins the list against the registry.
     for name in FALLBACK_BACKEND_IDS:
@@ -686,7 +686,7 @@ def start_session_turn(
     if goal_related:
         STREAM_GOAL_RELATED[stream_id] = True
 
-    worker_target, is_gateway, _is_jros = selected_backend.get_worker_target()
+    worker_target, is_gateway, _is_jaeger = selected_backend.get_worker_target()
 
     # Stateless workers need ARES to serialize prior turns. Gateway workers
     # receive a clean user turn and maintain native structured continuity.

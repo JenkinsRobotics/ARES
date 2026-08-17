@@ -1,7 +1,7 @@
 """Embedding client for the Context Store.
 
 Calls the OpenAI-compatible /v1/embeddings surface, matching every other
-local-model integration in this codebase (jros_gateway_chat.py's
+local-model integration in this codebase (jaeger_gateway_chat.py's
 /v1/chat/completions, config.py's /v1/models listing) — deliberately not
 Ollama's native /api/embed route.
 """

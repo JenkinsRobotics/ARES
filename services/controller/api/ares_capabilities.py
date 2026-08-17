@@ -58,12 +58,7 @@ FEATURE_REGISTRY = (
 UI_CAPABILITIES = tuple(feature.name for feature in FEATURE_REGISTRY)
 FEATURES_BY_NAME = {feature.name: feature for feature in FEATURE_REGISTRY}
 
-_LEGACY_CAPABILITIES: dict[str, set[str]] = {
-    "hermes_local": {
-        "cloud_provider_model_settings", "mcp_server_config",
-        "messaging_gateway", "kanban", "delegate_task", "voice_settings",
-    },
-}
+_LEGACY_CAPABILITIES: dict[str, set[str]] = {}
 
 _JAEGER_UI_FEATURES = {
     feature.name: feature.runtime_name or feature.name
@@ -114,7 +109,7 @@ def _jaeger_contract() -> tuple[dict[str, Any] | None, str | None]:
     if now - float(_CONTRACT_CACHE["at"] or 0.0) < _CONTRACT_CACHE_SECONDS:
         return _CONTRACT_CACHE["value"], _CONTRACT_CACHE["error"]
     try:
-        from api.providers.jaeger.gateway_streaming import local_integration_contract
+        from api.providers.jaeger.streaming import local_integration_contract
 
         contract = local_integration_contract()
         error = None
@@ -167,7 +162,7 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
                 for name in ("create", "rename", "clear", "delete", "archive")
             )
         )
-        # The messaging gateway is a legacy Hermes transport and is not part
+        # The messaging gateway is a retired transport and is not part
         # of the ARES-Jaeger contract. It remains unavailable unless a future
         # versioned contract gives it an explicit owner.
         flags["messaging_gateway"] = False

@@ -8,8 +8,7 @@ from api.backends.catalog import (
     infer_model_location,
     model_entry,
 )
-from api.providers.hermes.backend import HermesBackend
-from api.providers.jaeger.backend import JROSBackend
+from api.providers.jaeger.backend import JaegerBackend
 
 
 def test_infer_model_location_local_and_cloud():
@@ -26,38 +25,14 @@ def test_empty_inventory_has_latency_note():
     assert "LLM" in inv["latency"]["note"] or "model" in inv["latency"]["note"].lower()
 
 
-def test_hermes_inventory_catalogues_cli_and_mcp():
-    inv = HermesBackend().inventory()
+def test_jaeger_inventory_uses_owner_bridge(monkeypatch):
+    monkeypatch.setattr(JaegerBackend, "is_available", lambda _self: True)
+    inv = JaegerBackend().inventory()
     inv = finalize_inventory(inv)
     kinds = {t["kind"] for t in inv["transports"]}
-    assert "cli" in kinds
-    assert "mcp" in kinds
-    assert inv["active_execution"]["transport"] == "cli_chat"
-    # MCP declared even if ARES is not the client
-    assert any(m.get("in_use_by_ares") is False for m in inv["mcp"])
+    assert kinds == {"subprocess"}
+    assert inv["active_execution"]["transport"] == "stdio_bridge"
     for m in inv.get("models", []):
-        assert m.get("location") in {"local", "cloud", "unknown"}
-
-
-def test_hermes_inventory_reports_configured_gateway_as_active(monkeypatch):
-    monkeypatch.setenv("ARES_WEBUI_GATEWAY_BASE_URL", "http://127.0.0.1:8642")
-    monkeypatch.setenv("ARES_WEBUI_GATEWAY_API_KEY", "test-secret")
-
-    inv = HermesBackend().inventory()
-
-    assert inv["active_execution"]["transport"] == "hermes_gateway"
-    assert next(g for g in inv["gateways"] if g["id"] == "hermes_gateway")["in_use"] is True
-    assert next(t for t in inv["transports"] if t["id"] == "cli_chat")["in_use"] is False
-
-
-def test_jros_inventory_catalogues_gateway_and_available_models_only():
-    inv = JROSBackend().inventory()
-    kinds = {t["kind"] for t in inv["transports"]}
-    assert "http_gateway" in kinds
-    assert inv["active_execution"]["transport"] == "http_gateway"
-    # Only real configured models — no fake cloud placeholders
-    for m in inv["models"]:
-        assert not str(m.get("id") or "").startswith("(")
         assert m.get("location") in {"local", "cloud", "unknown"}
 
 

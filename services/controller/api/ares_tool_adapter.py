@@ -1,11 +1,11 @@
-"""ARES Tool Adapter — exposes shared tools through MCP or JROS.
+"""ARES Tool Adapter — exposes shared tools through MCP or JaegerAI.
 
 This module is the bridge that lets ARES-owned tools appear as native
 tools in whichever backend is active. It produces the right format
 for each backend:
 
   - MCP:   MCP-compatible tool schemas (inputSchema + handler)
-  - JROS:  ToolDef-compatible dicts (name, description, args_model, fn)
+  - JaegerAI:  ToolDef-compatible dicts (name, description, args_model, fn)
 
 The tool implementations themselves live in ares_tools.py. This
 module only handles registration format translation.
@@ -55,10 +55,10 @@ def _build_mcp_schema(tool_def: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_jros_tooldef(tool_def: dict[str, Any]) -> dict[str, Any]:
-    """Convert an ARES tool definition to JROS ToolDef format.
+def _build_jaeger_tooldef(tool_def: dict[str, Any]) -> dict[str, Any]:
+    """Convert an ARES tool definition to JaegerAI ToolDef format.
 
-    JROS ToolDef expects:
+    JaegerAI ToolDef expects:
       - name: tool name
       - description: human-readable description
       - args_model: Pydantic BaseModel class
@@ -69,7 +69,7 @@ def _build_jros_tooldef(tool_def: dict[str, Any]) -> dict[str, Any]:
         "description": tool_def["description"],
         "args_model": tool_def.get("args_model"),
         "fn": tool_def["fn"],
-        # JROS-specific flags — ARES tools are safe defaults
+        # JaegerAI-specific flags — ARES tools are safe defaults
         "interactive": False,
         "dangerous": False,
         "beta": False,
@@ -82,22 +82,22 @@ def register_ares_tools(target: str = "mcp") -> list[dict[str, Any]]:
 
     Args:
         target: Protocol target — 'mcp' for MCP format,
-                'jros' for ToolDef format.
+                'jaeger' for ToolDef format.
 
     Returns:
         List of tool definitions in the target backend's format.
 
     Raises:
-        ValueError: If target is not 'mcp' or 'jros'.
+        ValueError: If target is not 'mcp' or 'jaeger'.
     """
     if target == "mcp":
         return [_build_mcp_schema(td) for td in ARES_TOOL_DEFS]
-    elif target == "jros":
-        return [_build_jros_tooldef(td) for td in ARES_TOOL_DEFS]
+    elif target == "jaeger":
+        return [_build_jaeger_tooldef(td) for td in ARES_TOOL_DEFS]
     else:
         raise ValueError(
             f"Unknown target backend: {target!r}. "
-            f"Expected 'mcp' or 'jros'."
+            f"Expected 'mcp' or 'jaeger'."
         )
 
 

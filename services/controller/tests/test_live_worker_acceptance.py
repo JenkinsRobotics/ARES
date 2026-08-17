@@ -28,7 +28,7 @@ def test_requested_live_worker_completes_bounded_turn(worker_id: str):
     if worker_id == "jaeger_local" and os.environ.get("ARES_LIVE_JAEGER_HOME"):
         os.environ["ARES_JAEGER_HOME"] = os.environ["ARES_LIVE_JAEGER_HOME"]
         if os.environ.get("ARES_LIVE_JAEGER_INSTANCE"):
-            os.environ["ARES_JROS_INSTANCE"] = os.environ["ARES_LIVE_JAEGER_INSTANCE"]
+            os.environ["ARES_JaegerAI_INSTANCE"] = os.environ["ARES_LIVE_JAEGER_INSTANCE"]
         from api.providers.jaeger.status import reset_cache
 
         reset_cache()

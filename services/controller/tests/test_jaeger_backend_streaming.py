@@ -1,13 +1,13 @@
-"""JROS backend — worker selection, the gateway chat bridge, and the
+"""JaegerAI backend — worker selection, the gateway chat bridge, and the
 local bridge fallback.
 
-The JROS backend prefers a JROS gateway server (`jaeger gateway`) over
+The JaegerAI backend prefers a JaegerAI gateway server (`jaeger gateway`) over
 HTTP, mirroring the Ares Gateway bridge; with no gateway reachable and
-ARES_JROS_DIR pointing at a local checkout, it talks to `jaeger bridge`
+ARES_JaegerAI_DIR pointing at a local checkout, it talks to `jaeger bridge`
 instead. These tests pin:
-  * routes still dispatch the jros backend to the gateway worker,
+  * routes still dispatch the jaeger backend to the gateway worker,
   * gateway URL resolution (env > config > localhost default),
-  * a full turn against a REAL (in-test, faked-JROS) HTTP gateway —
+  * a full turn against a REAL (in-test, faked-JaegerAI) HTTP gateway —
     SSE relay, tool events, session persistence, stream teardown,
   * the bridge fallback: runs the turn locally, turns the instance
     lock and missing-instance cases into actionable errors (never the
@@ -34,7 +34,7 @@ def _reset_jaeger_status_cache():
     """Clear the JaegerAI status cache around every test in this module.
 
     ``api.providers.jaeger.status`` caches readiness for a few seconds so health
-    polling stays cheap. These tests flip ARES_JROS_* env vars between
+    polling stays cheap. These tests flip ARES_JaegerAI_* env vars between
     assertions, so without a reset a later assertion can read the previous
     test's answer.
     """
@@ -45,55 +45,55 @@ def _reset_jaeger_status_cache():
     reset_cache()
 
 
-def test_jros_backend_selects_gateway_worker_without_health_ping(monkeypatch):
-    from api.providers.jaeger.backend import JROSBackend
+def test_jaeger_backend_selects_gateway_worker_without_health_ping(monkeypatch):
+    from api.providers.jaeger.backend import JaegerAIBackend
 
     def fake_get_config():
-        return {"ares_backend": "jros"}
+        return {"ares_backend": "jaeger"}
 
-    fake_bridge = types.ModuleType("api.providers.jaeger.gateway_streaming")
+    fake_bridge = types.ModuleType("api.providers.jaeger.streaming")
 
-    def fake_run_jros_streaming(*args, **kwargs):  # pragma: no cover - identity only
+    def fake_run_jaeger_streaming(*args, **kwargs):  # pragma: no cover - identity only
         return None
 
-    fake_bridge.run_jros_streaming = fake_run_jros_streaming
+    fake_bridge.run_jaeger_streaming = fake_run_jaeger_streaming
     monkeypatch.setitem(
-        sys.modules, "api.providers.jaeger.gateway_streaming", fake_bridge
+        sys.modules, "api.providers.jaeger.streaming", fake_bridge
     )
-    worker, is_gateway, is_jros = JROSBackend().get_worker_target()
+    worker, is_gateway, is_jaeger = JaegerAIBackend().get_worker_target()
 
-    assert worker is fake_run_jros_streaming
+    assert worker is fake_run_jaeger_streaming
     assert is_gateway is False
-    assert is_jros is True
+    assert is_jaeger is True
 
 
 def test_gateway_url_resolution_env_config_default(monkeypatch):
-    from api.providers.jaeger import gateway_streaming as jgc
+    from api.providers.jaeger import streaming as jgc
 
-    monkeypatch.delenv("ARES_JROS_GATEWAY_URL", raising=False)
-    assert jgc.jros_gateway_base_url() == jgc.DEFAULT_JROS_GATEWAY_URL
+    monkeypatch.delenv("ARES_JaegerAI_GATEWAY_URL", raising=False)
+    assert jgc.jaeger_gateway_base_url() == jgc.DEFAULT_JaegerAI_GATEWAY_URL
     assert (
-        jgc.jros_gateway_base_url({"jros_gateway_url": "http://pc.lan:9000/"})
+        jgc.jaeger_gateway_base_url({"jaeger_gateway_url": "http://pc.lan:9000/"})
         == "http://pc.lan:9000"
     )
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://other:8643/")
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", "http://other:8643/")
     assert (
-        jgc.jros_gateway_base_url({"jros_gateway_url": "http://pc.lan:9000"})
+        jgc.jaeger_gateway_base_url({"jaeger_gateway_url": "http://pc.lan:9000"})
         == "http://other:8643"
     )
 
 
 def test_legacy_source_override_accepts_only_current_jaeger_ai(monkeypatch, tmp_path):
-    from api.providers.jaeger import paths as jros_paths
+    from api.providers.jaeger import paths as jaeger_paths
 
     override = tmp_path / "JaegerAI"
     (override / "jaeger_ai").mkdir(parents=True)
     launcher = override / "jaeger"
     launcher.write_text("#!/bin/sh\n", encoding="utf-8")
     launcher.chmod(0o755)
-    monkeypatch.setenv("ARES_JROS_DIR", str(override))
-    assert jros_paths.discover_jros_source_root() == override.resolve()
-    assert jros_paths.jros_source_root() == override.resolve()
+    monkeypatch.setenv("ARES_JaegerAI_DIR", str(override))
+    assert jaeger_paths.discover_jaeger_source_root() == override.resolve()
+    assert jaeger_paths.jaeger_source_root() == override.resolve()
 
 
 def test_invalid_source_override_does_not_fall_through_to_another_checkout(
@@ -101,41 +101,41 @@ def test_invalid_source_override_does_not_fall_through_to_another_checkout(
 ):
     from api.providers.jaeger import paths
 
-    stale = tmp_path / "stale-jros"
+    stale = tmp_path / "stale-jaeger"
     (stale / "jaeger_os").mkdir(parents=True)
     monkeypatch.setenv("ARES_JAEGER_SOURCE_DIR", str(stale))
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
+    monkeypatch.delenv("ARES_JaegerAI_DIR", raising=False)
 
     assert paths.discover_jaeger_ai_source_root() is None
 
 
-def test_legacy_jros_product_is_not_a_jaeger_ai_dependency(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jgc
+def test_legacy_jaeger_product_is_not_a_jaeger_ai_dependency(monkeypatch, tmp_path):
+    from api.providers.jaeger import streaming as jgc
     from api.providers.jaeger import paths
 
-    legacy = tmp_path / "legacy-jros"
+    legacy = tmp_path / "legacy-jaeger"
     (legacy / "jaeger_os").mkdir(parents=True)
     (legacy / "jaeger").write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setenv("ARES_JAEGER_HOME", str(legacy))
     monkeypatch.delenv("ARES_JAEGER_SOURCE_DIR", raising=False)
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
+    monkeypatch.delenv("ARES_JaegerAI_DIR", raising=False)
 
     assert paths.is_jaeger_ai_root(legacy) is False
-    assert jgc.local_jros_root() is None
+    assert jgc.local_jaeger_root() is None
 
 
-def test_local_jros_root_uses_standard_jaeger_home(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jgc
+def test_local_jaeger_root_uses_standard_jaeger_home(monkeypatch, tmp_path):
+    from api.providers.jaeger import streaming as jgc
 
     jaeger_home = tmp_path / "jaeger"
     (jaeger_home / "jaeger_ai").mkdir(parents=True)
     launcher = jaeger_home / "jaeger"
     launcher.write_text("#!/bin/sh\n", encoding="utf-8")
     launcher.chmod(0o755)
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
+    monkeypatch.delenv("ARES_JaegerAI_DIR", raising=False)
     monkeypatch.setenv("ARES_JAEGER_HOME", str(jaeger_home))
 
-    assert jgc.local_jros_root() == jaeger_home.resolve()
+    assert jgc.local_jaeger_root() == jaeger_home.resolve()
 
 
 class _FakeJrosGateway(BaseHTTPRequestHandler):
@@ -152,7 +152,7 @@ class _FakeJrosGateway(BaseHTTPRequestHandler):
             body = json.dumps(
                 {
                     "ok": True,
-                    "backend": "jros",
+                    "backend": "jaeger",
                     "booted": True,
                     "model": "fake-model",
                     "provider": "local",
@@ -184,9 +184,9 @@ class _FakeJrosGateway(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
         frames = [
-            'event: jros.status\ndata: {"status": "running", "booted": true}\n\n',
+            'event: jaeger.status\ndata: {"status": "running", "booted": true}\n\n',
             "event: ares.tool.progress\n"
-            'data: {"event": "tool.completed", "tool": "jros", "status": "completed", "label": "  \\u25b8 demo(x)"}\n\n',
+            'data: {"event": "tool.completed", "tool": "jaeger", "status": "completed", "label": "  \\u25b8 demo(x)"}\n\n',
             "data: "
             + json.dumps(
                 {
@@ -194,7 +194,7 @@ class _FakeJrosGateway(BaseHTTPRequestHandler):
                     "choices": [
                         {
                             "index": 0,
-                            "delta": {"role": "assistant", "content": "JROS says hi"},
+                            "delta": {"role": "assistant", "content": "JaegerAI says hi"},
                             "finish_reason": "stop",
                         }
                     ],
@@ -229,7 +229,7 @@ class _FakeJrosGatewaySecondTurn(BaseHTTPRequestHandler):
             body = json.dumps(
                 {
                     "ok": True,
-                    "backend": "jros",
+                    "backend": "jaeger",
                     "booted": True,
                     "model": "fake-model",
                     "provider": "local",
@@ -262,7 +262,7 @@ class _FakeJrosGatewaySecondTurn(BaseHTTPRequestHandler):
                             "index": 0,
                             "delta": {
                                 "role": "assistant",
-                                "content": "JROS says hi again",
+                                "content": "JaegerAI says hi again",
                             },
                             "finish_reason": "stop",
                         }
@@ -278,23 +278,23 @@ class _FakeJrosGatewaySecondTurn(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
-def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
+def test_jaeger_gateway_turn_streams_and_persists_session(monkeypatch):
     from api import config
     from api.config import create_stream_channel, register_stream_owner
     from api.models import Session
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
-    monkeypatch.setattr(jros_gateway_chat, "_serving_model_truth", lambda: None)
+    monkeypatch.setattr(jaeger_gateway_chat, "_serving_model_truth", lambda: None)
 
     server, base = _start_fake_gateway()
     _FakeJrosGateway.seen = []
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", base)
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", base)
     try:
-        sid = "jrosgw1"
-        stream_id = "stream-jrosgw1"
+        sid = "jaegergw1"
+        stream_id = "stream-jaegergw1"
         session = Session(session_id=sid, messages=[])
         session.active_stream_id = stream_id
-        session.pending_user_message = "hello jros"
+        session.pending_user_message = "hello jaeger"
         session.save()
 
         stream = create_stream_channel()
@@ -302,9 +302,9 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         with config.STREAMS_LOCK:
             config.STREAMS[stream_id] = stream
 
-        jros_gateway_chat.run_jros_streaming(
+        jaeger_gateway_chat.run_jaeger_streaming(
             sid,
-            "hello jros",
+            "hello jaeger",
             "test-model",
             "/tmp",
             stream_id,
@@ -318,12 +318,12 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         ]
         assert len(chat_calls) == 1
         assert chat_calls[0]["body"]["user"] == sid
-        assert chat_calls[0]["body"]["messages"][-1]["content"] == "hello jros"
+        assert chat_calls[0]["body"]["messages"][-1]["content"] == "hello jaeger"
 
         events = [item[0] for item in stream._offline_buffer]
         assert "tool" in events
         assert any(
-            item[0] == "token" and item[1] == {"text": "JROS says hi"}
+            item[0] == "token" and item[1] == {"text": "JaegerAI says hi"}
             for item in stream._offline_buffer
         )
         assert events[-2:] == ["done", "stream_end"]
@@ -339,8 +339,8 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         assert saved.messages == []
         assert saved.transcript_owner == "jaeger"
         assert saved.runtime_message_count == 2
-        assert done_payload["session"]["messages"][-1]["content"] == "JROS says hi"
-        assert done_payload["session"]["messages"][-1]["backend"] == "jros"
+        assert done_payload["session"]["messages"][-1]["content"] == "JaegerAI says hi"
+        assert done_payload["session"]["messages"][-1]["backend"] == "jaeger"
         assert (
             done_payload["session"]["messages"][-1]["model_provider"] == "test-provider"
         )
@@ -359,7 +359,7 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         server.server_close()
 
 
-def test_jros_gateway_usage_accumulates_across_turns(monkeypatch):
+def test_jaeger_gateway_usage_accumulates_across_turns(monkeypatch):
     """Two turns must sum their usage, not have the second overwrite the first.
 
     JaegerAI's usage dict is per-turn (an OpenAI-style chunk's
@@ -371,14 +371,14 @@ def test_jros_gateway_usage_accumulates_across_turns(monkeypatch):
     from api import config
     from api.config import create_stream_channel, register_stream_owner
     from api.models import Session, get_session
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
     server1, base1 = _start_fake_gateway(_FakeJrosGateway)
     _FakeJrosGateway.seen = []
     server2, base2 = _start_fake_gateway(_FakeJrosGatewaySecondTurn)
     _FakeJrosGatewaySecondTurn.seen = []
     try:
-        sid = "jrosgw-accum"
+        sid = "jaegergw-accum"
         session = Session(session_id=sid, messages=[])
         session.save()
 
@@ -386,23 +386,23 @@ def test_jros_gateway_usage_accumulates_across_turns(monkeypatch):
             stream_id = f"stream-{sid}-{turn}"
             # get_session() (not Session.load()) so the mutated object is the
             # same one the process-wide SESSIONS cache holds — otherwise the
-            # next run_jros_streaming() call reads back the stale pre-turn
+            # next run_jaeger_streaming() call reads back the stale pre-turn
             # cached object and silently no-ops the merge (cache staleness is
             # only detected via message-count drift, which this doesn't cause).
             saved = get_session(sid)
             saved.active_stream_id = stream_id
-            saved.pending_user_message = "hello jros"
+            saved.pending_user_message = "hello jaeger"
             saved.save()
 
-            monkeypatch.setenv("ARES_JROS_GATEWAY_URL", base)
+            monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", base)
             stream = create_stream_channel()
             register_stream_owner(stream_id, sid)
             with config.STREAMS_LOCK:
                 config.STREAMS[stream_id] = stream
 
-            jros_gateway_chat.run_jros_streaming(
+            jaeger_gateway_chat.run_jaeger_streaming(
                 sid,
-                "hello jros",
+                "hello jaeger",
                 "test-model",
                 "/tmp",
                 stream_id,
@@ -424,15 +424,15 @@ def test_offline_gateway_surfaces_actionable_apperror(monkeypatch, tmp_path):
     from api import config
     from api.config import create_stream_channel, register_stream_owner
     from api.models import Session
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
     # A port nothing listens on — connection refused, fast. No local
     # checkout either, so the local bridge fallback must not trigger.
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://127.0.0.1:1")
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", "http://127.0.0.1:1")
+    monkeypatch.delenv("ARES_JaegerAI_DIR", raising=False)
     monkeypatch.setenv("ARES_JAEGER_HOME", str(tmp_path / "missing-jaeger"))
-    sid = "jrosgw-down"
-    stream_id = "stream-jrosgw-down"
+    sid = "jaegergw-down"
+    stream_id = "stream-jaegergw-down"
     session = Session(session_id=sid, messages=[])
     session.active_stream_id = stream_id
     session.pending_user_message = "hello"
@@ -443,11 +443,11 @@ def test_offline_gateway_surfaces_actionable_apperror(monkeypatch, tmp_path):
     with config.STREAMS_LOCK:
         config.STREAMS[stream_id] = stream
 
-    jros_gateway_chat.run_jros_streaming(sid, "hello", "m", "/tmp", stream_id, [])
+    jaeger_gateway_chat.run_jaeger_streaming(sid, "hello", "m", "/tmp", stream_id, [])
 
     apperrors = [item[1] for item in stream._offline_buffer if item[0] == "apperror"]
     assert len(apperrors) == 1
-    assert apperrors[0]["type"] == "jros_gateway_offline"
+    assert apperrors[0]["type"] == "jaeger_gateway_offline"
     assert "jaeger bridge" in apperrors[0]["hint"]
     # No assistant message was fabricated for the failed turn.
     saved = Session.load(sid)
@@ -458,9 +458,9 @@ def test_backend_availability_follows_gateway_health(monkeypatch, tmp_path):
     from api import backend_selector
 
     server, base = _start_fake_gateway()
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", base)
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", base)
     try:
-        assert backend_selector.is_jros_available() is True
+        assert backend_selector.is_jaeger_available() is True
         status = backend_selector.backend_status()
         assert status["jaeger_local"] is True
         assert status["jaeger_model"] == "fake-model"
@@ -469,39 +469,39 @@ def test_backend_availability_follows_gateway_health(monkeypatch, tmp_path):
         server.shutdown()
         server.server_close()
 
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://127.0.0.1:1")
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", "http://127.0.0.1:1")
+    monkeypatch.delenv("ARES_JaegerAI_DIR", raising=False)
     monkeypatch.setenv("ARES_JAEGER_HOME", str(tmp_path / "missing-jaeger"))
     # The healthy-gateway assertion above populated the status cache; drop it so
     # this half measures the now-unreachable gateway rather than that result.
     from api.providers.jaeger.status import reset_cache
 
     reset_cache()
-    assert backend_selector.is_jros_available() is False
+    assert backend_selector.is_jaeger_available() is False
     assert backend_selector.backend_status()["jaeger_local"] is False
 
 
-def test_reset_jros_boot_posts_reset_and_swallows_offline(monkeypatch):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+def test_reset_jaeger_runtime_posts_reset_and_swallows_offline(monkeypatch):
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
     server, base = _start_fake_gateway()
     _FakeJrosGateway.seen = []
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", base)
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", base)
     try:
-        jros_gateway_chat.reset_jros_boot()
+        jaeger_gateway_chat.reset_jaeger_runtime()
         assert [c["path"] for c in _FakeJrosGateway.seen] == ["/v1/reset"]
     finally:
         server.shutdown()
         server.server_close()
 
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://127.0.0.1:1")
-    jros_gateway_chat.reset_jros_boot()  # must not raise
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", "http://127.0.0.1:1")
+    jaeger_gateway_chat.reset_jaeger_runtime()  # must not raise
 
 
 # ── bridge fallback (no gateway, local checkout) ─────────────────────────
 
 
-def _setup_stream(sid, stream_id, pending="hello jros"):
+def _setup_stream(sid, stream_id, pending="hello jaeger"):
     from api import config
     from api.config import create_stream_channel, register_stream_owner
     from api.models import Session
@@ -524,20 +524,20 @@ def _local_checkout(monkeypatch, tmp_path):
     launcher.write_text("#!/bin/sh\n", encoding="utf-8")
     launcher.chmod(0o755)
     monkeypatch.setenv("ARES_JAEGER_SOURCE_DIR", str(tmp_path))
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
+    monkeypatch.delenv("ARES_JaegerAI_DIR", raising=False)
     monkeypatch.delenv("ARES_JAEGER_GATEWAY_URL", raising=False)
-    monkeypatch.delenv("ARES_JROS_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("ARES_JaegerAI_GATEWAY_URL", raising=False)
 
 
 def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
     from api.models import Session
 
     _local_checkout(monkeypatch, tmp_path)
-    jros_gateway_chat._reset_local_bridge_clients()
+    jaeger_gateway_chat._reset_local_bridge_clients()
     calls = []
 
-    class FakeJrosClient:
+    class FakeJaegerClient:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
@@ -570,15 +570,15 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
                     }
                 )
                 on_event({"type": "state", "message": "thinking"})
-            return {"text": "local JROS says hi", "error": None}
+            return {"text": "local JaegerAI says hi", "error": None}
 
-    monkeypatch.setattr(jros_gateway_chat, "JrosClient", FakeJrosClient)
+    monkeypatch.setattr(jaeger_gateway_chat, "JaegerClient", FakeJaegerClient)
 
-    sid, stream_id = "jroslocal1", "stream-jroslocal1"
+    sid, stream_id = "jaegerlocal1", "stream-jaegerlocal1"
     stream = _setup_stream(sid, stream_id)
-    jros_gateway_chat.run_jros_streaming(
+    jaeger_gateway_chat.run_jaeger_streaming(
         sid,
-        "hello jros",
+        "hello jaeger",
         "test-model",
         "/tmp",
         stream_id,
@@ -586,11 +586,11 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
         model_provider="test-provider",
     )
 
-    assert calls == [("hello jros", sid, "/tmp")]
+    assert calls == [("hello jaeger", sid, "/tmp")]
     events = [item[0] for item in stream._offline_buffer]
     assert "tool" in events
     assert any(
-        item[0] == "token" and item[1] == {"text": "local JROS says hi"}
+        item[0] == "token" and item[1] == {"text": "local JaegerAI says hi"}
         for item in stream._offline_buffer
     )
     assert events[-2:] == ["done", "stream_end"]
@@ -598,8 +598,8 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
     assert saved.messages == []
     assert saved.transcript_owner == "jaeger"
     done_payload = next(item[1] for item in stream._offline_buffer if item[0] == "done")
-    assert done_payload["session"]["messages"][-1]["content"] == "local JROS says hi"
-    assert done_payload["session"]["messages"][-1]["backend"] == "jros"
+    assert done_payload["session"]["messages"][-1]["content"] == "local JaegerAI says hi"
+    assert done_payload["session"]["messages"][-1]["backend"] == "jaeger"
     assert done_payload["session"]["messages"][-1]["tool_calls"] == [
         {
             "name": "write_file",
@@ -610,28 +610,28 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
 
 
 def test_local_fallback_lock_error_is_actionable(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
     _local_checkout(monkeypatch, tmp_path)
-    jros_gateway_chat._reset_local_bridge_clients()
+    jaeger_gateway_chat._reset_local_bridge_clients()
 
-    class LockedJrosClient:
+    class LockedJaegerClient:
         def __init__(self, **kwargs):
             pass
 
         def start(self):
-            raise jros_gateway_chat.JrosError(
+            raise jaeger_gateway_chat.JaegerError(
                 "instance 'testinst' is locked by pid 7 (still running)."
             )
 
         def close(self):
             pass
 
-    monkeypatch.setattr(jros_gateway_chat, "JrosClient", LockedJrosClient)
+    monkeypatch.setattr(jaeger_gateway_chat, "JaegerClient", LockedJaegerClient)
 
-    sid, stream_id = "jroslock1", "stream-jroslock1"
+    sid, stream_id = "jaegerlock1", "stream-jaegerlock1"
     stream = _setup_stream(sid, stream_id)
-    jros_gateway_chat.run_jros_streaming(sid, "hi", "m", "/tmp", stream_id, [])
+    jaeger_gateway_chat.run_jaeger_streaming(sid, "hi", "m", "/tmp", stream_id, [])
 
     apperrors = [item[1] for item in stream._offline_buffer if item[0] == "apperror"]
     assert len(apperrors) == 1
@@ -641,26 +641,26 @@ def test_local_fallback_lock_error_is_actionable(monkeypatch, tmp_path):
 
 
 def test_local_fallback_missing_instance_says_run_setup(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
     _local_checkout(monkeypatch, tmp_path)
-    jros_gateway_chat._reset_local_bridge_clients()
+    jaeger_gateway_chat._reset_local_bridge_clients()
 
-    class MissingInstanceJrosClient:
+    class MissingInstanceJaegerClient:
         def __init__(self, **kwargs):
             pass
 
         def start(self):
-            raise jros_gateway_chat.JrosError("no instance named 'testinst' exists")
+            raise jaeger_gateway_chat.JaegerError("no instance named 'testinst' exists")
 
         def close(self):
             pass
 
-    monkeypatch.setattr(jros_gateway_chat, "JrosClient", MissingInstanceJrosClient)
+    monkeypatch.setattr(jaeger_gateway_chat, "JaegerClient", MissingInstanceJaegerClient)
 
-    sid, stream_id = "jrossetup1", "stream-jrossetup1"
+    sid, stream_id = "jaegersetup1", "stream-jaegersetup1"
     stream = _setup_stream(sid, stream_id)
-    jros_gateway_chat.run_jros_streaming(sid, "hi", "m", "/tmp", stream_id, [])
+    jaeger_gateway_chat.run_jaeger_streaming(sid, "hi", "m", "/tmp", stream_id, [])
 
     apperrors = [item[1] for item in stream._offline_buffer if item[0] == "apperror"]
     assert len(apperrors) == 1
@@ -668,10 +668,10 @@ def test_local_fallback_missing_instance_says_run_setup(monkeypatch, tmp_path):
 
 
 def test_dead_cached_bridge_is_discarded_and_restarted(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
     _local_checkout(monkeypatch, tmp_path)
-    jros_gateway_chat._reset_local_bridge_clients()
+    jaeger_gateway_chat._reset_local_bridge_clients()
     started = []
 
     class DeadThenLiveClient:
@@ -691,24 +691,24 @@ def test_dead_cached_bridge_is_discarded_and_restarted(monkeypatch, tmp_path):
         def turn(self, text, session="", *, on_event=None, on_request=None):
             return {"text": f"reply:{text}", "error": None}
 
-    monkeypatch.setattr(jros_gateway_chat, "JrosClient", DeadThenLiveClient)
-    first = jros_gateway_chat._get_or_start_bridge_client("jarvis")
+    monkeypatch.setattr(jaeger_gateway_chat, "JaegerClient", DeadThenLiveClient)
+    first = jaeger_gateway_chat._get_or_start_bridge_client("jarvis")
     first._alive = False
-    second = jros_gateway_chat._get_or_start_bridge_client("jarvis")
+    second = jaeger_gateway_chat._get_or_start_bridge_client("jarvis")
     assert first is not second
     assert started == ["start", "start"]
-    jros_gateway_chat._reset_local_bridge_clients()
+    jaeger_gateway_chat._reset_local_bridge_clients()
 
 
 def test_broken_pipe_retries_with_fresh_bridge(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
     from api.models import Session
 
     _local_checkout(monkeypatch, tmp_path)
-    jros_gateway_chat._reset_local_bridge_clients()
+    jaeger_gateway_chat._reset_local_bridge_clients()
     turns = []
 
-    class FlakyJrosClient:
+    class FlakyJaegerClient:
         def __init__(self, **kwargs):
             pass
 
@@ -729,11 +729,11 @@ def test_broken_pipe_retries_with_fresh_bridge(monkeypatch, tmp_path):
                 raise BrokenPipeError(32, "Broken pipe")
             return {"text": "recovered after restart", "error": None}
 
-    monkeypatch.setattr(jros_gateway_chat, "JrosClient", FlakyJrosClient)
+    monkeypatch.setattr(jaeger_gateway_chat, "JaegerClient", FlakyJaegerClient)
 
-    sid, stream_id = "jrospipe1", "stream-jrospipe1"
+    sid, stream_id = "jaegerpipe1", "stream-jaegerpipe1"
     stream = _setup_stream(sid, stream_id, pending="what llm are you using")
-    jros_gateway_chat.run_jros_streaming(
+    jaeger_gateway_chat.run_jaeger_streaming(
         sid, "what llm are you using", "m", "/tmp", stream_id, []
     )
 
@@ -749,11 +749,11 @@ def test_broken_pipe_retries_with_fresh_bridge(monkeypatch, tmp_path):
 
 
 def test_broken_pipe_then_lock_is_actionable_and_keeps_user_row(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
     from api.models import Session
 
     _local_checkout(monkeypatch, tmp_path)
-    jros_gateway_chat._reset_local_bridge_clients()
+    jaeger_gateway_chat._reset_local_bridge_clients()
     starts = []
 
     class PipeThenLockedClient:
@@ -763,7 +763,7 @@ def test_broken_pipe_then_lock_is_actionable_and_keeps_user_row(monkeypatch, tmp
         def start(self):
             starts.append("start")
             if len(starts) > 1:
-                raise jros_gateway_chat.JrosError(
+                raise jaeger_gateway_chat.JaegerError(
                     "instance 'jarvis' is locked by pid 81627 (still running)."
                 )
             return {"instance": "jarvis", "model": "fake-model"}
@@ -777,11 +777,11 @@ def test_broken_pipe_then_lock_is_actionable_and_keeps_user_row(monkeypatch, tmp
         def turn(self, text, session="", *, on_event=None, on_request=None):
             raise BrokenPipeError(32, "Broken pipe")
 
-    monkeypatch.setattr(jros_gateway_chat, "JrosClient", PipeThenLockedClient)
+    monkeypatch.setattr(jaeger_gateway_chat, "JaegerClient", PipeThenLockedClient)
 
-    sid, stream_id = "jrospipe2", "stream-jrospipe2"
+    sid, stream_id = "jaegerpipe2", "stream-jaegerpipe2"
     stream = _setup_stream(sid, stream_id, pending="what llm are you using")
-    jros_gateway_chat.run_jros_streaming(
+    jaeger_gateway_chat.run_jaeger_streaming(
         sid, "what llm are you using", "m", "/tmp", stream_id, []
     )
 
@@ -796,21 +796,21 @@ def test_broken_pipe_then_lock_is_actionable_and_keeps_user_row(monkeypatch, tmp
 
 
 def test_missing_local_runtime_does_not_recommend_an_unshipped_gateway(monkeypatch):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
 
-    monkeypatch.setattr(jros_gateway_chat, "local_jros_root", lambda: None)
-    jros_gateway_chat._reset_local_bridge_clients()
+    monkeypatch.setattr(jaeger_gateway_chat, "local_jaeger_root", lambda: None)
+    jaeger_gateway_chat._reset_local_bridge_clients()
 
-    with pytest.raises(jros_gateway_chat.JrosError) as exc:
-        jros_gateway_chat._get_or_start_bridge_client()
+    with pytest.raises(jaeger_gateway_chat.JaegerError) as exc:
+        jaeger_gateway_chat._get_or_start_bridge_client()
 
     message = str(exc.value)
     assert "JaegerAI runtime" in message
-    assert "JROS gateway" not in message
+    assert "JaegerAI gateway" not in message
 
 
 def test_gateway_wins_over_local_fallback(monkeypatch, tmp_path):
-    from api.providers.jaeger import gateway_streaming as jros_gateway_chat
+    from api.providers.jaeger import streaming as jaeger_gateway_chat
     from api.models import Session
 
     server, base = _start_fake_gateway()
@@ -820,19 +820,19 @@ def test_gateway_wins_over_local_fallback(monkeypatch, tmp_path):
     launcher.write_text("#!/bin/sh\n", encoding="utf-8")
     launcher.chmod(0o755)
     monkeypatch.setenv("ARES_JAEGER_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", base)
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", base)
     monkeypatch.setattr(
-        jros_gateway_chat,
-        "_run_local_jros_turn",
+        jaeger_gateway_chat,
+        "_run_local_jaeger_turn",
         lambda *a, **k: (_ for _ in ()).throw(
             AssertionError("local fallback must not run while the gateway is up")
         ),
     )
     try:
-        sid, stream_id = "jrosboth1", "stream-jrosboth1"
+        sid, stream_id = "jaegerboth1", "stream-jaegerboth1"
         _setup_stream(sid, stream_id)
-        jros_gateway_chat.run_jros_streaming(
-            sid, "hello jros", "m", "/tmp", stream_id, []
+        jaeger_gateway_chat.run_jaeger_streaming(
+            sid, "hello jaeger", "m", "/tmp", stream_id, []
         )
         assert any(
             c["path"].endswith("/chat/completions") for c in _FakeJrosGateway.seen
@@ -849,10 +849,10 @@ def test_backend_availability_local_mode_without_gateway(monkeypatch, tmp_path):
     from api import backend_selector
 
     (tmp_path / "jaeger_os").mkdir()
-    monkeypatch.setenv("ARES_JROS_DIR", str(tmp_path))
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("ARES_JaegerAI_DIR", str(tmp_path))
+    monkeypatch.setenv("ARES_JaegerAI_GATEWAY_URL", "http://127.0.0.1:1")
     # Checkout alone is install-detected, not execution-available.
-    assert backend_selector.is_jros_available() is False
+    assert backend_selector.is_jaeger_available() is False
     status = backend_selector.backend_status()
     assert status["jaeger_local"] is False
 
@@ -883,25 +883,25 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
             None,
         ),
     )
-    jros_caps = ares_capabilities.capabilities_for_backend("jros")
-    assert jros_caps["character_persona_editing"] is True
-    assert jros_caps["cloud_provider_model_settings"] is True
-    assert jros_caps["mcp_server_config"] is False
-    assert jros_caps["messaging_gateway"] is False
-    assert jros_caps["delegate_task"] is True
-    assert jros_caps["schedules"] is True
-    assert jros_caps["tool_inventory"] is True
-    assert jros_caps["voice_settings"] is True
-    assert jros_caps["skills"] is True
-    assert jros_caps["caldav"] is True
-    assert jros_caps["kanban"] is True
-    assert jros_caps["model_compare"] is True
-    assert jros_caps["teacher_escalation"] is True
-    assert jros_caps["cookbook_model_serving"] is True
+    jaeger_caps = ares_capabilities.capabilities_for_backend("jaeger")
+    assert jaeger_caps["character_persona_editing"] is True
+    assert jaeger_caps["cloud_provider_model_settings"] is True
+    assert jaeger_caps["mcp_server_config"] is False
+    assert jaeger_caps["messaging_gateway"] is False
+    assert jaeger_caps["delegate_task"] is True
+    assert jaeger_caps["schedules"] is True
+    assert jaeger_caps["tool_inventory"] is True
+    assert jaeger_caps["voice_settings"] is True
+    assert jaeger_caps["skills"] is True
+    assert jaeger_caps["caldav"] is True
+    assert jaeger_caps["kanban"] is True
+    assert jaeger_caps["model_compare"] is True
+    assert jaeger_caps["teacher_escalation"] is True
+    assert jaeger_caps["cookbook_model_serving"] is True
     # ARES-owned capabilities are composed from ARES health, not copied from
     # Jaeger's provider contract.
     assert all(
-        jros_caps[name] is True
+        jaeger_caps[name] is True
         for name in (
             "deep_research",
             "image_gallery",
@@ -911,11 +911,11 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
             "youtube_ingest",
         )
     )
-    contract = ares_capabilities.capability_contract_for_backend("jros")
+    contract = ares_capabilities.capability_contract_for_backend("jaeger")
     assert contract["features"]["image_editor"]["owner"] == "ares"
     assert contract["features"]["skills"]["owner"] == "runtime"
 
-    hermes_caps = ares_capabilities.capabilities_for_backend("hermes_local")
+    hermes_caps = ares_capabilities.capabilities_for_backend("jaeger_local")
     assert hermes_caps["cloud_provider_model_settings"] is True
     assert hermes_caps["mcp_server_config"] is True
     assert hermes_caps["messaging_gateway"] is True

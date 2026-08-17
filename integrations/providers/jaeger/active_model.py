@@ -30,7 +30,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: JROS provider slugs that phone out to a hosted API. Used only to label a
+#: JaegerAI provider slugs that phone out to a hosted API. Used only to label a
 #: selection for the UI; the runnable-provider list lives in
 #: ``api.ares_provider_sync.PROVIDER_PRESETS``.
 CLOUD_PROVIDERS = frozenset(
@@ -122,7 +122,7 @@ def active_model(config_path: Path | None = None) -> dict[str, Any]:
     """
     if config_path is None:
         try:
-            from api.providers.jaeger.gateway_streaming import query_local_companion
+            from api.providers.jaeger.streaming import query_local_companion
 
             payload = query_local_companion("serving_model", {})
             if isinstance(payload, dict):

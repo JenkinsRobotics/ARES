@@ -42,34 +42,34 @@ final class ExecutionBackendDispatcherTests: XCTestCase {
     }
 
     func testDispatchExecutesSelectedBackend() async throws {
-        let hermes = FakeBackend(kind: .hermes, capabilities: [.agentTurn, .toolUse], responseText: "from-hermes")
-        let dispatcher = ExecutionBackendDispatcher(backends: [hermes])
+        let jaeger = FakeBackend(kind: .jaeger, capabilities: [.agentTurn, .toolUse], responseText: "from-jaeger")
+        let dispatcher = ExecutionBackendDispatcher(backends: [jaeger])
 
         let result = try await dispatcher.dispatch(request([.agentTurn]))
 
-        XCTAssertEqual(result.text, "from-hermes")
-        XCTAssertEqual(result.backend, .hermes)
-        XCTAssertEqual(hermes.executeCount, 1)
+        XCTAssertEqual(result.text, "from-jaeger")
+        XCTAssertEqual(result.backend, .jaeger)
+        XCTAssertEqual(jaeger.executeCount, 1)
         // Routing provenance is preserved on the result.
-        XCTAssertEqual(result.metadata["route_mode"], .string("single:hermes"))
+        XCTAssertEqual(result.metadata["route_mode"], .string("single:jaeger"))
     }
 
     func testUnroutableWhenNoBackendCoversCapability() async throws {
-        let hermes = FakeBackend(kind: .hermes, capabilities: [.agentTurn])
-        let dispatcher = ExecutionBackendDispatcher(backends: [hermes])
+        let jaeger = FakeBackend(kind: .jaeger, capabilities: [.agentTurn])
+        let dispatcher = ExecutionBackendDispatcher(backends: [jaeger])
 
         do {
             _ = try await dispatcher.dispatch(request([.vision]))
             XCTFail("expected unroutable")
         } catch let ExecutionDispatchError.unroutable(missing, _) {
             XCTAssertEqual(missing, [.vision])
-            XCTAssertEqual(hermes.executeCount, 0)
+            XCTAssertEqual(jaeger.executeCount, 0)
         }
     }
 
     func testUnhealthyBackendIsNotDispatched() async throws {
         let down = FakeBackend(
-            kind: .hermes,
+            kind: .jaeger,
             capabilities: [.agentTurn],
             health: ExecutionBackendHealth(state: .unavailable)
         )
@@ -84,14 +84,14 @@ final class ExecutionBackendDispatcherTests: XCTestCase {
     }
 
     func testPrefersHealthyBackendForCapability() async throws {
-        let hermes = FakeBackend(kind: .hermes, capabilities: [.agentTurn], responseText: "hermes")
-        let jros = FakeBackend(kind: .jaeger, capabilities: [.agentTurn], responseText: "jaeger")
-        // Registration order is product policy: hermes first should win the tie.
-        let dispatcher = ExecutionBackendDispatcher(backends: [hermes, jros])
+        let jaeger = FakeBackend(kind: .jaeger, capabilities: [.agentTurn], responseText: "jaeger")
+        let cloud = FakeBackend(kind: .cloudProvider, capabilities: [.agentTurn], responseText: "cloud")
+        // Registration order is product policy: the first healthy match wins a tie.
+        let dispatcher = ExecutionBackendDispatcher(backends: [jaeger, cloud])
 
         let result = try await dispatcher.dispatch(request([.agentTurn]))
-        XCTAssertEqual(result.text, "hermes")
-        XCTAssertEqual(hermes.executeCount, 1)
-        XCTAssertEqual(jros.executeCount, 0)
+        XCTAssertEqual(result.text, "jaeger")
+        XCTAssertEqual(jaeger.executeCount, 1)
+        XCTAssertEqual(cloud.executeCount, 0)
     }
 }

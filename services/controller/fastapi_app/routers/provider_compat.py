@@ -1,7 +1,7 @@
-"""Hermes-UI compatibility router.
+"""Legacy provider compatibility router.
 
-Bridges the Hermes WebUI's expected API endpoints to the ARES+Jaeger
-backend. The Hermes UI (vanilla JS) calls Hermes-era API paths like
+Preserves established provider API endpoints while routing their behavior to
+ARES and negotiated worker adapters. The browser calls paths such as
 /api/providers, /api/model/set, /api/default-model — this router
 maps those to ARES equivalents or serves them directly.
 """
@@ -22,11 +22,11 @@ from ..request_context import RequestIdentity, require_identity, require_mutatio
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["hermes-compat"], include_in_schema=False)
+router = APIRouter(prefix="/api", tags=["provider-compat"], include_in_schema=False)
 
 
 # ---------------------------------------------------------------------------
-# /api/providers — Provider listing + key management (Hermes format)
+# /api/providers — Provider listing + key management (provider format)
 # ---------------------------------------------------------------------------
 
 def _ollama_local_models() -> list[dict[str, Any]]:
@@ -64,7 +64,7 @@ def _ollama_local_models() -> list[dict[str, Any]]:
 def _jaeger_models() -> list[dict[str, Any]]:
     """Return the model Jaeger reports as serving through its bridge."""
     try:
-        from api.providers.jaeger.gateway_streaming import query_local_companion
+        from api.providers.jaeger.streaming import query_local_companion
 
         status = query_local_companion("serving_model", {})
         selection = status.get("serving") or status.get("configured") if isinstance(status, dict) else None
@@ -101,7 +101,7 @@ def _runtime_credential_names() -> set[str]:
 async def list_providers(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
 ):
-    """Return providers in the Hermes UI format."""
+    """Return providers in the ARES provider format."""
     ollama_local = _ollama_local_models()
     credential_names = _runtime_credential_names()
     jaeger_models = _jaeger_models()
@@ -341,7 +341,7 @@ async def save_provider_key(
     request: Request,
     _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
 ):
-    """Save or remove a provider API key (Hermes compatibility)."""
+    """Save or remove a provider API key compatibility."""
     body = await request.json()
     provider_id = (body.get("provider") or "").strip()
     api_key = body.get("api_key")
@@ -508,7 +508,7 @@ async def refresh_models(
 async def onboarding_probe(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
 ):
-    """Probe onboarding state (Hermes compatibility)."""
+    """Probe onboarding state compatibility."""
     try:
         from api.onboarding import get_onboarding_status
         status = get_onboarding_status()
@@ -536,7 +536,7 @@ async def onboarding_probe(
 async def updates_summary(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
 ):
-    """Return update summary (Hermes compatibility)."""
+    """Return update summary compatibility."""
     try:
         from api.updates import WEBUI_VERSION
         return {
@@ -556,7 +556,7 @@ async def updates_summary(
 async def background_status_compat(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
 ):
-    """Return background task status (Hermes compatibility)."""
+    """Return background task status compatibility."""
     try:
         from api.background_process import get_background_status
         return get_background_status()
@@ -573,7 +573,7 @@ async def get_goal_compat(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
     session_id: str = "",
 ):
-    """Get session goals (Hermes compatibility)."""
+    """Get session goals compatibility."""
     if not session_id:
         return {"goals": []}
     try:

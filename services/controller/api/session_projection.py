@@ -52,7 +52,7 @@ def _authoritative_jaeger_transcript(session) -> tuple[list[dict], list[dict]] |
             "timestamp": float(raw.get("ts") or 0),
         }
         if role == "assistant":
-            message["backend"] = "jros"
+            message["backend"] = "jaeger"
         metadata = raw.get("metadata")
         runtime_tools = metadata.get("tool_calls") if isinstance(metadata, dict) else None
         if isinstance(runtime_tools, list) and runtime_tools:

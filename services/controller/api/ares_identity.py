@@ -38,7 +38,7 @@ def _profile_display_name(profile: str | None) -> str | None:
 
 
 def _is_placeholder_assistant_name(value: str | None) -> bool:
-    return _clean_text(value).lower() in {"", "ares", "ares agent", "jros"}
+    return _clean_text(value).lower() in {"", "ares", "ares agent", "jaeger"}
 
 
 def _persona_display_name(persona_id: str | None) -> str | None:
@@ -60,9 +60,9 @@ def _persona_display_name(persona_id: str | None) -> str | None:
     return pid.replace("_", " ").replace("-", " ").title()
 
 
-def _jros_default_agent_name() -> str | None:
+def _jaeger_default_agent_name() -> str | None:
     try:
-        from api.providers.jaeger.gateway_streaming import query_local_companion
+        from api.providers.jaeger.streaming import query_local_companion
 
         identity = query_local_companion("identity", {})
         if isinstance(identity, dict):
@@ -78,7 +78,7 @@ def _default_assistant_name(bot_name: str | None) -> str:
     saved = _clean_text(bot_name)
     if saved and not _is_placeholder_assistant_name(saved):
         return saved
-    return _jros_default_agent_name() or _DEFAULT_AI_FALLBACK
+    return _jaeger_default_agent_name() or _DEFAULT_AI_FALLBACK
 
 
 def _normalize_backend(value: str | None) -> str:
@@ -122,9 +122,9 @@ def get_assistant_display_name(
 
     Resolution order:
       1. If a non-default WebUI profile is active, keep that profile label.
-      2. If JROS is active and a character is selected, show the
+      2. If JaegerAI is active and a character is selected, show the
          character/person being messaged.
-      3. Otherwise show the user's default AI name from settings/JROS identity.
+      3. Otherwise show the user's default AI name from settings/JaegerAI identity.
       4. Fall back to a neutral product label for incomplete setup.
     """
     profile_name = _profile_display_name(profile)

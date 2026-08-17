@@ -75,14 +75,14 @@ def test_stale_jaeger_override_names_the_variable_and_the_repair(monkeypatch):
     """The exact misconfiguration that made Jaeger look uninstalled."""
     from api.providers.jaeger import paths, status
 
-    for name in (paths.JAEGER_HOME_ENV, paths.ARES_JAEGER_SOURCE_DIR_ENV, paths.LEGACY_JROS_DIR_ENV):
+    for name in (paths.JAEGER_HOME_ENV, paths.ARES_JAEGER_SOURCE_DIR_ENV, paths.LEGACY_JaegerAI_DIR_ENV):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/nonexistent/JROS")
+    monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/nonexistent/JaegerAI")
 
     result = remediation(status.check_status(use_cache=False))
 
     assert "ARES_JAEGER_HOME" in result["reason"]
-    assert "/nonexistent/JROS" in result["reason"]
+    assert "/nonexistent/JaegerAI" in result["reason"]
     assert "ARES_JAEGER_HOME" in result["fix"]
 
 
@@ -227,7 +227,7 @@ def test_recovered_send_reports_which_stream_it_cleared(monkeypatch):
     monkeypatch.setattr(chat_runtime.threading, "Thread", ImmediateThread)
 
     backend = SimpleNamespace(
-        name="hermes_local", get_worker_target=lambda: (lambda *a, **k: None, False, False)
+        name="jaeger_local", get_worker_target=lambda: (lambda *a, **k: None, False, False)
     )
     result = chat_runtime.start_session_turn(
         session.session_id, "retry please", source="webui", backend=backend

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from api.providers.jaeger.legacy_compat import BACKEND_ID_ALIASES
+
 
 @dataclass(frozen=True)
 class BackendDefinition:
@@ -19,7 +21,6 @@ JAEGER_BACKEND_ID = "jaeger_local"
 
 BACKENDS: tuple[BackendDefinition, ...] = (
     BackendDefinition(JAEGER_BACKEND_ID, "Jaeger AI"),
-    BackendDefinition("hermes_local", "Hermes Agent"),
     BackendDefinition("claude_local", "Claude Code"),
     BackendDefinition("codex_local", "OpenAI Codex"),
     BackendDefinition("gemini_local", "Google Gemini"),
@@ -43,9 +44,7 @@ BACKEND_ALIASES = {
     "jaeger": JAEGER_BACKEND_ID,
     "jaegerai": JAEGER_BACKEND_ID,
     "jaeger_ai": JAEGER_BACKEND_ID,
-    "jros": JAEGER_BACKEND_ID,
-    "jros_local": JAEGER_BACKEND_ID,
-    "hermes": "hermes_local",
+    **BACKEND_ID_ALIASES,
 }
 
 

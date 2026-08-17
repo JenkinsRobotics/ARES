@@ -95,7 +95,7 @@ fi
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r "$CONTROLLER/requirements.txt"
 
-echo "Hermes vanilla UI is pre-built (no build step needed)."
+echo "ARES WebUI is pre-built (no build step needed)."
 
 if [[ "$(uname -s)" == "Darwin" && "$SKIP_NATIVE" == false ]]; then
   if command -v swift >/dev/null 2>&1; then

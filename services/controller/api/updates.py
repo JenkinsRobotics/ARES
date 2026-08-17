@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 
 from api.gateway_restart import restart_active_profile_gateway
 from api.config import REPO_ROOT as WEBUI_SOURCE_ROOT, STREAMS, STREAMS_LOCK
-from api.providers.jaeger.paths import jros_update_repo
+from api.providers.jaeger.paths import jaeger_update_repo
 
 
 def _find_owning_git_repo(path: Path) -> Path:
@@ -65,10 +65,10 @@ try:
 except ImportError:
     _AGENT_DIR = None
 
-# ARES: discover JROS repo for update checking through the shared resolver.
-_JROS_DIR = jros_update_repo()
+# ARES: discover JaegerAI repo for update checking through the shared resolver.
+_JaegerAI_DIR = jaeger_update_repo()
 
-_update_cache = {'webui': None, 'agent': None, 'jros': None, 'checked_at': 0, 'include_agent': True, 'channel': 'stable'}
+_update_cache = {'webui': None, 'agent': None, 'jaeger': None, 'checked_at': 0, 'include_agent': True, 'channel': 'stable'}
 _SUMMARY_CACHE_MAX = 16
 _summary_cache: OrderedDict = OrderedDict()
 _cache_lock = threading.Lock()
@@ -1374,8 +1374,8 @@ def check_for_updates(force=False, *, include_agent=True, channel=None):
         # WebUI channel selection. (Codex gate: passing 'experimental' here made
         # the Agent ignore its v* tags and fall back to origin/master.)
         agent_info = _check_repo(_AGENT_DIR, 'agent', DEFAULT_UPDATE_CHANNEL) if include_agent else _ignored_agent_update_info()
-        # ARES: JROS is a peer framework repo; channel selection is WebUI-only.
-        jros_info = _check_repo(_JROS_DIR, 'jros') if _JROS_DIR else {'name': 'jros', 'behind': None, 'no_git': True}
+        # ARES: JaegerAI is a peer framework repo; channel selection is WebUI-only.
+        jaeger_info = _check_repo(_JaegerAI_DIR, 'jaeger') if _JaegerAI_DIR else {'name': 'jaeger', 'behind': None, 'no_git': True}
 
         with _cache_lock:
             _update_cache['webui'] = webui_info

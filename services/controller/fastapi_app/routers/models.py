@@ -104,7 +104,7 @@ def auxiliary_models(identity: Annotated[RequestIdentity, Depends(require_identi
 
 def _set_main(payload: dict[str, Any]):
     from api.config import set_ares_default_model
-    from api.model_catalog import sync_main_model_to_jros
+    from api.model_catalog import sync_main_model_to_jaeger
 
     provider = payload.get("provider")
     if str(provider or "").strip().lower() == "auto":
@@ -114,7 +114,7 @@ def _set_main(payload: dict[str, Any]):
         provider=provider,
         advanced=payload.get("advanced"),
     )
-    sync_main_model_to_jros(result)
+    sync_main_model_to_jaeger(result)
     return result
 
 

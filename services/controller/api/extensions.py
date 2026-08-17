@@ -1888,7 +1888,7 @@ _CURATED_EXTENSION_ENTRIES: list[dict[str, Any]] = [
         "id": "ares-themes-pack",
         "name": "ARES Curated Themes Pack",
         "version": "1.3.0",
-        "description": "Collection of 12+ themes including Hermes Teal, OLED Black, Cyberpunk Neon, Rosé, Midnight, and Sisyphus.",
+        "description": "Collection of 12+ themes including ARES Teal, OLED Black, Cyberpunk Neon, Rosé, Midnight, and Sisyphus.",
         "author": "ARES Core Team",
         "category": "Theme",
         "status": "available",

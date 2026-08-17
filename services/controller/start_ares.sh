@@ -6,7 +6,7 @@ set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Port 8787 is reserved for Hermes WebUI.
+# Port 8787 remains unused for compatibility with older local deployments.
 export ARES_WEBUI_PORT="${ARES_WEBUI_PORT:-8788}"
 export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-127.0.0.1}"
 
@@ -17,7 +17,7 @@ export ARES_WEBUI_STATE_DIR="${ARES_WEBUI_STATE_DIR:-$ARES_HOME/webui}"
 # PID file for single-instance enforcement
 _PID_FILE="${ARES_WEBUI_STATE_DIR}/webui-${ARES_WEBUI_PORT}.pid"
 
-# Point ARES at the standard local JROS/Jaeger install when present.
+# Point ARES at the standard local JaegerAI/Jaeger install when present.
 if [ -z "${ARES_JAEGER_HOME:-}" ] && [ -x "$HOME/jaeger/jaeger" ]; then
   export ARES_JAEGER_HOME="$HOME/jaeger"
 fi
@@ -70,7 +70,7 @@ echo "Starting ARES Web UI on port $ARES_WEBUI_PORT (host: $ARES_WEBUI_HOST)..."
 echo "State dir: $ARES_WEBUI_STATE_DIR"
 echo "Source: $DIR"
 if [ -n "${ARES_JAEGER_HOME:-}" ]; then
-  echo "JROS home: $ARES_JAEGER_HOME"
+  echo "JaegerAI home: $ARES_JAEGER_HOME"
 fi
 cd "$DIR"
 

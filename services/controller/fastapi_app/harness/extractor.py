@@ -44,7 +44,7 @@ class FeatureExtractor:
 
     @classmethod
     def decompose_chat_parity_task(cls) -> VerificationMatrix:
-        """Standard extraction matrix for Hermes WebUI -> ARES Chat Tab parity."""
+        """Standard extraction matrix for Legacy WebUI parity parity."""
         items = [
             {
                 "id": "model-group-accordion",
@@ -87,4 +87,4 @@ class FeatureExtractor:
                 "state_machine_steps": ["click_branch_creates_session", "switches_to_forked_session"],
             },
         ]
-        return cls.create_from_items("Hermes WebUI Chat Parity", items)
+        return cls.create_from_items("Legacy WebUI Chat Parity", items)

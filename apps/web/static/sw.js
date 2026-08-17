@@ -1,5 +1,5 @@
 /**
- * Hermes WebUI Service Worker
+ * ARES WebUI Service Worker
  * Minimal PWA service worker — enables "Add to Home Screen".
  * No offline caching of API responses (the UI requires a live backend).
  * Caches only static shell assets so the app shell loads fast on repeat visits.
@@ -7,7 +7,7 @@
 
 // Cache version is injected by the server at request time (routes.py /sw.js handler).
 // Bumps automatically whenever the git commit changes — no manual edits needed.
-const CACHE_NAME = 'hermes-shell-__WEBUI_VERSION__';
+const CACHE_NAME = 'ares-shell-__WEBUI_VERSION__';
 
 // Static assets that form the app shell.
 //
@@ -23,6 +23,7 @@ const CACHE_NAME = 'hermes-shell-__WEBUI_VERSION__';
 const VQ = '?v=__WEBUI_VERSION__';
 const SHELL_ASSETS = [
   './static/style.css' + VQ,
+  './static/legacy_browser_migration.js' + VQ,
   './static/pwa-startup.js' + VQ,
   './static/boot.js' + VQ,
   './static/assistant_turn_anchors.js' + VQ,
@@ -103,8 +104,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   // API and streaming endpoints — always go to network.
-  // The WebUI may be mounted under a subpath such as /hermes/, so API
-  // requests can look like /hermes/api/sessions rather than /api/sessions.
+  // The WebUI may be mounted under a subpath such as /ares/, so API
+  // requests can look like /ares/api/sessions rather than /api/sessions.
   if (
     url.pathname.startsWith('/api/') ||
     url.pathname.includes('/api/') ||
@@ -134,7 +135,7 @@ self.addEventListener('fetch', (event) => {
         return caches.match('./').then((cached) => cached || new Response(
           '<html><body style="font-family:sans-serif;padding:2rem;background:#1a1a1a;color:#ccc">' +
           '<h2>You are offline</h2>' +
-          '<p>Hermes requires a server connection. Please check your network and try again.</p>' +
+          '<p>ARES requires a server connection. Please check your network and try again.</p>' +
           '</body></html>',
           { headers: { 'Content-Type': 'text/html' } }
         ));

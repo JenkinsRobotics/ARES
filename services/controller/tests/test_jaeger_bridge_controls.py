@@ -9,10 +9,10 @@ from types import SimpleNamespace
 
 
 def test_bridge_client_writes_cancel_and_steer_without_waiting_for_reply():
-    from api.providers.jaeger.bridge_client import JrosClient
+    from api.providers.jaeger.bridge_client import JaegerClient
 
     stdin = io.StringIO()
-    client = JrosClient(command=["jaeger", "bridge"])
+    client = JaegerClient(command=["jaeger", "bridge"])
     client._proc = SimpleNamespace(stdin=stdin)
 
     client.cancel("webui:session-1")
@@ -39,9 +39,9 @@ def test_send_frame_carries_the_ares_session_workspace():
 
 
 def test_bridge_client_validates_integration_contract(monkeypatch):
-    from api.providers.jaeger.bridge_client import JrosClient, JrosError
+    from api.providers.jaeger.bridge_client import JaegerClient, JaegerError
 
-    client = JrosClient(command=["jaeger", "bridge"])
+    client = JaegerClient(command=["jaeger", "bridge"])
     monkeypatch.setattr(client, "query", lambda _what: {
         "contract": "ares-jaeger",
         "contract_version": 6,
@@ -58,14 +58,14 @@ def test_bridge_client_validates_integration_contract(monkeypatch):
     })
     try:
         client.integration_contract()
-    except JrosError as exc:
+    except JaegerError as exc:
         assert "incompatible ARES-Jaeger contract" in str(exc)
     else:
         raise AssertionError("an incompatible integration contract must fail closed")
 
 
 def test_turn_control_delegates_to_the_live_bridge_client():
-    from api.providers.jaeger.gateway_streaming import _JaegerBridgeTurnControl
+    from api.providers.jaeger.streaming import _JaegerBridgeTurnControl
 
     class FakeClient:
         def __init__(self):

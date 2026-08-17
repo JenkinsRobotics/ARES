@@ -21,7 +21,7 @@ def test_delete_session_removes_sidecar_journals_state_and_runtime_handles(tmp_p
     backup.write_text("{}", encoding="utf-8")
     session = SimpleNamespace(
         session_id=session_id, profile="default", worktree_path="/tmp/worktree",
-        messages=[{"role": "assistant", "backend": "jros"}],
+        messages=[{"role": "assistant", "backend": "jaeger"}],
     )
     calls: list[tuple[str, str]] = []
 
@@ -30,7 +30,7 @@ def test_delete_session_removes_sidecar_journals_state_and_runtime_handles(tmp_p
     monkeypatch.setattr("api.config.SESSION_AGENT_LOCKS", {session_id: threading.Lock()})
     monkeypatch.setattr("api.config._evict_session_agent", lambda sid: calls.append(("evict", sid)))
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        "api.providers.jaeger.streaming.command_local_companion",
         lambda command, args: calls.append(("jaeger", f"{command}:{args['id']}")) or
         {"ok": True, "removed": True},
     )
@@ -89,7 +89,7 @@ def test_delete_session_preserves_ares_copy_when_jaeger_delete_fails(tmp_path, m
     sidecar.write_text("{}", encoding="utf-8")
     session = SimpleNamespace(
         session_id=session_id,
-        messages=[{"role": "assistant", "backend": "jros"}],
+        messages=[{"role": "assistant", "backend": "jaeger"}],
     )
 
     monkeypatch.setattr("api.config.SESSION_DIR", session_dir)
@@ -102,7 +102,7 @@ def test_delete_session_preserves_ares_copy_when_jaeger_delete_fails(tmp_path, m
         raise RuntimeError("bridge unavailable")
 
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        "api.providers.jaeger.streaming.command_local_companion",
         fail_peer_delete,
     )
 
@@ -120,7 +120,7 @@ def test_delete_session_resolves_sidecarless_jaeger_session_before_peer_delete(m
     session_id = "sidecarless-jaeger-session"
     session = SimpleNamespace(
         session_id=session_id,
-        messages=[{"role": "assistant", "backend": "jros"}],
+        messages=[{"role": "assistant", "backend": "jaeger"}],
     )
     calls = []
 
@@ -134,7 +134,7 @@ def test_delete_session_resolves_sidecarless_jaeger_session_before_peer_delete(m
         raise RuntimeError("bridge unavailable")
 
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        "api.providers.jaeger.streaming.command_local_companion",
         fail_peer_delete,
     )
 

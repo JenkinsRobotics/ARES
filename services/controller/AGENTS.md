@@ -8,7 +8,7 @@ FastAPI app under `services/controller/`. Serves API + `apps/web/dist` on **:878
 - RFCs: `docs/rfcs/`
 - ADRs: `docs/decisions/`
 
-Do not resurrect hermes-webui leftover guides into this tree. Removed copies live on Desktop archives if needed.
+Do not resurrect retired upstream guides into this tree. Removed copies live in the Desktop archive if needed.
 
 ## Rules
 

@@ -174,15 +174,6 @@ def _discover_agent_dir() -> Path:
     for sys_prefix in ("/opt", "/usr/local", "/usr/local/share"):
         candidates.append(Path(sys_prefix) / "ares-agent")
 
-    # 9. Fallback to legacy hermes-agent paths since we just forked
-    candidates.append(Path(ares_home).expanduser() / "hermes-agent")
-    candidates.append(REPO_ROOT.parent / "hermes-agent")
-    candidates.append(_DEFAULT_ARES_HOME / "hermes-agent")
-    candidates.append(HOME / "hermes-agent")
-    candidates.append(xdg_data.expanduser() / "hermes-agent")
-    for sys_prefix in ("/opt", "/usr/local", "/usr/local/share"):
-        candidates.append(Path(sys_prefix) / "hermes-agent")
-
     # Prefer real source checkouts before pip-style roots so lookalikes cannot preempt them.
     for path in candidates:
         if path.exists() and (path / "run_agent.py").exists():
@@ -9543,7 +9534,7 @@ def save_settings(settings: dict) -> dict:
     if "default_workspace" in current:
         DEFAULT_WORKSPACE = resolve_default_workspace(current["default_workspace"])
 
-    # ARES: Auto-sync provider changes to Ares and JROS configs
+    # ARES: Auto-sync provider changes to Ares and JaegerAI configs
     # This ensures both backends use the same providers and fallbacks
     _sync_providers_on_settings_save(current)
 
@@ -9552,7 +9543,7 @@ def save_settings(settings: dict) -> dict:
 
 
 def _sync_providers_on_settings_save(settings: dict) -> None:
-    """Sync provider changes to Ares and JROS configs automatically.
+    """Sync provider changes to Ares and JaegerAI configs automatically.
     
     Called after save_settings() to ensure both backends stay in sync.
     Only syncs when provider-related settings actually changed.
@@ -9570,7 +9561,7 @@ def _sync_providers_on_settings_save(settings: dict) -> None:
         if not model:
             return
         
-        # Trigger async sync to Ares + JROS configs
+        # Trigger async sync to Ares + JaegerAI configs
         _trigger_provider_sync(provider, model)
     except Exception:
         # Never block settings save on sync failure
@@ -9586,11 +9577,11 @@ def _trigger_provider_sync(provider: str, model: str) -> None:
             from api.ares_provider_sync import sync_provider
             from api.config import _get_config_path
             
-            # Sync to both Ares and JROS
+            # Sync to both Ares and JaegerAI
             sync_provider(
                 provider=provider,
                 model=model,
-                targets=["ares", "jros"],
+                targets=["ares", "jaeger"],
                 ares_config_path=_get_config_path(),
                 dry_run=False,
             )

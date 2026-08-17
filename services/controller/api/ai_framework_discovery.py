@@ -43,13 +43,6 @@ class DiscoveredAdapter:
 # Map ARES adapter IDs to likely binary names and config directories
 _ADAPTER_SPECS: list[dict[str, Any]] = [
     {
-        "adapter_id": "hermes_local",
-        "display_name": "Hermes Agent",
-        "binaries": ["hermes"],
-        "config_dirs": ["~/.hermes"],
-        "model_file": "config.yaml",
-    },
-    {
         "adapter_id": "claude_local",
         "display_name": "Claude Code",
         "binaries": ["claude"],
@@ -101,7 +94,7 @@ _ADAPTER_SPECS: list[dict[str, Any]] = [
     {
         "adapter_id": "jaeger_local",
         "display_name": "Jaeger AI",
-        "binaries": ["jaeger", "jros"],
+        "binaries": ["jaeger"],
         "config_dirs": [],
     },
 ]
@@ -223,7 +216,7 @@ def _extract_model_info(adapter_id: str, config_dir: Path) -> dict[str, Any]:
         if cfg:
             cli = cfg.get("cli", {})
             info["default_model"] = cli.get("fork_secondary_model")
-    elif adapter_id == "hermes_local":
+    elif adapter_id == "jaeger_local":
         cfg = _read_yaml_front(config_dir / "config.yaml")
         if cfg:
             model = cfg.get("model", {})
@@ -333,7 +326,7 @@ def discover_summary() -> dict[str, Any]:
 
 
 _BACKEND_CLASS_MAP: dict[str, str] = {
-    "hermes_local": "api.backends:HermesBackend",
+    "jaeger_local": "api.backends:JaegerBackend",
     "claude_local": "api.backends:ClaudeLocalBackend",
     "codex_local": "api.backends:CodexLocalBackend",
     "gemini_local": "api.backends:GeminiLocalBackend",

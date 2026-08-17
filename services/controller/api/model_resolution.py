@@ -1036,7 +1036,7 @@ def _resolve_effective_session_model_for_display(session) -> str:
     requested_provider = getattr(session, "model_provider", None)
     # A framework adapter already normalized and persisted its own execution
     # model. Applying the global provider catalog here can replace a Codex model
-    # with the Hermes/Ollama default in the UI even though Codex executed it.
+    # with the unrelated default in the UI even though Codex executed it.
     if str(getattr(session, "ares_backend", None) or "").strip():
         return original_model
     _pp_provider, _pp_default, _pp_cfg = _read_profile_model_config(session, requested_provider)

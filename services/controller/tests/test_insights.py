@@ -1,7 +1,7 @@
 """Tests for api.insights.build_insights() — the Usage & Cost dashboard aggregator.
 
 Covers the provider breakdown and duration ("session span") aggregate added
-alongside the JaegerAI usage-persistence fix in api/jros_gateway_chat.py.
+alongside the JaegerAI usage-persistence fix in api/jaeger_gateway_chat.py.
 """
 from __future__ import annotations
 

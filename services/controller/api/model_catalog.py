@@ -11,7 +11,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-JROS_COMPATIBLE_MODEL_PROVIDERS = frozenset(
+JaegerAI_COMPATIBLE_MODEL_PROVIDERS = frozenset(
     {
         "anthropic",
         "gemini",
@@ -246,28 +246,28 @@ def active_profile_config_path() -> Path:
         return _get_config_path()
 
 
-def sync_main_model_to_jros(result: dict) -> None:
+def sync_main_model_to_jaeger(result: dict) -> None:
     provider = str((result or {}).get("provider") or "").strip().lower()
     model = str((result or {}).get("model") or "").strip()
     if not provider or not model:
         return
     try:
-        from api.ares_provider_sync import JROS_FALLBACK_PROVIDER_MAP, sync_provider
+        from api.ares_provider_sync import JaegerAI_FALLBACK_PROVIDER_MAP, sync_provider
 
-        mapped = JROS_FALLBACK_PROVIDER_MAP.get(provider)
+        mapped = JaegerAI_FALLBACK_PROVIDER_MAP.get(provider)
         if not mapped:
             return
         sync_provider(
             provider=mapped,
             model=model,
-            targets=["jros"],
+            targets=["jaeger"],
             ares_config_path=active_profile_config_path(),
         )
-        from api.providers.jaeger.gateway_streaming import reset_jros_boot
+        from api.providers.jaeger.streaming import reset_jaeger_runtime
 
-        reset_jros_boot()
+        reset_jaeger_runtime()
     except Exception:
-        logger.warning("Failed to synchronize the main model with JROS", exc_info=True)
+        logger.warning("Failed to synchronize the main model with JaegerAI", exc_info=True)
 
 
 def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> dict:
@@ -286,7 +286,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
         group
         for group in existing_groups
         if str(group.get("provider_id") or group.get("provider") or "").strip().lower()
-        in JROS_COMPATIBLE_MODEL_PROVIDERS
+        in JaegerAI_COMPATIBLE_MODEL_PROVIDERS
     ]
 
     existing_pids = {
@@ -297,7 +297,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
     if not enrich:
         filtered["groups"] = groups
         filtered["ares_backend"] = BACKEND_JAEGER
-        filtered["compatible_providers"] = sorted(JROS_COMPATIBLE_MODEL_PROVIDERS)
+        filtered["compatible_providers"] = sorted(JaegerAI_COMPATIBLE_MODEL_PROVIDERS)
 
         active_provider = str(filtered.get("active_provider") or "").strip().lower()
         if not active_provider or active_provider not in existing_pids:
@@ -332,8 +332,8 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
 
     # Discover live and installed Jaeger models
     try:
-        from api.backends.model_discovery import discover_jros_models
-        discovered = discover_jros_models()
+        from api.backends.model_discovery import discover_jaeger_models
+        discovered = discover_jaeger_models()
     except Exception:
         discovered = {}
 
@@ -449,7 +449,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
 
     filtered["groups"] = groups
     filtered["ares_backend"] = BACKEND_JAEGER
-    filtered["compatible_providers"] = sorted(JROS_COMPATIBLE_MODEL_PROVIDERS)
+    filtered["compatible_providers"] = sorted(JaegerAI_COMPATIBLE_MODEL_PROVIDERS)
 
     # Resolve active provider & default model
     active_provider = str(filtered.get("active_provider") or "").strip().lower()

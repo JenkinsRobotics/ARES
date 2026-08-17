@@ -37,7 +37,7 @@ does. Two independent clients of one agent is a case ADR-0001 did not consider.
 ## Decision
 
 ARES accesses JaegerAI **exclusively through its versioned client contract**
-(`JrosClient`) and does not import its agent core. The supported local binding
+(`JaegerClient`) and does not import its agent core. The supported local binding
 is `jaeger bridge` over NDJSON stdio. HTTP gateway environment variables are
 legacy compatibility inputs and must not be treated as proof that Jaeger ships
 an HTTP service.
@@ -62,7 +62,7 @@ Good:
   while other surfaces use the contract forks behaviour across two paths.
 - Preserves everything ADR-0001 bought: fault isolation, version independence,
   framework-agnosticism.
-- Transport changes stay beneath the `JrosClient` facade; callers
+- Transport changes stay beneath the `JaegerClient` facade; callers
   (`companion_control.py`, `JaegerBackend.run_turn`) do not change.
 - Feature additions become additive contract changes rather than coordinated
   hard-coded matrices in two repositories.
@@ -72,7 +72,7 @@ Costs:
 - Jaeger's warm state (loaded model, KV cache, sessions) still dies with the
   process that owns it. ADR-0001 anticipated the fix — "measure it against a
   warm-worker daemon" — but daemon lifecycle is **not decided here** (below).
-- No live model hot-swap: `reset_jros_boot()` records that Jaeger's client
+- No live model hot-swap: `reset_jaeger_runtime()` records that Jaeger's client
   model is fixed at construction. Externalising inference does not by itself
   make switching hot; that is a client-construction constraint, not only a
   model-loading one.

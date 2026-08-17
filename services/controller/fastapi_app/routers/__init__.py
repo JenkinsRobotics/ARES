@@ -62,7 +62,7 @@ from .organizer import router as organizer_router
 from .native_system import router as native_system_router
 from .companion import router as companion_router
 from .content_features import router as content_features_router
-from .hermes_compat import router as hermes_compat_router
+from .provider_compat import router as provider_compat_router
 from .harness import router as harness_router
 from .inventory import router as inventory_router
 
@@ -139,7 +139,7 @@ CORE_ROUTER_REGISTRY = (
     RouterRegistration("research", research_router),
     RouterRegistration("sam_conversation", sam_conversation_router),
     RouterRegistration("inventory", inventory_router),
-    RouterRegistration("hermes_compat", hermes_compat_router, legacy=True),
+    RouterRegistration("provider_compat", provider_compat_router, legacy=True),
 )
 
 

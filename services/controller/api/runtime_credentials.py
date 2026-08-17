@@ -34,7 +34,7 @@ def _require_support() -> None:
 def _query(what: str) -> Any:
     _require_support()
     try:
-        from api.providers.jaeger.gateway_streaming import query_local_companion
+        from api.providers.jaeger.streaming import query_local_companion
 
         return query_local_companion(what, {})
     except RuntimeCredentialError:
@@ -46,7 +46,7 @@ def _query(what: str) -> Any:
 def _command(command: str, args: dict[str, Any]) -> dict[str, Any]:
     _require_support()
     try:
-        from api.providers.jaeger.gateway_streaming import command_local_companion
+        from api.providers.jaeger.streaming import command_local_companion
 
         result = command_local_companion(command, args)
     except RuntimeCredentialError:

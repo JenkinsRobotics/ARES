@@ -423,7 +423,7 @@ def runtime_context(_identity: Annotated[RequestIdentity, Depends(require_identi
 def tools(_identity: Annotated[RequestIdentity, Depends(require_identity)]):
     from api.ares_tool_adapter import register_ares_tools
 
-    # This is a JSON discovery contract, not an executable in-process JROS
+    # This is a JSON discovery contract, not an executable in-process JaegerAI
     # registry. MCP-shaped schemas contain no Python classes or callables and
     # are therefore safe to serialize regardless of the active runtime.
     return {"tools": register_ares_tools(target="mcp")}
@@ -602,53 +602,6 @@ def register_device(
 
 
 
-
-@router.post("/api/ares/sessions/import-hermes")
-def import_hermes_sessions():
-    """Import all sessions from Hermes WebUI (~/.hermes/sessions/) into ARES."""
-    from api.models import import_cli_session, get_cli_sessions
-    from pathlib import Path
-    import json
-    
-    hermes_dir = Path.home() / ".hermes" / "sessions"
-    if not hermes_dir.exists():
-        return {"imported": 0, "error": "Hermes sessions directory not found"}
-    
-    imported = []
-    skipped = []
-    
-    for session_file in hermes_dir.glob("*.json"):
-        try:
-            data = json.loads(session_file.read_text())
-            session_id = data.get("session_id") or session_file.stem
-            title = data.get("title", "Hermes Session")
-            messages = data.get("messages", [])
-            
-            # Skip if already in ARES
-            from api.models import Session
-            if Session.load(session_id):
-                skipped.append(session_id)
-                continue
-            
-            # Import into ARES
-            session = import_cli_session(
-                session_id=session_id,
-                title=title,
-                messages=messages,
-                model=data.get("model", "unknown"),
-                created_at=data.get("created_at"),
-                updated_at=data.get("updated_at"),
-            )
-            imported.append(session_id)
-        except Exception as e:
-            skipped.append(f"{session_file.name}: {e}")
-    
-    return {
-        "imported": len(imported),
-        "skipped": len(skipped),
-        "imported_ids": imported[:20],  # Limit response size
-        "skipped_ids": skipped[:20],
-    }
 
 
 
@@ -950,9 +903,9 @@ def sync_provider_configuration(
     from api.ares_provider_sync import sync_fallback_chain, sync_provider
     from api.config import _get_config_path
 
-    targets = payload.get("targets") or ["ares", "jros"]
+    targets = payload.get("targets") or ["ares", "jaeger"]
     if not isinstance(targets, list):
-        raise CoreApiError(400, "targets must be a list of ares and/or jros")
+        raise CoreApiError(400, "targets must be a list of ares and/or jaeger")
     dry_run = bool(payload.get("dry_run", False))
     try:
         with profile_scope(identity.profile):
@@ -966,7 +919,7 @@ def sync_provider_configuration(
                 ares_config_path=config_path,
                 dry_run=dry_run,
             )
-            if "jros" in targets:
+            if "jaeger" in targets:
                 try:
                     result["fallback_chain"] = sync_fallback_chain(
                         ares_config_path=config_path,

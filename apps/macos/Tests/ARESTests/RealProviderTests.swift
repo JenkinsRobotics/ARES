@@ -10,26 +10,22 @@ import ARESCore
 final class ARESConfigurationTests: XCTestCase {
     func testMalformedURLsFallBackToDefaults() {
         let config = ARESConfiguration.shared
-        let savedHermes = config.hermesURL
         let savedOllama = config.ollamaURL
         defer {
-            config.hermesURL = savedHermes
             config.ollamaURL = savedOllama
         }
 
-        config.hermesURL = "not a url at all"
         config.ollamaURL = ""
-        XCTAssertEqual(config.hermesBaseURL.absoluteString, "about:blank")
         XCTAssertEqual(config.ollamaBaseURL.absoluteString, "about:blank")
     }
 
     func testCustomURLsParse() {
         let config = ARESConfiguration.shared
-        let saved = config.hermesURL
-        defer { config.hermesURL = saved }
+        let saved = config.ollamaURL
+        defer { config.ollamaURL = saved }
 
-        config.hermesURL = "http://198.51.100.11:8642"
-        XCTAssertEqual(config.hermesBaseURL.host, "198.51.100.11")
-        XCTAssertEqual(config.hermesBaseURL.port, 8642)
+        config.ollamaURL = "http://198.51.100.11:11434"
+        XCTAssertEqual(config.ollamaBaseURL.host, "198.51.100.11")
+        XCTAssertEqual(config.ollamaBaseURL.port, 11434)
     }
 }

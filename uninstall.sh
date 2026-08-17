@@ -3,10 +3,8 @@
 #
 # Usage:
 #   bash uninstall.sh          Remove the ARES install (server, launchd, app command).
-#                              Keeps your Companion (JaegerAI instance), profile, and
-#                              Hermes config — reinstalling picks them back up.
-#   bash uninstall.sh --purge  Also remove Companion instances, ~/.hermes, and the
-#                              companion profile dir. Use for a truly fresh onboarding.
+#                              Keeps all worker-owned JaegerAI data.
+#   bash uninstall.sh --purge  Also removes ARES-owned companion profile data.
 
 set -e
 
@@ -40,46 +38,20 @@ fi
 
 # 4. Launcher command + Mac app defaults
 rm -f "$HOME/.local/bin/ares"
-rm -f "$HOME/.local/bin/jaeger"
 rm -rf "$HOME/Applications/ARES.app"
 defaults delete ARES 2>/dev/null || true
 ok "Launcher command, ARES.app, and app defaults removed"
 
 if [ "$PURGE" = false ]; then
     echo ""
-    ok "Uninstalled. Companion data kept:"
-    echo "    • JaegerAI instances:  ~/jaeger/.jaeger_os/instances/"
-    echo "    • Companion profile:   ~/Desktop/ARES/companion/"
-    echo "    • Hermes config:       ~/.hermes/"
-    echo "  Run with --purge to remove those too (fresh onboarding)."
+    ok "Uninstalled. JaegerAI and other worker-owned data were not changed."
+    echo "  Run with --purge to remove the ARES-owned companion profile too."
     exit 0
 fi
 
-# ── --purge: remove companion + agent state so onboarding starts fresh ──────
+# ── --purge: remove remaining ARES-owned state ───────────────────────────────
 echo ""
-echo "── Purging companion and agent state ──"
-
-# Companion instances — these are what make onboarding think it already ran
-for jh in "$HOME/jaeger" "$HOME/.jaeger"; do
-    if [ -d "$jh/.jaeger_os/instances" ]; then
-        rm -rf "$jh/.jaeger_os/instances"
-        ok "Companion instances removed ($jh/.jaeger_os/instances)"
-    fi
-done
-
-# Hermes state (old configs make onboarding auto-complete or misreport)
-if [ -d "$HOME/.hermes" ]; then
-    rm -rf "$HOME/.hermes"
-    ok "~/.hermes removed"
-fi
-# Stale hermes wrapper pointing at a removed venv
-if [ -f "$HOME/.local/bin/hermes" ]; then
-    _target=$(grep -oE '"/[^"]*/bin/hermes"' "$HOME/.local/bin/hermes" 2>/dev/null | tr -d '"' || true)
-    if [ -n "$_target" ] && [ ! -f "$_target" ]; then
-        rm -f "$HOME/.local/bin/hermes"
-        ok "Stale hermes wrapper removed"
-    fi
-fi
+echo "── Purging ARES-owned state ──"
 
 # Companion profile dir
 if [ -d "$HOME/Desktop/ARES/companion" ]; then

@@ -54,13 +54,8 @@ NO_START=false
 SOURCE_DIR=""
 INSTALL_CLI=true
 
-# JaegerAI is ARES's recommended Companion runtime for identity, memory,
-# character, voice, and embodiment. ARES never forks or reimplements it; the installer only
-# ever detects an existing install or delegates to JaegerAI's own installer,
-# the same way ares-workspace's installer delegates to Nous's upstream
-# ares-agent installer instead of reimplementing it.
-JROS_INSTALL_URL="${JROS_INSTALL_URL:-https://raw.githubusercontent.com/JenkinsRobotics/JaegerAI/master/scripts/install.sh}"
-SKIP_JROS=false
+# JaegerAI is a separately installed runtime. This installer only detects it.
+SKIP_JaegerAI=false
 
 # Ares Agent is an optional addition (coding/terminal/skills capability),
 # never installed unless the operator asks for it.
@@ -90,7 +85,7 @@ while [[ $# -gt 0 ]]; do
         --no-start) NO_START=true; shift ;;
         --source) SOURCE_DIR="$2"; shift 2 ;;
         --no-cli) INSTALL_CLI=false; shift ;;
-        --skip-jaeger|--skip-jros) SKIP_JROS=true; shift ;;
+        --skip-jaeger|--skip-jaeger) SKIP_JaegerAI=true; shift ;;
         --with-ares) WITH_ARES=true; shift ;;
         -h|--help)
             echo "ARES Web UI Installer"
@@ -110,7 +105,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --non-interactive  Skip stages that require user input"
             echo "  --backend MODE  Explicit adapter election (default: unassigned)."
             echo "                  Examples: unassigned, auto, jaeger,"
-            echo "                  jaeger_local, hermes, hermes_local, claude_local,"
+            echo "                  jaeger_local, claude_local,"
             echo "                  ollama_local, openai_cloud. Deleted modes ares/hybrid are rejected."
             echo "  --no-start      Skip auto-starting the server after installation"
             echo "  --source PATH   Install the current local source tree instead of cloning"
@@ -152,7 +147,7 @@ json_escape() {
 }
 
 emit_manifest() {
-    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download ARES Web UI","category":"runtime","needs_user_input":false},{"name":"jros","title":"Connect recommended JaegerAI runtime","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare configuration","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure Companion and optional additions","category":"configuration","needs_user_input":true},{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
+    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download ARES Web UI","category":"runtime","needs_user_input":false},{"name":"jaeger","title":"Connect recommended JaegerAI runtime","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare configuration","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure Companion and optional additions","category":"configuration","needs_user_input":true},{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
     printf '\n'
 }
 
@@ -202,50 +197,33 @@ prompt_yes_no() {
 # System detection
 # ============================================================================
 
-detect_jros() {
+detect_jaeger() {
     JAEGER_HOME_DETECTED="${ARES_JAEGER_HOME:-${JAEGER_HOME:-$HOME/jaeger}}"
     JAEGER_LAUNCHER="$JAEGER_HOME_DETECTED/jaeger"
     if [ -x "$JAEGER_LAUNCHER" ]; then
-        JROS_DETECTED=true
+        JaegerAI_DETECTED=true
         log_success "JaegerAI detected at $JAEGER_HOME_DETECTED"
     else
-        JROS_DETECTED=false
+        JaegerAI_DETECTED=false
         log_info "JaegerAI not detected at $JAEGER_HOME_DETECTED"
     fi
 }
 
-# JaegerAI is ARES's recommended full Companion runtime. This stage never reimplements JaegerAI — it only detects an
-# existing install or delegates to JaegerAI's own installer, exactly the way
-# ARES already delegates to Nous's own installer for the optional Ares
-# addition (see install_deps below).
-stage_jros() {
-    detect_jros
-    if [ "$JROS_DETECTED" = true ]; then
+# JaegerAI installation is an explicit operator action in its own repository.
+stage_jaeger() {
+    detect_jaeger
+    if [ "$JaegerAI_DETECTED" = true ]; then
         log_success "JaegerAI already installed at $JAEGER_HOME_DETECTED — skipping install"
         return 0
     fi
-    if [ "$SKIP_JROS" = true ]; then
-        log_warn "Skipping JaegerAI install (--skip-jros). Profile setup remains available;"
+    if [ "$SKIP_JaegerAI" = true ]; then
+        log_warn "Skipping JaegerAI install (--skip-jaeger). Profile setup remains available;"
         log_warn "JaegerAI capabilities remain unavailable until it is connected."
         return 0
     fi
 
-    log_info "JaegerAI not found — installing the required Companion runtime..."
-    log_info "  Delegating to JaegerAI's own installer: $JROS_INSTALL_URL"
-    if ! curl -fsSL "$JROS_INSTALL_URL" | JAEGER_HOME="$JAEGER_HOME_DETECTED" bash; then
-        log_warn "JaegerAI install failed; continuing with profile-only setup."
-        log_warn "Retry later with: curl -fsSL $JROS_INSTALL_URL | bash"
-        return 0
-    fi
-
-    detect_jros
-    if [ "$JROS_DETECTED" != true ]; then
-        log_warn "JaegerAI installer finished but no launcher was found at $JAEGER_HOME_DETECTED."
-        log_warn "Profile setup will continue without execution readiness. Set"
-        log_warn "ARES_JAEGER_HOME/JAEGER_HOME after locating the installation."
-        return 0
-    fi
-    log_success "JaegerAI installed at $JAEGER_HOME_DETECTED"
+    log_warn "JaegerAI is not installed. Install it from its own repository, then"
+    log_warn "set ARES_JAEGER_HOME if it is outside the standard location."
 }
 
 detect_os() {
@@ -530,7 +508,7 @@ setup_config() {
     # Create state directory
     mkdir -p "$ARES_HOME"
 
-    detect_jros
+    detect_jaeger
     # Canonical live adapter IDs must match api.backend_selector.VALID_BACKENDS.
     # Short aliases map at write time; deleted ares/hybrid modes fail closed.
     selected_backend="$BACKEND_MODE"
@@ -539,7 +517,7 @@ setup_config() {
             selected_backend=""
             ;;
         auto)
-            if [ "${JROS_DETECTED:-false}" = true ]; then
+            if [ "${JaegerAI_DETECTED:-false}" = true ]; then
                 selected_backend="jaeger_local"
             else
                 # Profile can be saved without an elected runtime.
@@ -548,23 +526,22 @@ setup_config() {
                 log_warn "Connect a live adapter later in Connections, or re-run with --backend jaeger_local."
             fi
             ;;
-        jaeger|jaegerai|jaeger_local|jros|jros_local) selected_backend="jaeger_local" ;;
-        hermes|hermes_local) selected_backend="hermes_local" ;;
+        jaeger|jaegerai|jaeger_local) selected_backend="jaeger_local" ;;
         claude_local|codex_local|gemini_local|grok_local|opencode_local|cursor_local|pi_local|openai_cloud|xai_cloud|gemini_cloud|gemini_antigravity|ollama_local)
             selected_backend="$selected_backend"
             ;;
         ares|ares_local|hybrid)
             log_error "Backend '$selected_backend' is no longer supported."
-            log_error "Use a live adapter ID such as jaeger_local or hermes_local (see --help)."
+            log_error "Use a live adapter ID such as jaeger_local (see --help)."
             exit 1
             ;;
         *)
             log_error "Invalid backend mode: $selected_backend"
-            log_error "Expected unassigned, auto, or a live adapter ID (jaeger_local, hermes_local, claude_local, ...)."
+            log_error "Expected unassigned, auto, or a live adapter ID (jaeger_local, jaeger_local, claude_local, ...)."
             exit 1
             ;;
     esac
-    if [ "$selected_backend" = "jaeger_local" ] && [ "${JROS_DETECTED:-false}" != true ]; then
+    if [ "$selected_backend" = "jaeger_local" ] && [ "${JaegerAI_DETECTED:-false}" != true ]; then
         log_error "Backend 'jaeger_local' selected but no Jaeger AI install was found at ${JAEGER_HOME_DETECTED:-unknown}."
         log_error "Re-run without --skip-jaeger, install Jaeger AI manually, or choose another --backend."
         exit 1
@@ -624,16 +601,16 @@ if backend and not seen:
     out.append(f"ares_backend: {backend}")
 config_path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
-    if [ "${JROS_DETECTED:-false}" = true ]; then
+    if [ "${JaegerAI_DETECTED:-false}" = true ]; then
         "$CONFIG_PYTHON" - "$WEBUI_DIR/.env" "$JAEGER_HOME_DETECTED" <<'PY'
 import sys
 from pathlib import Path
 
 env_path = Path(sys.argv[1])
-jros_home = sys.argv[2]
+jaeger_home = sys.argv[2]
 updates = {
-    "ARES_JAEGER_HOME": jros_home,
-    "JAEGER_HOME": jros_home,
+    "ARES_JAEGER_HOME": jaeger_home,
+    "JAEGER_HOME": jaeger_home,
 }
 lines = []
 seen = set()
@@ -692,7 +669,7 @@ if [ -n "$STAGE_NAME" ]; then
     case "$STAGE_NAME" in
         prerequisites) stage_prerequisites ;;
         repository) clone_repo ;;
-        jros) stage_jros ;;
+        jaeger) stage_jaeger ;;
         venv) setup_venv ;;
         python-deps) install_deps ;;
         config) setup_config ;;
@@ -732,7 +709,7 @@ setup_cli() {
 
 stage_prerequisites
 clone_repo
-stage_jros
+stage_jaeger
 setup_venv
 install_deps
 setup_config
@@ -743,14 +720,14 @@ echo ""
 echo -e "${GREEN}${BOLD}ARES Web UI installation complete!${NC}"
 echo ""
 echo "  Start the server:"
-if [ "${JROS_DETECTED:-false}" = true ]; then
+if [ "${JaegerAI_DETECTED:-false}" = true ]; then
     echo "    cd $WEBUI_DIR && ARES_JAEGER_HOME=$JAEGER_HOME_DETECTED ./venv/bin/python -m uvicorn fastapi_app.main:app --host $HOST --port $PORT --no-server-header"
 else
     echo "    cd $WEBUI_DIR && ./venv/bin/python -m uvicorn fastapi_app.main:app --host $HOST --port $PORT --no-server-header"
 fi
 echo ""
 echo "  Or set env and run:"
-if [ "${JROS_DETECTED:-false}" = true ]; then
+if [ "${JaegerAI_DETECTED:-false}" = true ]; then
     echo "    cd $WEBUI_DIR && ARES_JAEGER_HOME=$JAEGER_HOME_DETECTED ARES_WEBUI_HOST=$HOST ARES_WEBUI_PORT=$PORT ./venv/bin/python -m uvicorn fastapi_app.main:app --host $HOST --port $PORT --no-server-header"
 else
     echo "    cd $WEBUI_DIR && ARES_WEBUI_HOST=$HOST ARES_WEBUI_PORT=$PORT ./venv/bin/python -m uvicorn fastapi_app.main:app --host $HOST --port $PORT --no-server-header"
@@ -766,14 +743,14 @@ echo ""
 if [ "$NO_START" = false ] && [ -t 0 ]; then
     echo -e "${CYAN}→ Starting ARES Web UI...${NC}"
     cd "$WEBUI_DIR"
-    if [ "${JROS_DETECTED:-false}" = true ]; then
+    if [ "${JaegerAI_DETECTED:-false}" = true ]; then
         ARES_JAEGER_HOME="$JAEGER_HOME_DETECTED" JAEGER_HOME="$JAEGER_HOME_DETECTED" ARES_WEBUI_HOST="$HOST" ARES_WEBUI_PORT="$PORT" ./venv/bin/python -m uvicorn fastapi_app.main:app --host "$HOST" --port "$PORT" --no-server-header
     else
         ARES_WEBUI_HOST="$HOST" ARES_WEBUI_PORT="$PORT" ./venv/bin/python -m uvicorn fastapi_app.main:app --host "$HOST" --port "$PORT" --no-server-header
     fi
 else
     echo -e "${CYAN}→ To start the server later, run:${NC}"
-    if [ "${JROS_DETECTED:-false}" = true ]; then
+    if [ "${JaegerAI_DETECTED:-false}" = true ]; then
         echo "  cd $WEBUI_DIR && ARES_JAEGER_HOME=$JAEGER_HOME_DETECTED JAEGER_HOME=$JAEGER_HOME_DETECTED ARES_WEBUI_HOST=$HOST ARES_WEBUI_PORT=$PORT ./venv/bin/python -m uvicorn fastapi_app.main:app --host $HOST --port $PORT --no-server-header"
     else
         echo "  cd $WEBUI_DIR && ARES_WEBUI_HOST=$HOST ARES_WEBUI_PORT=$PORT ./venv/bin/python -m uvicorn fastapi_app.main:app --host $HOST --port $PORT --no-server-header"

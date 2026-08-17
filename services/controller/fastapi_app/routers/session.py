@@ -767,10 +767,10 @@ def update_session(
                 try:
                     from api.backend_selector import BACKEND_JAEGER, get_active_backend
                     from api.config import get_config
-                    from api.model_catalog import sync_main_model_to_jros
+                    from api.model_catalog import sync_main_model_to_jaeger
 
                     if get_active_backend(get_config()) == BACKEND_JAEGER and session.model:
-                        sync_main_model_to_jros({
+                        sync_main_model_to_jaeger({
                             "model": session.model,
                             "provider": session.model_provider or "auto",
                         })

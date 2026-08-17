@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 IGNORE_DIRS = {
     "steamlibrary", "steam", "node_modules", ".git", ".venv", "venv",
-    "__pycache__", ".pytest_cache", ".agent", ".hermes", "archive",
+    "__pycache__", ".pytest_cache", ".agent", "archive",
     ".cache", "dist", "build", ".next", ".nuxt", "temp", "tmp",
 }
 

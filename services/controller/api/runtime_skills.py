@@ -34,7 +34,7 @@ def _require_jaeger_skills() -> None:
 def _query(what: str, args: dict[str, Any] | None = None) -> Any:
     _require_jaeger_skills()
     try:
-        from api.providers.jaeger.gateway_streaming import query_local_companion
+        from api.providers.jaeger.streaming import query_local_companion
 
         return query_local_companion(what, args or {})
     except RuntimeSkillError:
@@ -46,7 +46,7 @@ def _query(what: str, args: dict[str, Any] | None = None) -> Any:
 def _command(cmd: str, args: dict[str, Any] | None = None) -> Any:
     _require_jaeger_skills()
     try:
-        from api.providers.jaeger.gateway_streaming import command_local_companion
+        from api.providers.jaeger.streaming import command_local_companion
 
         return command_local_companion(cmd, args or {})
     except RuntimeSkillError:

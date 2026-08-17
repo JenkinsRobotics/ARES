@@ -146,18 +146,13 @@ def test_api_health_alias_preserves_namespaced_contract(app):
     assert response.json()["status"] == "ok"
 
 
-def test_legacy_adapter_inventory_handles_app_automation_backends(app, monkeypatch):
-    # A configured instance without an optional JROS source checkout used to
-    # abort the entire inventory while resolving its identity projection.
-    monkeypatch.setenv("ARES_JROS_INSTANCE", "inventory-test")
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
-    # jros_local availability comes from the gateway, not the source checkout,
-    # so point it at an unreachable port. Without this the test asserted
-    # "unavailable" while passing only on machines with no JaegerAI running.
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://127.0.0.1:1")
-    from api.providers.jaeger.status import reset_cache
+def test_adapter_inventory_handles_unavailable_jaeger(app, monkeypatch):
+    from api.providers.status_contract import offline
 
-    reset_cache()
+    monkeypatch.setattr(
+        "api.providers.jaeger.status.check_status",
+        lambda **_kwargs: offline("JaegerAI is unavailable for this test."),
+    )
     response = request(app, "GET", "/api/ares/adapters")
 
     assert response.status_code == 200, response.text

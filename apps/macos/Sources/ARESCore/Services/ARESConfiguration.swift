@@ -90,14 +90,6 @@ public final class ARESConfiguration: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(reloadDevMode, forKey: "ares.config.reloadDevMode") }
     }
 
-    @Published public var hermesURL: String = UserDefaults.standard.string(forKey: "ares.config.hermesURL") ?? "" {
-        didSet { UserDefaults.standard.set(hermesURL, forKey: "ares.config.hermesURL") }
-    }
-
-    @Published public var jrosURL: String = UserDefaults.standard.string(forKey: "ares.config.jrosURL") ?? "" {
-        didSet { UserDefaults.standard.set(jrosURL, forKey: "ares.config.jrosURL") }
-    }
-
     @Published public var ollamaURL: String = UserDefaults.standard.string(forKey: "ares.config.ollamaURL") ?? "" {
         didSet { UserDefaults.standard.set(ollamaURL, forKey: "ares.config.ollamaURL") }
     }
@@ -110,45 +102,7 @@ public final class ARESConfiguration: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(localPerceiverWSURL, forKey: "ARES_PERCEIVER_WS") }
     }
 
-    @Published public var hermesDashboardURL: String = UserDefaults.standard.string(forKey: "ares.config.hermesDashboardURL") ?? "" {
-        didSet { UserDefaults.standard.set(hermesDashboardURL, forKey: "ares.config.hermesDashboardURL") }
-    }
-
-    /// Hermes Gateway API key. Environment overrides win; persisted values
-    /// live in Keychain and legacy UserDefaults values are migrated once.
-    @Published public var hermesAPIKey: String = ARESSecretStore.loadMigratingLegacy(
-        environmentKey: "API_SERVER_KEY",
-        account: "hermes-gateway-api-key",
-        legacyDefaultsKey: "ares.config.hermesAPIKey"
-    ) {
-        didSet {
-            _ = ARESSecretStore.write(hermesAPIKey, account: "hermes-gateway-api-key")
-            UserDefaults.standard.removeObject(forKey: "ares.config.hermesAPIKey")
-        }
-    }
-
-    /// Jaeger AI Gateway API key. Stored locally for Finder-launched app
-    /// sessions and exported as ARES_JAEGER_GATEWAY_KEY when ARES starts WebUI.
-    @Published public var jrosAPIKey: String = ARESSecretStore.loadMigratingLegacy(
-        environmentKey: "ARES_JAEGER_GATEWAY_KEY",
-        account: "jros-gateway-api-key",
-        legacyDefaultsKey: "ares.config.jrosAPIKey"
-    ) {
-        didSet {
-            _ = ARESSecretStore.write(jrosAPIKey, account: "jros-gateway-api-key")
-            UserDefaults.standard.removeObject(forKey: "ares.config.jrosAPIKey")
-        }
-    }
-
     // MARK: - Parsed external provider URLs
-
-    public var hermesBaseURL: URL {
-        Self.validHTTPURL(from: hermesURL) ?? URL(string: "about:blank")!
-    }
-
-    public var jrosBaseURL: URL {
-        Self.validHTTPURL(from: jrosURL) ?? URL(string: "about:blank")!
-    }
 
     public var ollamaBaseURL: URL {
         Self.validHTTPURL(from: ollamaURL) ?? URL(string: "about:blank")!

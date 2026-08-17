@@ -343,87 +343,68 @@ def discover_hermes_models(hermes_home: str | None = None) -> dict[str, Any]:
 
 
 def _jaeger_roots() -> list[Path]:
-    roots: list[Path] = []
-    for env_key in ("ARES_JAEGER_HOME", "JAEGER_HOME", "ARES_JAEGER_SOURCE_DIR"):
-        raw = os.environ.get(env_key)
-        if raw:
-            roots.append(Path(raw).expanduser())
     try:
         from api.providers.jaeger.paths import jaeger_home
-        jhome = jaeger_home()
-        if jhome:
-            roots.append(jhome)
+
+        root = jaeger_home()
+        return [root] if root.exists() else []
     except Exception:
-        pass
-    roots.extend(
-        [
-            Path.home() / "GitHub" / "JaegerAI",
-            Path.home() / "jaeger",
-            Path.home() / ".jaeger",
-            Path.home() / ".jaeger_os",
-            Path.home() / "JaegerAI",
-        ]
-    )
-    # de-dupe existing
-    out: list[Path] = []
-    seen: set[str] = set()
-    for r in roots:
-        key = str(r.resolve()) if r.exists() else str(r)
-        if key in seen:
-            continue
-        seen.add(key)
-        if r.exists():
-            out.append(r)
-    return out
+        return []
 
 
 def list_jaeger_installed_gguf(jaeger_home: Path | None = None) -> list[dict[str, Any]]:
-    """Scan ``.jaeger_os/models/<id>`` and ``models/<id>`` installs for GGUF and MLX/safetensors."""
-    homes = [jaeger_home] if jaeger_home else _jaeger_roots()
+    """Scan resolver-approved Jaeger model roots for GGUF and MLX/safetensors."""
+    if jaeger_home is not None:
+        model_roots = [jaeger_home / "models"]
+    else:
+        try:
+            from api.providers.jaeger.paths import jaeger_models_roots
+
+            model_roots = jaeger_models_roots()
+        except Exception:
+            model_roots = []
     models: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for home in homes:
-        for mdir_name in (".jaeger_os/models", "models"):
-            models_dir = home / mdir_name
-            if not models_dir.is_dir():
+    for models_dir in model_roots:
+        if not models_dir.is_dir():
+            continue
+        for child in sorted(models_dir.iterdir()):
+            if not child.is_dir():
                 continue
-            for child in sorted(models_dir.iterdir()):
-                if not child.is_dir():
-                    continue
-                mid = child.name
-                if mid in seen:
-                    continue
-                ggufs = list(child.glob("*.gguf"))
-                safetensors = list(child.glob("*.safetensors"))
-                has_config = (child / "config.json").is_file()
+            mid = child.name
+            if mid in seen:
+                continue
+            ggufs = list(child.glob("*.gguf"))
+            safetensors = list(child.glob("*.safetensors"))
+            has_config = (child / "config.json").is_file()
 
-                if ggufs:
-                    seen.add(mid)
-                    file_name = ggufs[0].name
-                    models.append(
-                        model_entry(
-                            id=file_name if file_name else mid,
-                            label=file_name or mid,
-                            location="local",
-                            provider="local",
-                            in_use=False,
-                            source=str(ggufs[0]),
-                            notes=f"Installed GGUF under {child.name}",
-                        )
+            if ggufs:
+                seen.add(mid)
+                file_name = ggufs[0].name
+                models.append(
+                    model_entry(
+                        id=file_name if file_name else mid,
+                        label=file_name or mid,
+                        location="local",
+                        provider="local",
+                        in_use=False,
+                        source=str(ggufs[0]),
+                        notes=f"Installed GGUF under {child.name}",
                     )
-                elif safetensors or has_config:
-                    seen.add(mid)
-                    models.append(
-                        model_entry(
-                            id=mid,
-                            label=f"{mid} (MLX)",
-                            location="local",
-                            provider="local",
-                            in_use=False,
-                            source=str(child),
-                            notes=f"Installed MLX/safetensors model under {child.name}",
-                        )
+                )
+            elif safetensors or has_config:
+                seen.add(mid)
+                models.append(
+                    model_entry(
+                        id=mid,
+                        label=f"{mid} (MLX)",
+                        location="local",
+                        provider="local",
+                        in_use=False,
+                        source=str(child),
+                        notes=f"Installed MLX/safetensors model under {child.name}",
                     )
+                )
     return models
 
 
@@ -434,7 +415,7 @@ def discover_jros_models(
 ) -> dict[str, Any]:
     """Configured + installed models/providers for JaegerAI/JROS."""
     health = gateway_health or {}
-    inst = str(instance or health.get("instance") or "jarvis").strip() or "jarvis"
+    inst = str(instance or health.get("instance") or "").strip()
     models: list[dict[str, Any]] = []
     seen: set[str] = set()
     providers: list[dict[str, Any]] = []
@@ -462,46 +443,45 @@ def discover_jros_models(
             )
         )
 
-    # Instance config - check all candidate homes and instances subdirectories
-    for home in _jaeger_roots():
-        instance_dirs: list[Path] = []
-        for base in (home / "instances", home / ".jaeger_os" / "instances"):
-            if base.is_dir():
-                if inst and (base / inst).is_dir():
-                    instance_dirs.append(base / inst)
-                for child in sorted(base.iterdir()):
-                    if child.is_dir() and child not in instance_dirs:
-                        instance_dirs.append(child)
-        
-        for inst_path in instance_dirs:
-            cfg_path = inst_path / "config.yaml"
-            cfg = _safe_yaml_load(cfg_path)
-            if not cfg:
-                continue
-            mblock = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
-            model_path = str(mblock.get("model_path") or "").strip()
-            backend = str(mblock.get("backend") or "").strip() or "llama_cpp_python"
-            if model_path:
-                # Prefer matching gguf filename if present
-                for gguf_base in (home / "models", home / ".jaeger_os" / "models"):
-                    gguf_dir = gguf_base / model_path
-                    gguf_files = list(gguf_dir.glob("*.gguf")) if gguf_dir.is_dir() else []
-                    if gguf_files:
-                        break
-                else:
-                    gguf_files = []
-                mid = gguf_files[0].name if gguf_files else model_path
-                _push(
-                    model_entry(
-                        id=mid,
-                        label=mid,
-                        location="local",
-                        provider="local",
-                        in_use=(mid == live_model or model_path in live_model.lower()),
-                        source=str(cfg_path),
-                        notes=f"instance model_path ({backend})",
-                    )
+    # Read-only fallback when the bridge has not reported a serving model yet.
+    try:
+        from api.providers.jaeger.paths import jaeger_instance_dir, jaeger_models_roots
+
+        resolved_instance = jaeger_instance_dir(inst or None)
+        instance_dirs = [resolved_instance] if resolved_instance is not None else []
+        model_roots = jaeger_models_roots()
+    except Exception:
+        instance_dirs = []
+        model_roots = []
+    for inst_path in instance_dirs:
+        cfg_path = inst_path / "config.yaml"
+        cfg = _safe_yaml_load(cfg_path)
+        if not cfg:
+            continue
+        mblock = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
+        model_path = str(mblock.get("model_path") or "").strip()
+        backend = str(mblock.get("backend") or "").strip() or "llama_cpp_python"
+        if model_path:
+            # Prefer matching gguf filename if present
+            for gguf_base in model_roots:
+                gguf_dir = gguf_base / model_path
+                gguf_files = list(gguf_dir.glob("*.gguf")) if gguf_dir.is_dir() else []
+                if gguf_files:
+                    break
+            else:
+                gguf_files = []
+            mid = gguf_files[0].name if gguf_files else model_path
+            _push(
+                model_entry(
+                    id=mid,
+                    label=mid,
+                    location="local",
+                    provider="local",
+                    in_use=(mid == live_model or model_path in live_model.lower()),
+                    source=str(cfg_path),
+                    notes=f"instance model_path ({backend})",
                 )
+            )
         deep = cfg.get("deep_think") if isinstance(cfg.get("deep_think"), dict) else {}
         coder = str(deep.get("coder_model") or "").strip()
         if coder:

@@ -148,8 +148,11 @@ def companion_create(
             character_id=str(payload.get("character_id") or ""),
             name=str(payload.get("name") or "").strip() or None,
             display_name=display_name,
+            role=str(payload.get("role") or "").strip() or None,
             personality=str(payload.get("personality") or "").strip() or None,
             voice_id=str(payload.get("voice_id") or "").strip() or None,
+            awake_model=str(payload.get("awake_model") or "").strip() or None,
+            asleep_model=str(payload.get("asleep_model") or "").strip() or None,
             permission_mode=str(payload.get("permission_mode") or "confirm").strip() or "confirm",
             make_default=bool(payload.get("make_default", True)),
         )

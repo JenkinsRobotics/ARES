@@ -172,42 +172,21 @@ def _gemini_source() -> dict[str, Any]:
 
 
 def _jaeger_source() -> dict[str, Any]:
-    """JaegerAI keeps a per-instance store under its runtime home."""
-    home = os.environ.get("ARES_JAEGER_HOME") or os.environ.get("JAEGER_HOME")
-    if not home:
-        return {"status": STATUS_ABSENT, "path": "", "sessions": 0, "bytes": 0}
-
-    base = Path(home).expanduser() / ".jaeger_os" / "instances"
-    if not base.is_dir():
-        return {"status": STATUS_ABSENT, "path": str(base), "sessions": 0, "bytes": 0}
-
-    total = 0
-    size = 0
-    found_path = str(base)
+    """Describe Jaeger sessions through its bridge instead of its database."""
     try:
-        for instance in base.iterdir():
-            db = instance / "memory" / "sessions.db"
-            count = _sqlite_session_count(db)
-            if count is None:
-                continue
-            found_path = str(db)
-            total += count
-            try:
-                size += db.stat().st_size
-            except (OSError, PermissionError):
-                pass
-    except (OSError, PermissionError):
-        pass
+        from api.providers.jaeger.gateway_streaming import query_local_companion
 
-    if not total:
-        return {"status": STATUS_ABSENT, "path": found_path, "sessions": 0, "bytes": 0}
+        rows = query_local_companion("list_sessions", {"limit": 10000})
+    except Exception:
+        return {"status": STATUS_ABSENT, "path": "jaeger://sessions", "sessions": 0, "bytes": 0}
+    total = len(rows) if isinstance(rows, list) else 0
     return {
-        "status": STATUS_DETECTED,
-        "path": found_path,
+        "status": STATUS_DETECTED if total else STATUS_ABSENT,
+        "path": "jaeger://sessions",
         "sessions": total,
-        "bytes": size,
-        "indexed_sessions": 0,
-        "notes": ["Reader not implemented — JaegerAI rows mirror gateway calls"],
+        "bytes": 0,
+        "indexed_sessions": total,
+        "notes": ["Authoritative session inventory queried through the Jaeger bridge"],
     }
 
 

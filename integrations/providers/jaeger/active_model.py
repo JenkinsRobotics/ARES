@@ -1,10 +1,8 @@
 """Which model a JaegerAI instance will actually run the next turn on.
 
-ARES already had a *write* path for JaegerAI model selection
-(``api.ares_provider_sync.sync_provider(targets=["jros"])``): it edits the
-instance's ``config.yaml`` and then calls ``reset_jros_boot()`` so the cached
-bridge child is dropped and the next turn boots from the new config. What it
-lacked was the matching *read* path.
+ARES selects JaegerAI models through the bridge's validated ``configure_model``
+command and reads the serving model back through ``serving_model``. ARES does
+not edit or traverse Jaeger's runtime configuration for normal operation.
 
 The consequence was visible in ``/api/jaeger-onboarding/status``: the bridge
 branch of :mod:`api.providers.jaeger.status` reported ``mode`` and ``root`` but
@@ -14,14 +12,10 @@ one was in force. The instance listing was worse than silent: it read only
 ``model.model_path`` and so reported the *local* model even while
 ``external_model.enabled`` meant a cloud model was actually serving turns.
 
-The reason neither surface could answer is that JaegerAI's bridge protocol
-carries no model field (the ``/health`` payload says as much), so there is no
-frame to ask. But there is a single authoritative source: the very config file
-the write path edits. This module reads it, applying the same precedence
-JaegerAI itself applies in ``jaeger_ai.core.models.external_model`` —
-``external_model`` when enabled, otherwise the on-device ``model.model_path``.
-Read and write therefore agree by construction, because they name the same
-file through the same resolver (``paths.jros_config_path``).
+The bridge's ``serving_model`` query is authoritative because it distinguishes
+configured intent from the lane that actually booted. The pure
+``describe_config`` helper remains for read-only instance discovery and tests;
+it is not the normal runtime state path.
 
 Deliberately config-derived and never a recommendation fallback: callers use
 this to label a live runtime, and a guess presented as the active model is the
@@ -123,26 +117,32 @@ def _positive_ctx(value: Any) -> int | None:
 def active_model(config_path: Path | None = None) -> dict[str, Any]:
     """Return the effective model for the instance ARES would run a turn on.
 
-    ``config_path`` defaults to the same path the write path edits, so the two
-    cannot drift. The returned dict always carries ``config_path`` so status
-    surfaces can name the file a user would edit by hand.
+    An explicit ``config_path`` is retained only for isolated read-only callers
+    and tests. Normal operation asks the running Jaeger bridge.
     """
     if config_path is None:
-        from api.providers.jaeger.paths import jros_config_path
-
         try:
-            config_path = jros_config_path()
+            from api.providers.jaeger.gateway_streaming import query_local_companion
+
+            payload = query_local_companion("serving_model", {})
+            if isinstance(payload, dict):
+                row = payload.get("serving") or payload.get("configured")
+                if isinstance(row, dict):
+                    return {
+                        "model": row.get("model"),
+                        "provider": row.get("provider"),
+                        "location": "local" if row.get("provider") in {"local", "in-process"} else "cloud",
+                        "base_url": row.get("base_url"),
+                        "source": "jaeger_bridge",
+                        "ctx": row.get("context_length"),
+                        "config_path": None,
+                    }
         except Exception:
-            logger.debug("JaegerAI config path resolution failed", exc_info=True)
-            return {
-                "model": None,
-                "provider": None,
-                "location": None,
-                "base_url": None,
-                "source": None,
-                "ctx": None,
-                "config_path": None,
-            }
+            logger.debug("JaegerAI serving-model query failed", exc_info=True)
+        return {
+            "model": None, "provider": None, "location": None,
+            "base_url": None, "source": None, "ctx": None, "config_path": None,
+        }
 
     described = describe_config(_load_config(config_path))
     described["config_path"] = str(config_path)

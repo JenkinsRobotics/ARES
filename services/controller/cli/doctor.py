@@ -104,14 +104,16 @@ def probe_jaeger(jaeger_home: Path) -> None:
             f"cd {jaeger_home} && ./install.sh",
         )
 
-    instances_root = jaeger_home / ".jaeger_os" / "instances"
+    from api.providers.jaeger.paths import jaeger_active_instance_files, jaeger_instances_roots
+
+    instances_root = next((path for path in jaeger_instances_roots() if path.is_dir()), None)
     # Some installs keep a pointer file rather than dirs until first agent create.
-    active_ptr = jaeger_home / ".jaeger_os" / "active_instance"
-    if instances_root.is_dir():
+    active_ptr = next((path for path in jaeger_active_instance_files() if path.is_file()), None)
+    if instances_root is not None:
         instances = [p.name for p in instances_root.iterdir() if p.is_dir()]
         if instances:
             check_pass(f"Companion instance(s): {', '.join(sorted(instances))}")
-        elif active_ptr.is_file():
+        elif active_ptr is not None:
             check_warn(
                 f"active_instance set ({active_ptr.read_text(encoding='utf-8', errors='replace').strip()!r}) but no instance dirs yet",
                 "Complete ARES onboarding or run: jaeger agent create",
@@ -123,7 +125,7 @@ def probe_jaeger(jaeger_home: Path) -> None:
             )
     else:
         check_warn(
-            "No .jaeger_os/instances directory",
+            "No Jaeger instance directory",
             "Run Jaeger install, then create an agent via ARES onboarding",
         )
 

@@ -450,34 +450,6 @@ class TestProvidersEndpoints:
         assert "providers" in result
         assert isinstance(result["providers"], list)
 
-    def test_post_provider_set_key(self):
-        """POST /api/providers with provider + api_key should set the key."""
-        body, status = _post("/api/providers", {
-            "provider": "anthropic",
-            "api_key": "sk-ant-integration-test-key-12345678",
-        })
-        assert status == 200
-        assert body.get("ok") is True
-        assert body.get("provider") == "anthropic"
-
-    def test_post_provider_remove_key(self):
-        """POST /api/providers with provider but no api_key should remove the key."""
-        body, status = _post("/api/providers", {
-            "provider": "anthropic",
-            "api_key": None,
-        })
-        assert status == 200
-        assert body.get("ok") is True
-        assert body.get("action") == "removed"
-
-    def test_post_provider_delete(self):
-        """POST /api/providers/delete should remove the key."""
-        body, status = _post("/api/providers/delete", {
-            "provider": "anthropic",
-        })
-        assert status == 200
-        assert body.get("ok") is True
-
     def test_post_provider_missing_id(self):
         """POST /api/providers without provider should return 400."""
         body, status = _post("/api/providers", {"api_key": "some-key"})

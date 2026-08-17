@@ -280,17 +280,9 @@ public final class WebUIServerManager: ObservableObject {
             environment.removeValue(forKey: "ARES_JAEGER_SOURCE_DIR")
         }
 
-        let activeFile = selected.appendingPathComponent(".jaeger_os/active_instance")
-        if let active = try? String(contentsOf: activeFile, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !active.isEmpty,
-           fileManager.fileExists(
-               atPath: selected.appendingPathComponent(".jaeger_os/instances/\(active)").path
-           ) {
-            environment["ARES_JAEGER_INSTANCE"] = active
-        } else {
-            environment.removeValue(forKey: "ARES_JAEGER_INSTANCE")
-        }
+        // The controller's shared path resolver selects the active instance.
+        // The app intentionally does not traverse Jaeger's runtime layout.
+        environment.removeValue(forKey: "ARES_JAEGER_INSTANCE")
         return environment
     }
 

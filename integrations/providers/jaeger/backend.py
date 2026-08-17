@@ -176,7 +176,7 @@ class JaegerBackend(AgenticBackend):
     def inventory(self) -> Dict[str, Any]:
         """Catalog JaegerAI providers + installed/local models + gateways.
 
-        Scans gateway health, instance config, and ``.jaeger_os/models/*.gguf``.
+        Scans gateway health and resolver-approved instance/model locations.
         """
         from api.backends.catalog import (
             finalize_inventory,
@@ -295,7 +295,7 @@ class JaegerBackend(AgenticBackend):
                 },
                 "notes": (
                     "Models = gateway live model + instance config + installed GGUF under "
-                    ".jaeger_os/models. Providers = local llama.cpp and any external_model."
+                    "the resolver-approved model roots. Providers = local llama.cpp and any external_model."
                 ),
             }
         )

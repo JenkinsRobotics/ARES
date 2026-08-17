@@ -136,19 +136,13 @@ def _uncached_status() -> ProviderStatus:
                 configured_root=value,
                 reason=f"{name} is set to {value}, which is not a JaegerAI install.",
                 fix=f"Point {name} at your JaegerAI checkout, or unset it: unset {name}",
-                env_hint=(
-                    "With no override set, ARES looks in ~/jaeger, then "
-                    "~/GitHub/JaegerAI, then ~/JaegerAI."
-                ),
+                env_hint="With no override set, ARES uses its shared Jaeger path resolver.",
             )
 
         return not_installed(
             "JaegerAI is not installed. Install it, or set ARES_JAEGER_HOME / "
             "ARES_JAEGER_GATEWAY_URL to point at an existing instance.",
-            reason=(
-                "No JaegerAI install was found in ~/jaeger, ~/GitHub/JaegerAI, "
-                "or ~/JaegerAI."
-            ),
+            reason="The shared Jaeger path resolver found no runnable install.",
             fix="Install JaegerAI, or set ARES_JAEGER_HOME=/path/to/JaegerAI",
             env_hint="A checkout counts only if it has a jaeger_ai/ directory and an executable jaeger launcher.",
         )

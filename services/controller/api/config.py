@@ -948,13 +948,20 @@ def print_startup_config() -> None:
     """Print detected configuration at startup so the user can verify what was found."""
     ok = "\033[32m[ok]\033[0m"
     warn = "\033[33m[!!]\033[0m"
+    try:
+        from api.backend_selector import get_active_backend
+
+        selected_runtime = get_active_backend(get_config())
+    except Exception:
+        selected_runtime = "unknown"
 
     lines = [
         "",
         "  ARES Web UI -- startup config",
         "  -------------------------------",
         f"  repo root   : {REPO_ROOT}",
-        f"  ares dir  : {_AGENT_DIR if _AGENT_DIR else 'NOT FOUND'}  {ok if _AGENT_DIR else warn}",
+        f"  runtime     : {selected_runtime}",
+        f"  legacy worker: {_AGENT_DIR if _AGENT_DIR else 'not configured'}",
         f"  server python: {sys.executable}",
         f"  tool python  : {PYTHON_EXE}",
         f"  state dir   : {STATE_DIR}",
@@ -970,20 +977,11 @@ def print_startup_config() -> None:
     except Exception:
         pass
 
-    if not _ARES_FOUND:
+    if not _ARES_FOUND and selected_runtime != "jaeger_local":
         print(
-            f"{warn}  Ares Agent was not found.\n"
-            "      The ARES Web UI server can still start. Ares-specific coding,\n"
-            "      cron, profile, and tool features will not work until Ares is\n"
-            "      installed/configured. Jaeger AI requires a reachable gateway\n"
-            "      or local Jaeger AI installation.\n"
-            "\n"
-            "      To enable Ares mode, set one of:\n"
-            "        export ARES_WEBUI_AGENT_DIR=/path/to/ares-agent\n"
-            "        export ARES_HOME=/path/to/.ares\n"
-            "\n"
-            "      Or clone ares-agent as a sibling of this repo:\n"
-            "        git clone <ares-agent-repo> ../ares-agent\n",
+            f"{warn}  The selected legacy worker runtime is not installed.\n"
+            "      Select Jaeger AI in ARES, or configure an explicitly supported\n"
+            "      worker integration. No source checkout is installed implicitly.\n",
             flush=True,
         )
 

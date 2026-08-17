@@ -322,6 +322,9 @@ def test_workspace_upload_routes_all_files_through_scoped_service(app, monkeypat
 
 
 def test_skills_routes_use_profile_scoped_service_contracts(app, monkeypatch):
+    # This contract test intentionally exercises ARES's profile-scoped store,
+    # independent of whichever runtime is selected in the developer's profile.
+    monkeypatch.setattr("api.runtime_skills.selected_runtime_owns_skills", lambda: False)
     calls = []
     monkeypatch.setattr(
         "api.skills_store.list_skills",

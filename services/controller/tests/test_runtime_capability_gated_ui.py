@@ -11,6 +11,7 @@ def test_overlapping_runtime_surfaces_declare_capability_requirements():
     assert index.count('data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules"') == 2
     assert index.count('data-panel="kanban" data-requires-capability="kanban"') == 2
     assert index.count('data-panel="skills" data-requires-capability="skills"') == 2
+    assert index.count('data-panel="content" data-capability-domain="knowledge_media" data-requires-any-capability=') == 2
     assert index.count('data-requires-capability="mcp_server_config"') == 1
     assert index.count('data-requires-capability="tool_inventory"') == 1
     assert index.count('data-requires-capability="messaging_gateway"') == 1
@@ -21,12 +22,13 @@ def test_overlapping_runtime_surfaces_declare_capability_requirements():
 def test_capability_gate_fails_closed_and_guards_programmatic_navigation():
     panels = (ROOT / "apps/web/static/panels.js").read_text(encoding="utf-8")
     styles = (ROOT / "apps/web/static/style.css").read_text(encoding="utf-8")
-    assert "ARES_PANEL_CAPABILITIES={tasks:'schedules',kanban:'kanban',modelLab:'model_compare',skills:'skills'}" in panels
-    assert "capabilities[requiredCapability]!==true" in panels
+    assert "content:['deep_research','youtube_ingest','pdf_forms','image_gallery','image_editor','visual_reports']" in panels
+    assert "requiredCapabilities.some(capability=>capabilities[capability]===true)" in panels
     assert "gated UI remains unavailable" in panels
     assert "capability_negotiated===true" in panels
     assert "runtimeCapabilityBanner" in panels
     assert "html:not([data-ares-capabilities-ready]) [data-requires-capability]" in styles
+    assert "[data-requires-any-capability][data-capability-available=\"false\"]" in styles
 
 
 def test_unimplemented_prototypes_are_not_advertised_or_loaded():

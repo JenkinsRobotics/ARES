@@ -1,6 +1,7 @@
 """Inventory is calculated from registrations instead of maintained counts."""
 
 from fastapi import APIRouter
+from fastapi.testclient import TestClient
 
 
 def test_router_registry_has_unique_names_and_objects():
@@ -59,3 +60,27 @@ def test_capability_catalog_is_one_to_one():
     assert tuple(feature.name for feature in FEATURE_REGISTRY) == UI_CAPABILITIES
     assert len(UI_CAPABILITIES) == len(set(UI_CAPABILITIES))
     assert all(feature.description.strip() for feature in FEATURE_REGISTRY)
+
+
+def test_inventory_endpoint_returns_calculated_state(monkeypatch):
+    from fastapi_app.main import create_app
+    from fastapi_app.request_context import RequestIdentity, require_identity
+    from fastapi_app.routers import CORE_ROUTER_REGISTRY
+
+    monkeypatch.setattr("api.backend_selector.get_active_backend", lambda _config: "hermes_local")
+    monkeypatch.setattr("api.skills_store.list_skills", lambda: {"skills": [{"name": "one"}]})
+    monkeypatch.setattr("api.runtime_skills.selected_runtime_owns_skills", lambda: False)
+    app = create_app()
+    app.dependency_overrides[require_identity] = lambda: RequestIdentity(
+        session_cookie=None,
+        profile="default",
+        auth_enabled=False,
+    )
+    response = TestClient(app).get("/api/inventory")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["generated"] is True
+    assert payload["summary"]["routers"] == len(CORE_ROUTER_REGISTRY)
+    assert payload["summary"]["routes"] == len(payload["routes"]["items"])
+    assert payload["summary"]["skills"] == 1
+    assert payload["routes"]["duplicates"] == []

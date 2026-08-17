@@ -4940,8 +4940,9 @@ main.main > #mainWorkspaces,
 main.main > #mainProfiles,
 main.main > #mainInsights,
 main.main > #mainLogs{display:none;}
-main.main > #mainModelLab{display:none;}
-main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-modelLab):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex;}
+main.main > #mainModelLab,
+main.main > #mainContent{display:none;}
+main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-modelLab):not(.showing-content):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex;}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto;}
 main.main.showing-skills > #mainSkills{display:flex;}
 main.main.showing-memory > #mainMemory{display:flex;}
@@ -4951,12 +4952,15 @@ main.main.showing-workspaces > #mainWorkspaces{display:flex;}
 main.main.showing-profiles > #mainProfiles{display:flex;}
 main.main.showing-logs > #mainLogs{display:flex;}
 main.main.showing-modelLab > #mainModelLab{display:flex;overflow-y:auto;}
+main.main.showing-content > #mainContent{display:flex;overflow-y:auto;}
 main.main.showing-plugin > #mainPlugin{display:flex;}
 main.main > #mainPlugin{display:none;}
 
 /* Runtime-owned surfaces fail closed until capability negotiation completes. */
 html:not([data-ares-capabilities-ready]) [data-requires-capability],
-[data-requires-capability][data-capability-available="false"] { display:none !important; }
+html:not([data-ares-capabilities-ready]) [data-requires-any-capability],
+[data-requires-capability][data-capability-available="false"],
+[data-requires-any-capability][data-capability-available="false"] { display:none !important; }
 .runtime-capability-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 16px;background:rgba(224,155,48,.12);border-bottom:1px solid rgba(224,155,48,.35);color:var(--text);font-size:12px;line-height:1.4;}
 .runtime-capability-banner[hidden]{display:none!important;}
 .runtime-capability-banner>div{display:flex;flex-direction:column;gap:2px;}

@@ -543,6 +543,14 @@ def archive_task(conn, task_id: str) -> bool:
     return _transition(conn, task_id, "archived", "archived")
 
 
+def set_task_status(conn, task_id: str, status: str) -> bool:
+    """Apply a validated status without creating a parallel task mutation path."""
+    normalized = str(status or "").strip().lower()
+    if normalized not in {"triage", "todo", "ready", "running", "blocked", "done", "archived"}:
+        raise ValueError(f"unsupported task status: {status!r}")
+    return _transition(conn, task_id, normalized, "status_changed")
+
+
 def add_comment(conn, task_id: str, author: str, body: str) -> int:
     now = int(time.time())
     cursor = conn.execute(

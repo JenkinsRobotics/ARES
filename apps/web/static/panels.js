@@ -44,7 +44,7 @@ const APP_TITLEBAR_KEYS = {
   memory: 'tab_memory', workspaces: 'tab_workspaces',
   profiles: 'tab_profiles', todos: 'tab_todos', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
 };
-const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','modelLab','workspaces','profiles','insights','logs','plugin'];
+const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','modelLab','content','workspaces','profiles','insights','logs','plugin'];
 const MAIN_VIEW_SIDEBAR_PANEL_FALLBACKS = { plugin: 'settings' };
 
 /**
@@ -364,7 +364,10 @@ function _syncMobileSidebarPanelFromMainView(){
   return panel;
 }
 
-const ARES_PANEL_CAPABILITIES={tasks:'schedules',kanban:'kanban',modelLab:'model_compare',skills:'skills'};
+const ARES_PANEL_CAPABILITIES={
+  tasks:['schedules'],kanban:['kanban'],modelLab:['model_compare'],skills:['skills'],
+  content:['deep_research','youtube_ingest','pdf_forms','image_gallery','image_editor','visual_reports'],
+};
 let _aresCapabilityFlags=null;
 let _aresCapabilityRequest=null;
 let _aresCapabilityPayload=null;
@@ -399,13 +402,20 @@ function _applyAresCapabilityFlags(flags,payload){
     el.hidden=!available;
     el.setAttribute('aria-hidden',available?'false':'true');
   });
+  document.querySelectorAll('[data-requires-any-capability]').forEach(el=>{
+    const capabilities=String(el.dataset.requiresAnyCapability||'').split(',').map(value=>value.trim()).filter(Boolean);
+    const available=capabilities.some(capability=>_aresCapabilityFlags[capability]===true);
+    el.dataset.capabilityAvailable=available?'true':'false';
+    el.hidden=!available;
+    el.setAttribute('aria-hidden',available?'false':'true');
+  });
   document.documentElement.dataset.aresCapabilitiesReady='true';
   document.documentElement.dataset.aresRuntimeState=(
     _aresCapabilityPayload&&_aresCapabilityPayload.capability_negotiated===true
   )?'negotiated':'unavailable';
   _renderRuntimeCapabilityState(_aresCapabilityPayload);
-  const required=ARES_PANEL_CAPABILITIES[_currentPanel];
-  if(required&&_aresCapabilityFlags[required]!==true){
+  const required=ARES_PANEL_CAPABILITIES[_currentPanel]||[];
+  if(required.length&&!required.some(capability=>_aresCapabilityFlags[capability]===true)){
     switchPanel('chat',{bypassCapabilityGuard:true});
   }
   if(_currentPanel==='settings'&&_settingsSection==='providers'&&_aresCapabilityFlags.cloud_provider_model_settings!==true){
@@ -447,10 +457,10 @@ else refreshAresCapabilities();
 async function switchPanel(name, opts = {}) {
   const nextPanel = name || 'chat';
   const prevPanel = _currentPanel;
-  const requiredCapability=ARES_PANEL_CAPABILITIES[nextPanel];
-  if(requiredCapability&&!opts.bypassCapabilityGuard){
+  const requiredCapabilities=ARES_PANEL_CAPABILITIES[nextPanel]||[];
+  if(requiredCapabilities.length&&!opts.bypassCapabilityGuard){
     const capabilities=await _ensureAresCapabilities();
-    if(capabilities[requiredCapability]!==true){
+    if(!requiredCapabilities.some(capability=>capabilities[capability]===true)){
       if(typeof showToast==='function')showToast(`${nextPanel} is unavailable for the selected runtime`,'error');
       return false;
     }
@@ -503,6 +513,7 @@ async function switchPanel(name, opts = {}) {
   if (nextPanel === 'tasks') await loadCrons();
   if (nextPanel === 'kanban') await loadKanban();
   if (nextPanel === 'modelLab') await loadModelLab();
+  if (nextPanel === 'content') await loadContentStudio();
   if (nextPanel === 'skills') await loadSkills();
   if (nextPanel === 'memory') await loadMemory();
   if (nextPanel === 'workspaces') await loadWorkspacesPanel();
@@ -1279,6 +1290,105 @@ async function scanModelHatchery(){
     const result=await api('/api/hatchery/scan');
     $('modelLabResult').textContent=JSON.stringify(result,null,2);
   }catch(error){toast(error.message||String(error),'error');}
+}
+
+function _contentSessionId(){
+  return typeof S!=='undefined'&&S.session&&S.session.session_id?String(S.session.session_id):'';
+}
+
+function _contentResult(value){
+  const output=$('contentResult');
+  if(output)output.textContent=typeof value==='string'?value:JSON.stringify(value,null,2);
+}
+
+async function loadContentStudio(){
+  const body=$('contentStudioBody');
+  if(!body)return;
+  const sessionId=_contentSessionId();
+  if(!sessionId){body.innerHTML='<div class="settings-error">Select or create a conversation first.</div>';return;}
+  body.innerHTML=`
+    <div class="settings-section" data-requires-capability="deep_research"><h3>Deep Research</h3>
+      <p class="settings-hint">Iterative search and synthesis through the selected runtime. Results persist under this conversation's ARES profile.</p>
+      <div class="form-row"><label>Question</label><textarea id="contentResearchQuery" rows="4"></textarea></div>
+      <div class="form-actions"><button class="btn primary" onclick="startContentResearch()">Start research</button></div></div>
+    <div class="settings-section" data-requires-capability="youtube_ingest"><h3>YouTube transcript</h3>
+      <div class="form-row"><label>Video URL</label><input id="contentYoutubeUrl" type="url" placeholder="https://youtu.be/…"></div>
+      <div class="form-actions"><button class="btn secondary" onclick="ingestContentYoutube()">Create transcript artifact</button></div></div>
+    <div class="settings-section" data-requires-capability="pdf_forms"><h3>PDF tools</h3>
+      <p class="settings-hint">Enter a PDF path relative to the active conversation workspace.</p>
+      <div class="form-row"><label>PDF path</label><input id="contentPdfPath" placeholder="documents/form.pdf"></div>
+      <div class="form-row"><label>Form values (JSON, optional)</label><textarea id="contentPdfFields" rows="3" placeholder='{"field":"value"}'></textarea></div>
+      <div class="form-actions"><button class="btn secondary" onclick="extractContentPdf()">Extract text</button><button class="btn secondary" onclick="fillContentPdf()">Fill form</button></div></div>
+    <div class="settings-section" data-requires-capability="image_editor"><h3>Image editor</h3>
+      <div class="form-row"><label>Image path</label><input id="contentImagePath" placeholder="image.png"></div>
+      <div class="form-row"><label>Operations (JSON)</label><textarea id="contentImageOps" rows="4">[{"type":"resize","width":1024,"height":1024}]</textarea></div>
+      <div class="form-actions"><button class="btn secondary" onclick="editContentImage()">Create edited image</button></div></div>
+    <div class="settings-section" data-requires-capability="visual_reports"><h3>Visual report</h3>
+      <div class="form-row"><label>Title</label><input id="contentReportTitle"></div>
+      <div class="form-row"><label>Summary</label><textarea id="contentReportSummary" rows="2"></textarea></div>
+      <div class="form-row"><label>Sections (JSON)</label><textarea id="contentReportSections" rows="4">[{"heading":"Summary","body":"Report content"}]</textarea></div>
+      <div class="form-actions"><button class="btn secondary" onclick="createContentReport()">Create HTML report</button></div></div>
+    <div class="settings-section" data-requires-capability="image_gallery"><h3>Gallery</h3><div id="contentGallery" class="settings-hint">Loading…</div></div>
+    <div class="settings-section"><h3>Latest result</h3><pre id="contentResult" class="code-block">Ready.</pre></div>`;
+  _applyAresCapabilityFlags(_aresCapabilityFlags||{},_aresCapabilityPayload);
+  await loadContentGallery();
+}
+
+async function startContentResearch(){
+  const query=($('contentResearchQuery')?.value||'').trim();
+  if(!query)return toast('Enter a research question','error');
+  try{
+    const researchId=`research-${crypto.randomUUID().replaceAll('-','')}`;
+    const started=await api('/api/research/start',{method:'POST',body:JSON.stringify({query,session_id:researchId})});
+    _contentResult(started);
+    for(let attempt=0;attempt<600&&_currentPanel==='content';attempt++){
+      await new Promise(resolve=>setTimeout(resolve,1000));
+      const result=await api(`/api/research/result?session_id=${encodeURIComponent(started.session_id)}`);
+      _contentResult(result);
+      if(result.status!=='running')break;
+    }
+  }catch(error){_contentResult(error.message||String(error));}
+}
+
+async function ingestContentYoutube(){
+  try{_contentResult(await api('/api/content/youtube/ingest',{method:'POST',body:JSON.stringify({session_id:_contentSessionId(),url:($('contentYoutubeUrl')?.value||'').trim(),languages:['en.*','en']})}));}
+  catch(error){_contentResult(error.message||String(error));}
+}
+
+async function extractContentPdf(){
+  try{_contentResult(await api('/api/content/pdf/extract',{method:'POST',body:JSON.stringify({session_id:_contentSessionId(),path:($('contentPdfPath')?.value||'').trim()})}));}
+  catch(error){_contentResult(error.message||String(error));}
+}
+
+async function fillContentPdf(){
+  try{
+    const fields=JSON.parse(($('contentPdfFields')?.value||'{}').trim()||'{}');
+    _contentResult(await api('/api/content/pdf/fill',{method:'POST',body:JSON.stringify({session_id:_contentSessionId(),path:($('contentPdfPath')?.value||'').trim(),fields})}));
+  }catch(error){_contentResult(error.message||String(error));}
+}
+
+async function editContentImage(){
+  try{
+    const operations=JSON.parse(($('contentImageOps')?.value||'[]').trim()||'[]');
+    _contentResult(await api('/api/content/image/edit',{method:'POST',body:JSON.stringify({session_id:_contentSessionId(),path:($('contentImagePath')?.value||'').trim(),operations})}));
+    await loadContentGallery();
+  }catch(error){_contentResult(error.message||String(error));}
+}
+
+async function createContentReport(){
+  try{
+    const sections=JSON.parse(($('contentReportSections')?.value||'[]').trim()||'[]');
+    _contentResult(await api('/api/content/reports',{method:'POST',body:JSON.stringify({session_id:_contentSessionId(),title:($('contentReportTitle')?.value||'').trim(),summary:($('contentReportSummary')?.value||'').trim(),sections})}));
+  }catch(error){_contentResult(error.message||String(error));}
+}
+
+async function loadContentGallery(){
+  const target=$('contentGallery');
+  if(!target||!_contentSessionId())return;
+  try{
+    const result=await api(`/api/content/gallery/${encodeURIComponent(_contentSessionId())}`);
+    target.innerHTML=result.items&&result.items.length?result.items.map(item=>`<div class="cron-item"><strong>${esc(item.name)}</strong><div class="settings-hint">${esc(item.path)} · ${Number(item.size||0).toLocaleString()} bytes</div></div>`).join(''):'No generated images yet.';
+  }catch(error){target.textContent=error.message||String(error);}
 }
 
 function _cronPanelExpandKey(jobId, suffix){

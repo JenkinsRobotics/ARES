@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.routing import APIRoute
 
 from ..request_context import RequestIdentity, profile_scope, require_identity
@@ -43,28 +43,77 @@ def _route_inventory() -> dict[str, Any]:
     return {"count": len(rows), "items": rows, "duplicates": duplicates}
 
 
-def _tool_inventory() -> dict[str, Any]:
+def _tool_inventory(runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     from api.ares_tools import ARES_TOOL_DEFS
-    from mcp_server import TOOLS as MANAGEMENT_TOOLS
+    from mcp_server import HANDLERS as MANAGEMENT_HANDLERS, TOOLS as MANAGEMENT_TOOLS
 
     groups = {
         "ares": [
-            {"name": item["name"], "description": item["description"]}
+            {
+                "name": item["name"],
+                "description": item["description"],
+                "available": callable(item.get("fn")),
+                "status": "registered" if callable(item.get("fn")) else "unavailable",
+            }
             for item in ARES_TOOL_DEFS
         ],
         "management_mcp": [
-            {"name": item.name, "description": item.description}
+            {
+                "name": item.name,
+                "description": item.description,
+                "available": callable(MANAGEMENT_HANDLERS.get(item.name)),
+                "status": "registered" if callable(MANAGEMENT_HANDLERS.get(item.name)) else "unavailable",
+            }
             for item in MANAGEMENT_TOOLS
         ],
     }
-    return {
-        "count": sum(len(items) for items in groups.values()),
-        "groups": groups,
+    if runtime is not None:
+        groups["runtime"] = runtime.get("items", [])
+    unique_names = {
+        str(item.get("name") or "")
+        for items in groups.values()
+        for item in items
+        if str(item.get("name") or "")
     }
+    return {
+        "count": len(unique_names),
+        "groups": groups,
+        "runtime_error": (runtime or {}).get("error"),
+    }
+
+
+def _runtime_tool_inventory(request: Request, profile: str) -> dict[str, Any]:
+    from api.runtime_mcp import list_runtime_tools, selected_runtime_owns_mcp
+
+    try:
+        if selected_runtime_owns_mcp():
+            payload = list_runtime_tools()
+        else:
+            payload = request.app.state.adapter_registry.tool_adapter("mcp").list_tools(
+                profile=profile
+            )
+        raw = payload.get("tools", []) if isinstance(payload, dict) else []
+        items = []
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, dict):
+                continue
+            items.append(
+                {
+                    "name": str(item.get("name") or ""),
+                    "description": str(item.get("description") or ""),
+                    "source": str(item.get("source") or item.get("server") or "runtime"),
+                    "available": True,
+                    "status": "advertised",
+                }
+            )
+        return {"items": items, "error": None}
+    except Exception as exc:  # runtime inventory is optional and fails closed
+        return {"items": [], "error": f"{type(exc).__name__}: {exc}"}
 
 
 @router.get("")
 def inventory(
+    request: Request,
     identity: Annotated[RequestIdentity, Depends(require_identity)],
 ):
     """Return calculated inventory; no counts or availability are persisted."""
@@ -91,11 +140,16 @@ def inventory(
             skill_error = f"{type(exc).__name__}: {exc}"
 
     routers = [
-        {"name": entry.name, "legacy": entry.legacy}
+        {
+            "name": entry.name,
+            "legacy": entry.legacy,
+            "status": "registered",
+            "routes": sum(isinstance(route, APIRoute) for route in entry.router.routes),
+        }
         for entry in CORE_ROUTER_REGISTRY
     ]
     routes = _route_inventory()
-    tools = _tool_inventory()
+    tools = _tool_inventory(_runtime_tool_inventory(request, identity.profile))
     return {
         "schema_version": 1,
         "generated": True,

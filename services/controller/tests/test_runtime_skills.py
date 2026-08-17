@@ -65,3 +65,27 @@ def test_runtime_skills_fail_closed_without_negotiated_support(monkeypatch):
     with pytest.raises(runtime_skills.RuntimeSkillError, match="contract mismatch") as caught:
         runtime_skills.list_runtime_skills()
     assert caught.value.status_code == 503
+
+
+def test_runtime_skills_reject_traversal_before_calling_jaeger(monkeypatch):
+    import pytest
+
+    from api import ares_capabilities, runtime_skills
+    from api.providers.jaeger import streaming
+
+    monkeypatch.setattr(
+        ares_capabilities, "capability_contract_for_backend", lambda _backend: _contract()
+    )
+    called = []
+    monkeypatch.setattr(
+        streaming,
+        "command_local_companion",
+        lambda *args: called.append(args),
+    )
+    with pytest.raises(runtime_skills.RuntimeSkillError) as caught:
+        runtime_skills.install_runtime_skill("../../outside", "bad")
+    assert caught.value.status_code == 400
+    with pytest.raises(runtime_skills.RuntimeSkillError) as caught:
+        runtime_skills.get_runtime_skill("safe", "../../etc/passwd")
+    assert caught.value.status_code == 400
+    assert called == []

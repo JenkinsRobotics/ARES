@@ -2,15 +2,37 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import PurePosixPath
 from typing import Any
 
 from api.backend_catalog import JAEGER_BACKEND_ID
+
+
+_SKILL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class RuntimeSkillError(ValueError):
     def __init__(self, message: str, status_code: int = 400) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+def _validated_name(value: str, *, label: str = "skill name") -> str:
+    candidate = str(value or "").strip()
+    if not _SKILL_NAME.fullmatch(candidate) or candidate in {".", ".."}:
+        raise RuntimeSkillError(f"Invalid {label}")
+    return candidate
+
+
+def _validated_linked_file(value: str | None) -> str | None:
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    path = PurePosixPath(candidate.replace("\\", "/"))
+    if not candidate or path.is_absolute() or ".." in path.parts:
+        raise RuntimeSkillError("Invalid linked skill file")
+    return candidate
 
 
 def selected_runtime_owns_skills() -> bool:
@@ -68,26 +90,39 @@ def list_runtime_skills(category: str | None = None) -> dict[str, Any]:
 
 
 def get_runtime_skill(name: str, linked_file: str | None = None) -> dict[str, Any]:
-    payload = _query("get_skill", {"name": name, "file": linked_file})
+    payload = _query(
+        "get_skill",
+        {"name": _validated_name(name), "file": _validated_linked_file(linked_file)},
+    )
     if not isinstance(payload, dict):
         raise RuntimeSkillError("Jaeger returned invalid skill content", 502)
     return payload
 
 
 def install_runtime_skill(name: str, content: str, category: str = "") -> dict[str, Any]:
-    return _command("install_skill", {"name": name, "content": content, "category": category})
+    validated_category = (
+        _validated_name(category, label="skill category") if str(category).strip() else ""
+    )
+    return _command("install_skill", {
+        "name": _validated_name(name),
+        "content": content,
+        "category": validated_category,
+    })
 
 
 def clone_runtime_skill(name: str) -> dict[str, Any]:
-    return _command("clone_skill", {"name": name})
+    return _command("clone_skill", {"name": _validated_name(name)})
 
 
 def remove_runtime_skill(name: str) -> dict[str, Any]:
-    return _command("remove_skill", {"name": name})
+    return _command("remove_skill", {"name": _validated_name(name)})
 
 
 def toggle_runtime_skill(name: str, enabled: bool) -> dict[str, Any]:
-    return _command("enable_skill" if enabled else "disable_skill", {"name": name})
+    return _command(
+        "enable_skill" if enabled else "disable_skill",
+        {"name": _validated_name(name)},
+    )
 
 
 def runtime_skill_usage() -> dict[str, Any]:

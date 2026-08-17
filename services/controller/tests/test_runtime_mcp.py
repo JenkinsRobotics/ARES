@@ -46,3 +46,26 @@ def test_runtime_mcp_fails_closed(monkeypatch):
     with pytest.raises(runtime_mcp.RuntimeMCPError, match="contract mismatch") as caught:
         runtime_mcp.list_runtime_servers()
     assert caught.value.status_code == 503
+
+
+def test_runtime_mcp_redacts_bridge_errors(monkeypatch):
+    from api import ares_capabilities, runtime_mcp
+    from api.providers.jaeger import streaming
+
+    secret = "ghp_TestFakeCredential1234567890ab"
+    monkeypatch.setattr(
+        ares_capabilities,
+        "capability_contract_for_backend",
+        lambda _backend: _contract(),
+    )
+    monkeypatch.setattr(
+        streaming,
+        "command_local_companion",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError(f"rejected token={secret}")
+        ),
+    )
+    with pytest.raises(runtime_mcp.RuntimeMCPError) as caught:
+        runtime_mcp.reload_runtime_tools()
+    assert secret not in str(caught.value)
+    assert caught.value.status_code == 502

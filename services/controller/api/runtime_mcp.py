@@ -13,6 +13,12 @@ class RuntimeMCPError(ValueError):
         self.status_code = status_code
 
 
+def _safe_error(prefix: str, exc: Exception) -> str:
+    from api.helpers import _redact_text
+
+    return f"{prefix}: {_redact_text(str(exc), _enabled=True)}"
+
+
 def selected_runtime_owns_mcp() -> bool:
     from api.backend_selector import get_active_backend
     from api.config import get_config
@@ -36,7 +42,7 @@ def _query(what: str) -> dict[str, Any]:
     except RuntimeMCPError:
         raise
     except Exception as exc:
-        raise RuntimeMCPError(f"Jaeger MCP query failed: {exc}", 502) from exc
+        raise RuntimeMCPError(_safe_error("Jaeger MCP query failed", exc), 502) from exc
     if not isinstance(value, dict):
         raise RuntimeMCPError("Jaeger returned an invalid MCP response", 502)
     return value
@@ -50,7 +56,7 @@ def _command(name: str, args: dict[str, Any]) -> dict[str, Any]:
     except RuntimeMCPError:
         raise
     except Exception as exc:
-        raise RuntimeMCPError(f"Jaeger MCP command failed: {exc}", 502) from exc
+        raise RuntimeMCPError(_safe_error("Jaeger MCP command failed", exc), 502) from exc
     return value if isinstance(value, dict) else {"ok": True}
 
 

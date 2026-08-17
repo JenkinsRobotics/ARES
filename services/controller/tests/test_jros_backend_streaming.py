@@ -17,6 +17,7 @@ instead. These tests pin:
   * backend availability: gateway health → mode "gateway", local
     checkout only → mode "local".
 """
+
 from __future__ import annotations
 
 import json
@@ -56,7 +57,9 @@ def test_jros_backend_selects_gateway_worker_without_health_ping(monkeypatch):
         return None
 
     fake_bridge.run_jros_streaming = fake_run_jros_streaming
-    monkeypatch.setitem(sys.modules, "api.providers.jaeger.gateway_streaming", fake_bridge)
+    monkeypatch.setitem(
+        sys.modules, "api.providers.jaeger.gateway_streaming", fake_bridge
+    )
     worker, is_gateway, is_jros = JROSBackend().get_worker_target()
 
     assert worker is fake_run_jros_streaming
@@ -69,9 +72,15 @@ def test_gateway_url_resolution_env_config_default(monkeypatch):
 
     monkeypatch.delenv("ARES_JROS_GATEWAY_URL", raising=False)
     assert jgc.jros_gateway_base_url() == jgc.DEFAULT_JROS_GATEWAY_URL
-    assert jgc.jros_gateway_base_url({"jros_gateway_url": "http://pc.lan:9000/"}) == "http://pc.lan:9000"
+    assert (
+        jgc.jros_gateway_base_url({"jros_gateway_url": "http://pc.lan:9000/"})
+        == "http://pc.lan:9000"
+    )
     monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://other:8643/")
-    assert jgc.jros_gateway_base_url({"jros_gateway_url": "http://pc.lan:9000"}) == "http://other:8643"
+    assert (
+        jgc.jros_gateway_base_url({"jros_gateway_url": "http://pc.lan:9000"})
+        == "http://other:8643"
+    )
 
 
 def test_legacy_source_override_accepts_only_current_jaeger_ai(monkeypatch, tmp_path):
@@ -87,7 +96,9 @@ def test_legacy_source_override_accepts_only_current_jaeger_ai(monkeypatch, tmp_
     assert jros_paths.jros_source_root() == override.resolve()
 
 
-def test_invalid_source_override_does_not_fall_through_to_another_checkout(monkeypatch, tmp_path):
+def test_invalid_source_override_does_not_fall_through_to_another_checkout(
+    monkeypatch, tmp_path
+):
     from api.providers.jaeger import paths
 
     stale = tmp_path / "stale-jros"
@@ -138,9 +149,16 @@ class _FakeJrosGateway(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.rstrip("/") == "/v1/health":
-            body = json.dumps({"ok": True, "backend": "jros", "booted": True,
-                               "model": "fake-model", "provider": "local",
-                               "instance": "test"}).encode()
+            body = json.dumps(
+                {
+                    "ok": True,
+                    "backend": "jros",
+                    "booted": True,
+                    "model": "fake-model",
+                    "provider": "local",
+                    "instance": "test",
+                }
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -167,15 +185,23 @@ class _FakeJrosGateway(BaseHTTPRequestHandler):
         self.end_headers()
         frames = [
             'event: jros.status\ndata: {"status": "running", "booted": true}\n\n',
-            'event: ares.tool.progress\n'
+            "event: ares.tool.progress\n"
             'data: {"event": "tool.completed", "tool": "jros", "status": "completed", "label": "  \\u25b8 demo(x)"}\n\n',
-            'data: ' + json.dumps({
-                "object": "chat.completion.chunk",
-                "choices": [{"index": 0,
-                             "delta": {"role": "assistant", "content": "JROS says hi"},
-                             "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
-            }) + "\n\n",
+            "data: "
+            + json.dumps(
+                {
+                    "object": "chat.completion.chunk",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": "JROS says hi"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+                }
+            )
+            + "\n\n",
             "data: [DONE]\n\n",
         ]
         for frame in frames:
@@ -200,9 +226,16 @@ class _FakeJrosGatewaySecondTurn(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.rstrip("/") == "/v1/health":
-            body = json.dumps({"ok": True, "backend": "jros", "booted": True,
-                               "model": "fake-model", "provider": "local",
-                               "instance": "test"}).encode()
+            body = json.dumps(
+                {
+                    "ok": True,
+                    "backend": "jros",
+                    "booted": True,
+                    "model": "fake-model",
+                    "provider": "local",
+                    "instance": "test",
+                }
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -220,13 +253,24 @@ class _FakeJrosGatewaySecondTurn(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
         frames = [
-            'data: ' + json.dumps({
-                "object": "chat.completion.chunk",
-                "choices": [{"index": 0,
-                             "delta": {"role": "assistant", "content": "JROS says hi again"},
-                             "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 7, "completion_tokens": 4},
-            }) + "\n\n",
+            "data: "
+            + json.dumps(
+                {
+                    "object": "chat.completion.chunk",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "content": "JROS says hi again",
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 7, "completion_tokens": 4},
+                }
+            )
+            + "\n\n",
             "data: [DONE]\n\n",
         ]
         for frame in frames:
@@ -269,7 +313,9 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         )
 
         # The gateway saw one chat turn keyed to this WebUI session.
-        chat_calls = [c for c in _FakeJrosGateway.seen if c["path"].endswith("/chat/completions")]
+        chat_calls = [
+            c for c in _FakeJrosGateway.seen if c["path"].endswith("/chat/completions")
+        ]
         assert len(chat_calls) == 1
         assert chat_calls[0]["body"]["user"] == sid
         assert chat_calls[0]["body"]["messages"][-1]["content"] == "hello jros"
@@ -281,7 +327,9 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
             for item in stream._offline_buffer
         )
         assert events[-2:] == ["done", "stream_end"]
-        done_payload = next(item[1] for item in stream._offline_buffer if item[0] == "done")
+        done_payload = next(
+            item[1] for item in stream._offline_buffer if item[0] == "done"
+        )
         assert done_payload["usage"]["input_tokens"] == 5
         assert done_payload["usage"]["output_tokens"] == 3
 
@@ -293,7 +341,9 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         assert saved.runtime_message_count == 2
         assert done_payload["session"]["messages"][-1]["content"] == "JROS says hi"
         assert done_payload["session"]["messages"][-1]["backend"] == "jros"
-        assert done_payload["session"]["messages"][-1]["model_provider"] == "test-provider"
+        assert (
+            done_payload["session"]["messages"][-1]["model_provider"] == "test-provider"
+        )
         assert saved.model == "test-model"
         assert saved.model_provider == "test-provider"
         # Regression test for the usage-persistence fix: JaegerAI turns used to
@@ -450,6 +500,7 @@ def test_reset_jros_boot_posts_reset_and_swallows_offline(monkeypatch):
 
 # ── bridge fallback (no gateway, local checkout) ─────────────────────────
 
+
 def _setup_stream(sid, stream_id, pending="hello jros"):
     from api import config
     from api.config import create_stream_channel, register_stream_owner
@@ -496,18 +547,28 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
         def close(self):
             pass
 
-        def turn(self, text, session="", *, workspace="", on_event=None, on_request=None):
+        def turn(
+            self, text, session="", *, workspace="", on_event=None, on_request=None
+        ):
             calls.append((text, session, workspace))
             if on_event:
-                on_event({
-                    "type": "tool", "name": "write_file", "phase": "start",
-                    "preview": "write_file(workspace/session_summary.md)",
-                    "args": {"path": "workspace/session_summary.md"},
-                })
-                on_event({
-                    "type": "tool", "name": "write_file", "phase": "done",
-                    "preview": "write_file(workspace/session_summary.md)",
-                })
+                on_event(
+                    {
+                        "type": "tool",
+                        "name": "write_file",
+                        "phase": "start",
+                        "preview": "write_file(workspace/session_summary.md)",
+                        "args": {"path": "workspace/session_summary.md"},
+                    }
+                )
+                on_event(
+                    {
+                        "type": "tool",
+                        "name": "write_file",
+                        "phase": "done",
+                        "preview": "write_file(workspace/session_summary.md)",
+                    }
+                )
                 on_event({"type": "state", "message": "thinking"})
             return {"text": "local JROS says hi", "error": None}
 
@@ -516,7 +577,12 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
     sid, stream_id = "jroslocal1", "stream-jroslocal1"
     stream = _setup_stream(sid, stream_id)
     jros_gateway_chat.run_jros_streaming(
-        sid, "hello jros", "test-model", "/tmp", stream_id, [],
+        sid,
+        "hello jros",
+        "test-model",
+        "/tmp",
+        stream_id,
+        [],
         model_provider="test-provider",
     )
 
@@ -534,9 +600,13 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
     done_payload = next(item[1] for item in stream._offline_buffer if item[0] == "done")
     assert done_payload["session"]["messages"][-1]["content"] == "local JROS says hi"
     assert done_payload["session"]["messages"][-1]["backend"] == "jros"
-    assert done_payload["session"]["messages"][-1]["tool_calls"] == [{
-        "name": "write_file", "args": {"path": "workspace/session_summary.md"}, "done": True,
-    }]
+    assert done_payload["session"]["messages"][-1]["tool_calls"] == [
+        {
+            "name": "write_file",
+            "args": {"path": "workspace/session_summary.md"},
+            "done": True,
+        }
+    ]
 
 
 def test_local_fallback_lock_error_is_actionable(monkeypatch, tmp_path):
@@ -550,7 +620,9 @@ def test_local_fallback_lock_error_is_actionable(monkeypatch, tmp_path):
             pass
 
         def start(self):
-            raise jros_gateway_chat.JrosError("instance 'testinst' is locked by pid 7 (still running).")
+            raise jros_gateway_chat.JrosError(
+                "instance 'testinst' is locked by pid 7 (still running)."
+            )
 
         def close(self):
             pass
@@ -649,7 +721,9 @@ def test_broken_pipe_retries_with_fresh_bridge(monkeypatch, tmp_path):
         def close(self):
             pass
 
-        def turn(self, text, session="", *, workspace="", on_event=None, on_request=None):
+        def turn(
+            self, text, session="", *, workspace="", on_event=None, on_request=None
+        ):
             turns.append(text)
             if len(turns) == 1:
                 raise BrokenPipeError(32, "Broken pipe")
@@ -659,14 +733,18 @@ def test_broken_pipe_retries_with_fresh_bridge(monkeypatch, tmp_path):
 
     sid, stream_id = "jrospipe1", "stream-jrospipe1"
     stream = _setup_stream(sid, stream_id, pending="what llm are you using")
-    jros_gateway_chat.run_jros_streaming(sid, "what llm are you using", "m", "/tmp", stream_id, [])
+    jros_gateway_chat.run_jros_streaming(
+        sid, "what llm are you using", "m", "/tmp", stream_id, []
+    )
 
     assert turns == ["what llm are you using", "what llm are you using"]
     saved = Session.load(sid)
     assert saved.messages == []
     assert saved.transcript_owner == "jaeger"
     done_payload = next(item[1] for item in stream._offline_buffer if item[0] == "done")
-    assert done_payload["session"]["messages"][-1]["content"] == "recovered after restart"
+    assert (
+        done_payload["session"]["messages"][-1]["content"] == "recovered after restart"
+    )
     assert not any(item[0] == "apperror" for item in stream._offline_buffer)
 
 
@@ -685,7 +763,9 @@ def test_broken_pipe_then_lock_is_actionable_and_keeps_user_row(monkeypatch, tmp
         def start(self):
             starts.append("start")
             if len(starts) > 1:
-                raise jros_gateway_chat.JrosError("instance 'jarvis' is locked by pid 81627 (still running).")
+                raise jros_gateway_chat.JrosError(
+                    "instance 'jarvis' is locked by pid 81627 (still running)."
+                )
             return {"instance": "jarvis", "model": "fake-model"}
 
         def is_alive(self):
@@ -701,7 +781,9 @@ def test_broken_pipe_then_lock_is_actionable_and_keeps_user_row(monkeypatch, tmp
 
     sid, stream_id = "jrospipe2", "stream-jrospipe2"
     stream = _setup_stream(sid, stream_id, pending="what llm are you using")
-    jros_gateway_chat.run_jros_streaming(sid, "what llm are you using", "m", "/tmp", stream_id, [])
+    jros_gateway_chat.run_jros_streaming(
+        sid, "what llm are you using", "m", "/tmp", stream_id, []
+    )
 
     apperrors = [item[1] for item in stream._offline_buffer if item[0] == "apperror"]
     assert len(apperrors) == 1
@@ -740,15 +822,21 @@ def test_gateway_wins_over_local_fallback(monkeypatch, tmp_path):
     monkeypatch.setenv("ARES_JAEGER_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("ARES_JROS_GATEWAY_URL", base)
     monkeypatch.setattr(
-        jros_gateway_chat, "_run_local_jros_turn",
+        jros_gateway_chat,
+        "_run_local_jros_turn",
         lambda *a, **k: (_ for _ in ()).throw(
-            AssertionError("local fallback must not run while the gateway is up")),
+            AssertionError("local fallback must not run while the gateway is up")
+        ),
     )
     try:
         sid, stream_id = "jrosboth1", "stream-jrosboth1"
         _setup_stream(sid, stream_id)
-        jros_gateway_chat.run_jros_streaming(sid, "hello jros", "m", "/tmp", stream_id, [])
-        assert any(c["path"].endswith("/chat/completions") for c in _FakeJrosGateway.seen)
+        jros_gateway_chat.run_jros_streaming(
+            sid, "hello jros", "m", "/tmp", stream_id, []
+        )
+        assert any(
+            c["path"].endswith("/chat/completions") for c in _FakeJrosGateway.seen
+        )
         saved = Session.load(sid)
         assert saved.messages == []
         assert saved.transcript_owner == "jaeger"
@@ -773,19 +861,27 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     from api import ares_capabilities
 
     ares_capabilities.reset_capability_contract_cache()
-    monkeypatch.setattr(ares_capabilities, "_jaeger_contract", lambda: ({
-        "features": {
-            "runtime_settings": {"available": True},
-            "mcp_server_config": {"available": False},
-            "character_persona_editing": {"available": True},
-            "voice_settings": {"available": True},
-            "skills": {"available": True},
-            "tool_inventory": {"available": True, "owner": "jaeger"},
-            "delegation": {"available": True, "owner": "ares"},
-            "schedules": {"available": True, "owner": "ares"},
-            "kanban": {"available": True, "owner": "ares"},
-        },
-    }, None))
+    monkeypatch.setattr(
+        ares_capabilities,
+        "_jaeger_contract",
+        lambda: (
+            {
+                "features": {
+                    "runtime_settings": {"available": True},
+                    "mcp_server_config": {"available": False},
+                    "character_persona_editing": {"available": True},
+                    "voice_settings": {"available": True},
+                    "skills": {"available": True},
+                    "tool_inventory": {"available": True, "owner": "jaeger"},
+                    "delegation": {"available": True, "owner": "ares"},
+                    "schedules": {"available": True, "owner": "ares"},
+                    "kanban": {"available": True, "owner": "ares"},
+                    "caldav": {"available": True, "owner": "ares"},
+                },
+            },
+            None,
+        ),
+    )
     jros_caps = ares_capabilities.capabilities_for_backend("jros")
     assert jros_caps["character_persona_editing"] is True
     assert jros_caps["cloud_provider_model_settings"] is True
@@ -796,15 +892,22 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     assert jros_caps["tool_inventory"] is True
     assert jros_caps["voice_settings"] is True
     assert jros_caps["skills"] is True
-    assert all(jros_caps[name] is False for name in (
-        "cookbook_model_serving", "deep_research", "model_compare", "caldav",
-        "image_gallery", "image_editor", "visual_reports", "teacher_escalation",
-        "pdf_forms", "youtube_ingest",
-    ))
-
-    # Contract support is necessary but not sufficient for ARES-owned
-    # features: the missing local Kanban dependency keeps the tab unavailable.
-    assert jros_caps["kanban"] is False
+    assert jros_caps["caldav"] is True
+    assert jros_caps["kanban"] is True
+    assert all(
+        jros_caps[name] is False
+        for name in (
+            "cookbook_model_serving",
+            "deep_research",
+            "model_compare",
+            "image_gallery",
+            "image_editor",
+            "visual_reports",
+            "teacher_escalation",
+            "pdf_forms",
+            "youtube_ingest",
+        )
+    )
 
     hermes_caps = ares_capabilities.capabilities_for_backend("hermes_local")
     assert hermes_caps["cloud_provider_model_settings"] is True

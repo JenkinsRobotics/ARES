@@ -7,7 +7,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from ..errors import CoreApiError
-from ..request_context import RequestIdentity, profile_scope, require_identity, require_mutation_identity
+from ..request_context import (
+    RequestIdentity,
+    profile_scope,
+    require_identity,
+    require_mutation_identity,
+)
 from ..schemas import DelegationCreate
 
 router = APIRouter(prefix="/api/delegation", tags=["delegation"])
@@ -61,6 +66,20 @@ def list_delegations(
 
     with profile_scope(identity.profile):
         return {"tasks": list_tasks()}
+
+
+@router.post("/tasks/{task_id}/cancel")
+def cancel_delegation(
+    task_id: str,
+    identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
+):
+    from api.delegation_tasks import cancel_task
+
+    with profile_scope(identity.profile):
+        task = cancel_task(task_id)
+    if task is None:
+        raise CoreApiError(404, "task not found")
+    return task
 
 
 __all__ = ["router"]

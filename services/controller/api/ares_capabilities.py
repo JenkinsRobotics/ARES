@@ -81,6 +81,10 @@ def _ares_owned_feature_available(feature: str) -> bool:
 
             ensure_schedule_runtime()
             return True
+        if feature == "caldav":
+            from api.caldav_service import get_config  # noqa: F401
+
+            return True
     except Exception:  # noqa: BLE001 - optional owner probes fail closed
         return False
     return False

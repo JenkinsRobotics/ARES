@@ -14,6 +14,8 @@ def test_overlapping_runtime_surfaces_declare_capability_requirements():
     assert index.count('data-requires-capability="mcp_server_config"') == 1
     assert index.count('data-requires-capability="tool_inventory"') == 1
     assert index.count('data-requires-capability="messaging_gateway"') == 1
+    assert index.count('data-requires-capability="caldav"') >= 2
+    assert "openCalDav" in index
 
 
 def test_capability_gate_fails_closed_and_guards_programmatic_navigation():

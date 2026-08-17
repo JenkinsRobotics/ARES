@@ -44,7 +44,7 @@ const APP_TITLEBAR_KEYS = {
   memory: 'tab_memory', workspaces: 'tab_workspaces',
   profiles: 'tab_profiles', todos: 'tab_todos', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
 };
-const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','workspaces','profiles','insights','logs','plugin'];
+const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','modelLab','workspaces','profiles','insights','logs','plugin'];
 const MAIN_VIEW_SIDEBAR_PANEL_FALLBACKS = { plugin: 'settings' };
 
 /**
@@ -364,7 +364,7 @@ function _syncMobileSidebarPanelFromMainView(){
   return panel;
 }
 
-const ARES_PANEL_CAPABILITIES={tasks:'schedules',kanban:'kanban',skills:'skills'};
+const ARES_PANEL_CAPABILITIES={tasks:'schedules',kanban:'kanban',modelLab:'model_compare',skills:'skills'};
 let _aresCapabilityFlags=null;
 let _aresCapabilityRequest=null;
 let _aresCapabilityPayload=null;
@@ -502,6 +502,7 @@ async function switchPanel(name, opts = {}) {
   // Lazy-load panel data
   if (nextPanel === 'tasks') await loadCrons();
   if (nextPanel === 'kanban') await loadKanban();
+  if (nextPanel === 'modelLab') await loadModelLab();
   if (nextPanel === 'skills') await loadSkills();
   if (nextPanel === 'memory') await loadMemory();
   if (nextPanel === 'workspaces') await loadWorkspacesPanel();
@@ -1213,6 +1214,71 @@ async function createCalDavEvent() {
     toast('Calendar event created', 'success');
     await openCalDav();
   } catch (error) { toast(error.message || String(error), 'error'); }
+}
+
+let _modelLabInventory=null;
+
+function _modelLabTargetOptions(targets){
+  return (targets||[]).map(item=>`<option value="${esc(item.id)}" ${item.available?'':'disabled'}>${esc(item.id)}${item.available?'':' (offline)'}</option>`).join('');
+}
+
+async function loadModelLab(){
+  const body=$('modelLabBody');
+  if(!body)return;
+  body.innerHTML='<div class="settings-loading">Loading model intelligence…</div>';
+  try{
+    _modelLabInventory=await api('/api/model-intelligence');
+    const options=_modelLabTargetOptions(_modelLabInventory.targets);
+    body.innerHTML=`
+      <div class="settings-section" data-requires-capability="model_compare">
+        <h3>Compare models</h3><p class="settings-hint">Runs the same prompt through two selected runtimes and scores both with ARES's deterministic evaluator.</p>
+        <div class="form-row"><label>Prompt</label><textarea id="modelLabPrompt" rows="5"></textarea></div>
+        <div class="form-row"><label>Runtime A</label><select id="modelLabTargetA">${options}</select></div>
+        <div class="form-row"><label>Runtime B</label><select id="modelLabTargetB">${options}</select></div>
+        <div class="form-actions"><button class="btn primary" onclick="runModelComparison()">Compare</button></div>
+      </div>
+      <div class="settings-section" data-requires-capability="teacher_escalation">
+        <h3>Teacher escalation</h3><p class="settings-hint">Uses the normal worker router. The teacher runs only when the primary answer fails evaluation.</p>
+        <div class="form-row"><label>Primary runtime</label><select id="teacherPrimary">${options}</select></div>
+        <div class="form-row"><label>Teacher runtime</label><select id="teacherTarget">${options}</select></div>
+        <div class="form-actions"><button class="btn secondary" onclick="runTeacherEscalation()">Evaluate and escalate</button></div>
+      </div>
+      <div class="settings-section" data-requires-capability="cookbook_model_serving"><h3>Model-serving cookbook</h3>
+        ${(_modelLabInventory.recipes||[]).map(recipe=>`<div class="cron-item"><strong>${esc(recipe.name)}</strong><div class="settings-hint">${esc(recipe.kind)}</div></div>`).join('')}
+        <div class="form-actions"><button class="btn secondary" onclick="scanModelHatchery()">Scan local model hardware</button></div>
+      </div><div class="settings-section"><h3>Latest result</h3><pre id="modelLabResult" class="code-block">No run yet.</pre></div>`;
+    const available=(_modelLabInventory.targets||[]).filter(item=>item.available);
+    if(available[1]){
+      $('modelLabTargetB').value=available[1].id;
+      $('teacherTarget').value=available[1].id;
+    }
+  }catch(error){body.innerHTML=`<div class="settings-error">${esc(error.message||String(error))}</div>`;}
+}
+
+async function runModelComparison(){
+  const prompt=($('modelLabPrompt')?.value||'').trim();
+  const targets=[$('modelLabTargetA')?.value,$('modelLabTargetB')?.value].filter(Boolean).map(backend=>({backend,model:null,provider:null}));
+  try{
+    const result=await api('/api/model-intelligence/compare',{method:'POST',body:JSON.stringify({prompt,targets})});
+    $('modelLabResult').textContent=JSON.stringify(result,null,2);
+  }catch(error){toast(error.message||String(error),'error');}
+}
+
+async function runTeacherEscalation(){
+  const prompt=($('modelLabPrompt')?.value||'').trim();
+  const primary={backend:$('teacherPrimary')?.value,model:null,provider:null};
+  const teacher={backend:$('teacherTarget')?.value,model:null,provider:null};
+  try{
+    const result=await api('/api/model-intelligence/teacher',{method:'POST',body:JSON.stringify({prompt,primary,teacher})});
+    $('modelLabResult').textContent=JSON.stringify(result,null,2);
+  }catch(error){toast(error.message||String(error),'error');}
+}
+
+async function scanModelHatchery(){
+  try{
+    const result=await api('/api/hatchery/scan');
+    $('modelLabResult').textContent=JSON.stringify(result,null,2);
+  }catch(error){toast(error.message||String(error),'error');}
 }
 
 function _cronPanelExpandKey(jobId, suffix){

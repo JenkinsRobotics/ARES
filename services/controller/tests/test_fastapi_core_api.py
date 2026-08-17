@@ -478,6 +478,36 @@ def test_caldav_routes_are_profile_scoped_and_keep_secrets_server_side(
     }
 
 
+def test_model_compare_route_uses_profile_owned_service(app, monkeypatch):
+    seen = {}
+
+    def compare(profile, **values):
+        seen.update({"profile": profile, **values})
+        return {"id": "comparison-1", "results": [], "winner": None}
+
+    monkeypatch.setattr("api.model_intelligence.compare", compare)
+    response = request(
+        app,
+        "POST",
+        "/api/model-intelligence/compare",
+        json={
+            "prompt": "Explain this",
+            "targets": [
+                {"backend": "jaeger_local"},
+                {"backend": "ollama_local"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "comparison-1"
+    assert seen["profile"] == "default"
+    assert [target["backend"] for target in seen["targets"]] == [
+        "jaeger_local",
+        "ollama_local",
+    ]
+
+
 def test_session_list_and_message_window_contracts(app):
     listed = request(app, "GET", "/api/sessions?exclude_hidden=1")
     loaded = request(

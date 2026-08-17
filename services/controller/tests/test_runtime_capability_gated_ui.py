@@ -21,7 +21,7 @@ def test_overlapping_runtime_surfaces_declare_capability_requirements():
 def test_capability_gate_fails_closed_and_guards_programmatic_navigation():
     panels = (ROOT / "apps/web/static/panels.js").read_text(encoding="utf-8")
     styles = (ROOT / "apps/web/static/style.css").read_text(encoding="utf-8")
-    assert "ARES_PANEL_CAPABILITIES={tasks:'schedules',kanban:'kanban',skills:'skills'}" in panels
+    assert "ARES_PANEL_CAPABILITIES={tasks:'schedules',kanban:'kanban',modelLab:'model_compare',skills:'skills'}" in panels
     assert "capabilities[requiredCapability]!==true" in panels
     assert "gated UI remains unavailable" in panels
     assert "capability_negotiated===true" in panels

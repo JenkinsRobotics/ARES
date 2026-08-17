@@ -877,6 +877,9 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
                     "schedules": {"available": True, "owner": "ares"},
                     "kanban": {"available": True, "owner": "ares"},
                     "caldav": {"available": True, "owner": "ares"},
+                    "model_compare": {"available": True, "owner": "ares"},
+                    "teacher_escalation": {"available": True, "owner": "ares"},
+                    "cookbook_model_serving": {"available": True, "owner": "ares"},
                 },
             },
             None,
@@ -894,16 +897,16 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     assert jros_caps["skills"] is True
     assert jros_caps["caldav"] is True
     assert jros_caps["kanban"] is True
+    assert jros_caps["model_compare"] is True
+    assert jros_caps["teacher_escalation"] is True
+    assert jros_caps["cookbook_model_serving"] is True
     assert all(
         jros_caps[name] is False
         for name in (
-            "cookbook_model_serving",
             "deep_research",
-            "model_compare",
             "image_gallery",
             "image_editor",
             "visual_reports",
-            "teacher_escalation",
             "pdf_forms",
             "youtube_ingest",
         )

@@ -85,6 +85,14 @@ def _ares_owned_feature_available(feature: str) -> bool:
             from api.caldav_service import get_config  # noqa: F401
 
             return True
+        if feature in {"model_compare", "teacher_escalation"}:
+            from api.model_intelligence import inventory  # noqa: F401
+
+            return True
+        if feature == "cookbook_model_serving":
+            from api.backends.ollama_hatchery import get_hatchery_status  # noqa: F401
+
+            return True
     except Exception:  # noqa: BLE001 - optional owner probes fail closed
         return False
     return False

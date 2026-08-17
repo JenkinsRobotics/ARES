@@ -528,8 +528,3 @@ class OllamaLocalAdapter(JournaledFrameworkAdapter):
         inventory = self.backend.inventory()
         return _descriptors_from_inventory(inventory, connection_id=self.adapter_id)
 
-
-# Backward compatibility aliases
-HermesAdapter = JaegerAdapter
-HermesLocalAdapter = JaegerAdapter
-

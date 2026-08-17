@@ -9,7 +9,7 @@ The context tells the agent:
   - Which backend is running
   - What capabilities are available
   - What open promises/tasks exist
-  - Whether JROS embodiment is connected
+  - Whether JaegerAI embodiment is connected
 
 This is backend-agnostic and never treats ARES itself as an inference runtime.
 """
@@ -21,29 +21,29 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 # Lazy import — avoids circular dependency at module level.
-# backend_selector.is_jros_available() is the canonical probe.
-_IS_JROS_AVAILABLE_FUNC: Optional[Any] = None
+# backend_selector.is_jaeger_available() is the canonical probe.
+_IS_JaegerAI_AVAILABLE_FUNC: Optional[Any] = None
 
 
-def _get_jros_available_func():
-    """Lazy-load the JROS availability check from backend_selector."""
-    global _IS_JROS_AVAILABLE_FUNC
-    if _IS_JROS_AVAILABLE_FUNC is not None:
-        return _IS_JROS_AVAILABLE_FUNC
+def _get_jaeger_available_func():
+    """Lazy-load the JaegerAI availability check from backend_selector."""
+    global _IS_JaegerAI_AVAILABLE_FUNC
+    if _IS_JaegerAI_AVAILABLE_FUNC is not None:
+        return _IS_JaegerAI_AVAILABLE_FUNC
     try:
-        from api.backend_selector import is_jros_available
-        _IS_JROS_AVAILABLE_FUNC = is_jros_available
+        from api.backend_selector import is_jaeger_available
+        _IS_JaegerAI_AVAILABLE_FUNC = is_jaeger_available
     except ImportError:
         logging.getLogger(__name__).debug(
-            "backend_selector not available — JROS assumed down"
+            "backend_selector not available — JaegerAI assumed down"
         )
-        _IS_JROS_AVAILABLE_FUNC = lambda: False
-    return _IS_JROS_AVAILABLE_FUNC
+        _IS_JaegerAI_AVAILABLE_FUNC = lambda: False
+    return _IS_JaegerAI_AVAILABLE_FUNC
 
 
-def is_jros_available() -> bool:
-    """Check if JROS daemon is reachable. Delegates to backend_selector."""
-    func = _get_jros_available_func()
+def is_jaeger_available() -> bool:
+    """Check if JaegerAI daemon is reachable. Delegates to backend_selector."""
+    func = _get_jaeger_available_func()
     try:
         return bool(func())
     except Exception:
@@ -76,7 +76,7 @@ def build_runtime_context(
         def should_inject_self_persistence(config):
             return True
 
-    jros_up = is_jros_available()
+    jaeger_up = is_jaeger_available()
 
     from api.backend_selector import normalize_backend
 
@@ -93,13 +93,13 @@ def build_runtime_context(
                 "permissions", "continuity",
             ],
         },
-        "jros": {
-            "available": jros_up,
+        "jaeger": {
+            "available": jaeger_up,
             "provides": [
                 "embodiment", "speech", "hearing", "vision",
                 "motor_control", "animation", "skill_tree",
                 "timeline",
-            ] if jros_up else [],
+            ] if jaeger_up else [],
         },
         "active_runtime": {
             "id": effective_backend,
@@ -161,8 +161,8 @@ def build_runtime_context(
         "open_promises": open_promises,
         "self_persistence_enabled": should_inject_self_persistence({}),
         "embodiment": {
-            "body": "desktop" if not jros_up else "droid",
-            "jros_connected": jros_up,
+            "body": "desktop" if not jaeger_up else "droid",
+            "jaeger_connected": jaeger_up,
         },
         "device": device_summary,
     }
@@ -185,15 +185,15 @@ def render_context_prompt(context: dict[str, Any]) -> str:
     if not isinstance(identity, dict):
         identity = {}
     identity_name = str(identity.get("name") or "No runtime selected")
-    jros_up = context.get("capabilities", {}).get("jros", {}).get("available", False)
+    jaeger_up = context.get("capabilities", {}).get("jaeger", {}).get("available", False)
     lines = [
         f"Projected identity: {identity_name}. Backend: {backend}.",
     ]
 
-    if jros_up:
-        lines.append("JROS embodiment connected: speech, hearing, vision, motor control available.")
+    if jaeger_up:
+        lines.append("JaegerAI embodiment connected: speech, hearing, vision, motor control available.")
     else:
-        lines.append("No JROS embodiment — desktop mode.")
+        lines.append("No JaegerAI embodiment — desktop mode.")
 
     device = context.get("device") or {}
     if isinstance(device, dict) and device.get("role"):

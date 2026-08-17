@@ -8394,7 +8394,7 @@ def _run_agent_streaming(
             # through interim_assistant_callback instead of frontend guesses.
 
             # ARES: inject self-persistence contract into system prompt.
-            # This is ARES-owned product behavior above Ares/JROS, not a backend
+            # This is ARES-owned product behavior above Ares/JaegerAI, not a backend
             # implementation detail. It stays adapter-first so backends remain swappable.
             _self_persistence_prompt = ""
             try:

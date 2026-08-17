@@ -1,11 +1,11 @@
-"""Hermes vanilla-UI static-file serving for the FastAPI application.
+"""ARES static-file serving for the FastAPI application.
 
 This module intentionally owns no API routes. It is included after every API
 router so the SPA fallback can never shadow a backend endpoint.
 
-The Hermes WebUI is a vanilla JS/HTML/CSS single-page application. Static files
+The ARES WebUI is a vanilla JS/HTML/CSS single-page application. Static files
 live in apps/web/static/ and are served under the /static/ URL prefix, matching
-the original Hermes server's convention. The index.html uses template tokens
+the frontend's convention. The index.html uses template tokens
 (__WEBUI_VERSION__, __MAX_UPLOAD_BYTES__, __CSRF_TOKEN_JSON__) that are
 substituted at request time.
 """
@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 DEFAULT_FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "apps" / "web" / "static"
 
-# Hermes template tokens (substituted in index.html at request time)
+# Frontend template tokens (substituted in index.html at request time)
 _WEBUI_VERSION_PLACEHOLDER = "__WEBUI_VERSION__"
 _MAX_UPLOAD_PLACEHOLDER = "__MAX_UPLOAD_BYTES__"
 _CSRF_TOKEN_PLACEHOLDER = "__CSRF_TOKEN_JSON__"
@@ -103,7 +103,7 @@ def _is_static_asset(path: str) -> bool:
     """Check if path is a static file request (under /static/ prefix or root file)."""
     if _is_api_path(path):
         return False
-    # Hermes references all JS/CSS/etc. under the static/ prefix
+    # ARES references all JS/CSS/etc. under the static/ prefix
     if path.startswith("static/"):
         return True
     # Root-level files (manifest, favicon, sw.js, etc.)
@@ -165,7 +165,7 @@ def _frontend_file(root: Path, path: str) -> Response:
         media_type=_media_type(target),
         headers={
             "Cache-Control": cache_control,
-            "X-ARES-Frontend": "hermes",
+            "X-ARES-Frontend": "ares",
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -180,17 +180,17 @@ def _manifest(root: Path) -> Response:
         media_type="application/manifest+json",
         headers={
             "Cache-Control": "no-store",
-            "X-ARES-Frontend": "hermes",
+            "X-ARES-Frontend": "ares",
             "X-Content-Type-Options": "nosniff",
         },
     )
 
 
 def _spa_shell(root: Path, request: Request, resolve_csrf: CsrfTokenResolver) -> Response:
-    """Serve index.html with Hermes template tokens substituted."""
+    """Serve index.html with ARES template tokens substituted."""
     index_path = _resolve_file(root, "index.html")
     if index_path is None:
-        return _json_not_found("Hermes frontend not found")
+        return _json_not_found("ARES frontend not found")
     try:
         html = index_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
@@ -234,7 +234,7 @@ def _spa_shell(root: Path, request: Request, resolve_csrf: CsrfTokenResolver) ->
         html,
         headers={
             "Cache-Control": "no-store",
-            "X-ARES-Frontend": "hermes",
+            "X-ARES-Frontend": "ares",
         },
     )
 
@@ -280,7 +280,7 @@ def create_frontend_router(
     frontend_root: Path | None = None,
     csrf_resolver: CsrfTokenResolver | None = None,
 ) -> APIRouter:
-    """Create the final catch-all router for the Hermes vanilla UI."""
+    """Create the final catch-all router for the ARES UI."""
     root = Path(frontend_root or DEFAULT_FRONTEND_ROOT)
     resolve_csrf = csrf_resolver or csrf_token_for_request
     router = APIRouter(include_in_schema=False)

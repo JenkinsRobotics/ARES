@@ -4,15 +4,15 @@ Stdlib only: no JaegerAI package is imported into ARES. The client drives an
 existing JaegerAI install by spawning its
 ``jaeger bridge`` and speaking the v1 NDJSON client protocol over stdio.
 
-    from api.providers.jaeger.bridge_client import JrosClient
+    from api.providers.jaeger.bridge_client import JaegerClient
 
-    with JrosClient() as companion:
+    with JaegerClient() as companion:
         reply = companion.turn("hello", session="myapp")
         print(reply["text"])
 
-Pick an agent:       JrosClient(instance="my-agent")
-Non-default install: JrosClient(jaeger_home="/opt/jaeger")
-Full control:        JrosClient(command=["/path/to/jaeger", "bridge"])
+Pick an agent:       JaegerClient(instance="my-agent")
+Non-default install: JaegerClient(jaeger_home="/opt/jaeger")
+Full control:        JaegerClient(command=["/path/to/jaeger", "bridge"])
 
 The wire contract is jaeger_os/interfaces/protocol.py (v1); this file is
 tested against the same protocol_v1_fixtures.json that pins the Swift
@@ -31,20 +31,20 @@ from typing import Any
 
 from api.providers.jaeger.paths import jaeger_home as resolve_jaeger_home
 from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launcher
-from api.providers.jaeger.paths import jros_instance_name as resolve_jros_instance_name
+from api.providers.jaeger.paths import jaeger_instance_name as resolve_jaeger_instance_name
 
 PROTOCOL_VERSION = "1"
 INTEGRATION_CONTRACT_VERSION = 6
 
 
-class JrosError(RuntimeError):
+class JaegerError(RuntimeError):
     """The bridge failed to boot, died mid-turn, or returned a fatal."""
 
 
 def _default_command(jaeger_home: str | None, instance: str | None = None) -> list[str]:
     """Resolve the installed launcher command: <home>/jaeger bridge [instance].
 
-    JROS 0.7's implicit default bridge can emit ``ready`` and still stall on
+    JaegerAI 0.7's implicit default bridge can emit ``ready`` and still stall on
     the first real turn. ARES therefore passes the resolved instance as a
     positional bridge argument whenever it knows one.
     """
@@ -52,7 +52,7 @@ def _default_command(jaeger_home: str | None, instance: str | None = None) -> li
     launcher = resolve_jaeger_launcher() if jaeger_home is None else Path(str(raw_home)).expanduser() / "jaeger"
     home = launcher.parent
     if not launcher.exists():
-        raise JrosError(
+        raise JaegerError(
             f"no JaegerAI install at {home} — install first "
             "(https://github.com/JenkinsRobotics/JaegerAI) or pass "
             "jaeger_home=/path/to/install")
@@ -113,8 +113,8 @@ def quit_op() -> dict[str, Any]:
     return {"op": "quit"}
 
 
-class JrosClient:
-    """Drive a JROS agent over the v1 client protocol.
+class JaegerClient:
+    """Drive a JaegerAI agent over the v1 client protocol.
 
     Synchronous, one turn at a time (one local model). Tool/state events
     and mid-turn requests surface via the ``turn()`` callbacks.
@@ -124,7 +124,7 @@ class JrosClient:
                  instance: str | None = None,
                  command: list[str] | None = None,
                  env: dict | None = None, cwd: str | None = None) -> None:
-        resolved_instance = instance or resolve_jros_instance_name()
+        resolved_instance = instance or resolve_jaeger_instance_name()
         self._command = (
             _append_instance_arg_if_bridge(command, resolved_instance)
             if command is not None else _default_command(jaeger_home, resolved_instance)
@@ -144,7 +144,7 @@ class JrosClient:
     # ── lifecycle ─────────────────────────────────────────────────
     def start(self) -> dict[str, Any]:
         """Spawn the bridge and await its ``ready`` handshake. Returns
-        ``{"instance": ..., "model": ...}``. Raises :class:`JrosError`."""
+        ``{"instance": ..., "model": ...}``. Raises :class:`JaegerError`."""
         self._proc = subprocess.Popen(
             self._command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -169,13 +169,13 @@ class JrosClient:
             if frame.get("type") == "ready":
                 received_protocol = str(frame.get("proto") or "")
                 if received_protocol != PROTOCOL_VERSION:
-                    raise JrosError(
+                    raise JaegerError(
                         "incompatible Jaeger bridge protocol: "
                         f"expected {PROTOCOL_VERSION}, received {received_protocol or 'missing'}"
                     )
                 capabilities = frame.get("capabilities")
                 if not isinstance(capabilities, list):
-                    raise JrosError("invalid Jaeger bridge handshake: capabilities must be a list")
+                    raise JaegerError("invalid Jaeger bridge handshake: capabilities must be a list")
                 self.ready = {
                     "instance": frame.get("instance"),
                     "model": frame.get("model"),
@@ -189,13 +189,13 @@ class JrosClient:
                 msg = str(frame.get("error", "boot failed"))
                 if stderr_tail:
                     msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
-                raise JrosError(msg)
+                raise JaegerError(msg)
         # Bridge exited before ready — include stderr for diagnostics
         stderr_tail = "\n".join(self._stderr_lines[-10:]) if self._stderr_lines else ""
         msg = "bridge exited before ready"
         if stderr_tail:
             msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
-        raise JrosError(msg)
+        raise JaegerError(msg)
 
     def is_alive(self) -> bool:
         """True while the ``jaeger bridge`` child is still running."""
@@ -223,7 +223,7 @@ class JrosClient:
                         pass
         self._proc = None
 
-    def __enter__(self) -> JrosClient:
+    def __enter__(self) -> JaegerClient:
         self.start()
         return self
 
@@ -242,7 +242,7 @@ class JrosClient:
         return the answer (default "deny")."""
         with self._io_lock:
             if self._proc is None:
-                raise JrosError("not started")
+                raise JaegerError("not started")
             self._write(send_op(text, session, workspace, display_text))
             for line in self._proc.stdout:        # type: ignore[union-attr]
                 frame = _parse(line)
@@ -260,21 +260,21 @@ class JrosClient:
                     if on_event is not None:
                         on_event(frame)
                 elif kind == "fatal":
-                    raise JrosError(str(frame.get("error", "bridge failed")))
-            raise JrosError("bridge exited mid-turn")
+                    raise JaegerError(str(frame.get("error", "bridge failed")))
+            raise JaegerError("bridge exited mid-turn")
 
     def cancel(self, session: str = "") -> None:
         """Cooperatively interrupt the current Jaeger bridge turn."""
         del session  # reserved for a future multi-worker bridge
         if self._proc is None:
-            raise JrosError("not started")
+            raise JaegerError("not started")
         self._write({"op": "cancel"})
 
     def steer(self, text: str, session: str = "") -> None:
         """Inject guidance into the current Jaeger bridge turn."""
         del session  # reserved for a future multi-worker bridge
         if self._proc is None:
-            raise JrosError("not started")
+            raise JaegerError("not started")
         self._write({"op": "steer", "text": str(text or "")})
 
     def query(self, what: str, args: dict[str, Any] | None = None) -> Any:
@@ -289,23 +289,23 @@ class JrosClient:
         """Return and validate Jaeger's self-described product capabilities."""
         contract = self.query("contract")
         if not isinstance(contract, dict) or contract.get("contract") != "ares-jaeger":
-            raise JrosError("Jaeger bridge returned an invalid integration contract")
+            raise JaegerError("Jaeger bridge returned an invalid integration contract")
         version = contract.get("contract_version")
         if version != INTEGRATION_CONTRACT_VERSION:
-            raise JrosError(
+            raise JaegerError(
                 "incompatible ARES-Jaeger contract: "
                 f"expected {INTEGRATION_CONTRACT_VERSION}, received {version!r}"
             )
         if str(contract.get("protocol_version") or "") != PROTOCOL_VERSION:
-            raise JrosError("Jaeger integration contract disagrees with the bridge protocol")
+            raise JaegerError("Jaeger integration contract disagrees with the bridge protocol")
         if not isinstance(contract.get("features"), dict):
-            raise JrosError("Jaeger integration contract is missing its feature map")
+            raise JaegerError("Jaeger integration contract is missing its feature map")
         return contract
 
     def _request(self, frame: dict[str, Any]) -> Any:
         with self._io_lock:
             if self._proc is None:
-                raise JrosError("not started")
+                raise JaegerError("not started")
             self._request_counter += 1
             request_id = f"ares-{self._request_counter}"
             payload = {**frame, "id": request_id}
@@ -317,11 +317,11 @@ class JrosClient:
                 kind = reply.get("type")
                 if kind == "result" and str(reply.get("id") or "") == request_id:
                     if not bool(reply.get("ok", True)):
-                        raise JrosError(str(reply.get("error") or "Jaeger command failed"))
+                        raise JaegerError(str(reply.get("error") or "Jaeger command failed"))
                     return reply.get("data")
                 if kind == "fatal":
-                    raise JrosError(str(reply.get("error") or "bridge failed"))
-            raise JrosError("bridge exited before returning a result")
+                    raise JaegerError(str(reply.get("error") or "bridge failed"))
+            raise JaegerError("bridge exited before returning a result")
 
     # ── internals ─────────────────────────────────────────────────
     def _write(self, frame: dict[str, Any]) -> None:

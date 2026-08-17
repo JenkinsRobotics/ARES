@@ -1,5 +1,5 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  /* ── Light mode (default) — warm gold-tinted palette from Hermes brand ── */
+  /* ── Light mode (default) — warm gold-tinted palette from ARES brand ── */
   :root {
     --bg:#FEFCF7;--sidebar:#FAF7F0;--border:#E0D8C8;--border2:rgba(0,0,0,0.15);
     --text:#1A1610;--muted:#5C5344;--accent:#B8860B;--blue:#0288A8;--gold:#8B6508;--code-bg:#F5F0E5;
@@ -103,7 +103,7 @@
   :root[data-font-size="small"] { font-size: 12px; }
   :root[data-font-size="large"] { font-size: 16px; }
   :root[data-font-size="xlarge"] { font-size: 18px; }
-  /* ── Dark mode — navy-black + gold accent matching Hermes terminal ── */
+  /* ── Dark mode — navy-black + gold accent matching ARES terminal ── */
   :root.dark {
     --bg:#0D0D1A;--sidebar:#141425;--border:#2A2A45;--border2:rgba(255,255,255,0.14);
     --text:#FFF8DC;--muted:#C0C0C0;--accent:#FFD700;--blue:#4DD0E1;--gold:#FFBF00;--code-bg:#1A1A2E;
@@ -687,7 +687,7 @@
   :root.dark[data-skin="sienna"] .new-chat-btn{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;box-shadow:0 1px 2px rgba(20,19,17,0.08);}
   :root[data-skin="sienna"]:not(.dark) .new-chat-btn:hover,
   :root.dark[data-skin="sienna"] .new-chat-btn:hover{background:var(--accent-hover);border-color:var(--accent-hover);color:#fff;}
-  /* Tool / thinking cards: mute the blue-ish Hermes highlights to neutral */
+  /* Tool / thinking cards: mute the blue-ish ARES highlights to neutral */
   :root[data-skin="sienna"] .tool-card{background:rgba(20,19,17,0.025);border-color:var(--border);border-radius:10px;}
   :root[data-skin="sienna"] .tool-card:hover{border-color:var(--border2);}
   :root[data-skin="sienna"] .tool-card-running{background:var(--accent-bg);border-color:var(--accent-bg-strong);}
@@ -2092,7 +2092,7 @@
   /* Derived from --accent rather than read from --accent-bg. Every built-in
      skin sets --accent-bg to an 8% wash (rgba(255,215,0,.08)), which is the
      soft highlight this rail was designed around — but the token is part of
-     the extension skin contract (registerHermesSkin), so a registered skin
+     the extension skin contract (registerARESSkin), so a registered skin
      can hand back an OPAQUE colour and turn the selected tab into a solid
      block. Mixing the wash here keeps the intended look whatever the token
      holds, and still tracks the active skin's accent hue. */
@@ -3121,7 +3121,7 @@
     .topbar-chips{flex-wrap:nowrap;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
     .topbar-chips .chip,.topbar-chips .ws-chip,.topbar-chips button{font-size:11px!important;padding:4px 8px!important;white-space:nowrap;}
     .settings-main{padding:18px 16px;}
-    .hermes-action-grid{grid-template-columns:1fr;}
+    .ares-action-grid{grid-template-columns:1fr;}
     /* #4856: use overflow-x:clip, NOT hidden. `overflow-x:hidden` forces
        overflow-y from visible to auto (CSS spec: the two axes can't be
        visible+clipped), which turns .messages-inner into a scroll container.
@@ -4434,7 +4434,7 @@ body.resizing .sidebar{transition:none!important;}
 .transparent-event-row[data-transparent-fade]{transition:opacity .22s ease;}
 .transparent-event-row[data-transparent-fade]:hover{opacity:1;}
 
-/* ── Collapsible Hermes chat name tag ───────── */
+/* ── Collapsible ARES chat name tag ───────── */
 .assistant-turn[data-transparent-turn-collapsed="1"] .transparent-event-row,
 .assistant-turn[data-transparent-turn-collapsed="1"] .transparent-event-controls,
 .assistant-turn[data-transparent-turn-collapsed="1"] .transparent-earlier-steps{
@@ -5139,7 +5139,7 @@ button.capability-unavailable,.side-menu-item.capability-unavailable{opacity:.58
 #mainSettings select:disabled{opacity:.6;cursor:not-allowed;}
 
 /* Quick-action grid in Conversation pane — outlined card buttons. */
-.hermes-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px;}
+.ares-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:18px;}
 .settings-action-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--sidebar);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:background .15s,border-color .15s,color .15s;}
 .settings-action-btn:hover{background:var(--accent-bg);border-color:var(--accent-bg-strong);color:var(--accent-text);}
 .settings-action-btn.danger{color:var(--error,#e05);border-color:color-mix(in srgb,var(--error,#e05) 30%,transparent);}
@@ -5253,13 +5253,13 @@ button.capability-unavailable,.side-menu-item.capability-unavailable{opacity:.58
   .settings-section-title{font-size:16px;}
   #checkUpdatesBlock{flex-wrap:wrap;row-gap:6px;width:100%;}
   .settings-version-badge{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;display:block;}
-  .hermes-action-grid{grid-template-columns:1fr;}
+  .ares-action-grid{grid-template-columns:1fr;}
   #mainSettings .settings-field{padding:14px;}
   #mainSettings .chat-activity-mode-toggle{grid-template-columns:1fr;}
 }
 
 /* ── Provider cards (Settings → Providers) ──
-   Matches hermes-desktop LLM Providers panel. Card uses --sidebar (surface-1),
+   Matches ares-desktop LLM Providers panel. Card uses --sidebar (surface-1),
    hover rows use --surface (surface-2). Body divider uses a subtle tint. */
 #providersList{gap:12px;}
 .provider-quota-card{
@@ -6016,7 +6016,7 @@ button.capability-unavailable,.side-menu-item.capability-unavailable{opacity:.58
 @media (max-width: 600px) { .msg-row[data-role="user"] { max-width: 90%; } }
 /* Hide the entire "empty tool-anchor" assistant row (content='' with
    tool_calls). renderMessages keeps it in the DOM so tool cards can anchor
-   to it, but visually it adds a ghost "Hermes" header above the tool cards.
+   to it, but visually it adds a ghost "ARES" header above the tool cards.
    With the row hidden the transition from live → settled on 'done' is
    seamless. */
 .msg-row[data-role="assistant"]:has(> .msg-body:empty) { padding: 0; margin: 0; }
@@ -6318,7 +6318,7 @@ button.capability-unavailable,.side-menu-item.capability-unavailable{opacity:.58
 .tool-card-preview { display:none; }
 
 /* ── Streaming cursor at the end of the live assistant body ── */
-@keyframes hermes-cursor-blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+@keyframes ares-cursor-blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
 #toolRunningRow { margin-top: 10px; }
 [data-live-assistant="1"]:last-child .msg-body > :last-child::after,
 [data-live-assistant="1"]:last-child .msg-body:not(:has(> *))::after {
@@ -6330,7 +6330,7 @@ button.capability-unavailable,.side-menu-item.capability-unavailable{opacity:.58
   border-radius: 1px;
   margin-left: 3px;
   vertical-align: -0.16em;
-  animation: hermes-cursor-blink 1.05s steps(2, start) infinite;
+  animation: ares-cursor-blink 1.05s steps(2, start) infinite;
 }
 
 /* ── Error state: distinct red-accent card, not italic emphasis ── */
@@ -7038,7 +7038,7 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .kanban-detail-section h3{font-size:12px;font-weight:650;color:var(--text);margin:0 0 8px;}
 .kanban-detail-row{padding:8px 0;border-top:1px solid var(--border);}
 .kanban-detail-row:first-of-type{border-top:0;padding-top:0;}
-.kanban-detail-row-main{font-size:12px;color:var(--text);line-height:1.45;}.kanban-detail-row-main .hermes-kanban-md p:last-child{margin-bottom:0;}
+.kanban-detail-row-main{font-size:12px;color:var(--text);line-height:1.45;}.kanban-detail-row-main .ares-kanban-md p:last-child{margin-bottom:0;}
 .kanban-detail-row-meta{font-size:10px;color:var(--muted);margin-top:4px;}
 .kanban-detail-pre{font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-word;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px;margin:6px 0 0;color:var(--muted);}
 .kanban-detail-empty{font-size:12px;color:var(--muted);}
@@ -7081,7 +7081,7 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .kanban-card-stale-amber{border-color:rgba(245,197,66,.55)}
 .kanban-card-stale-red{border-color:rgba(255,95,95,.65)}
 .kanban-column.drop-target{outline:2px solid var(--accent);outline-offset:-2px}
-.hermes-kanban-md p{margin:0 0 4px}.hermes-kanban-md code{font-family:var(--mono);font-size:.95em}.hermes-kanban-md h1,.hermes-kanban-md h2,.hermes-kanban-md h3,.hermes-kanban-md h4,.hermes-kanban-md h5,.hermes-kanban-md h6{margin:10px 0 4px;font-weight:650;color:var(--text)}.hermes-kanban-md h1{font-size:15px}.hermes-kanban-md h2{font-size:14px}.hermes-kanban-md h3{font-size:13px}.hermes-kanban-md h4,.hermes-kanban-md h5,.hermes-kanban-md h6{font-size:12px}.hermes-kanban-md ul,.hermes-kanban-md ol{margin:4px 0;padding-left:20px}.hermes-kanban-md li{margin:2px 0}.hermes-kanban-md li.checked{opacity:.6}.hermes-kanban-md li input[type=checkbox]{margin:0 4px 0 0;vertical-align:middle}.hermes-kanban-md table{border-collapse:collapse;margin:6px 0;font-size:11px;width:100%}.hermes-kanban-md td{border:1px solid var(--border);padding:4px 6px;vertical-align:top}.hermes-kanban-md blockquote{margin:4px 0;padding:2px 8px;border-left:3px solid var(--accent);color:var(--muted);font-size:12px}.hermes-kanban-md pre{background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;overflow-x:auto;font-size:11px;line-height:1.4;color:var(--text)}.hermes-kanban-md hr{border:none;border-top:1px solid var(--border);margin:8px 0}
+.ares-kanban-md p{margin:0 0 4px}.ares-kanban-md code{font-family:var(--mono);font-size:.95em}.ares-kanban-md h1,.ares-kanban-md h2,.ares-kanban-md h3,.ares-kanban-md h4,.ares-kanban-md h5,.ares-kanban-md h6{margin:10px 0 4px;font-weight:650;color:var(--text)}.ares-kanban-md h1{font-size:15px}.ares-kanban-md h2{font-size:14px}.ares-kanban-md h3{font-size:13px}.ares-kanban-md h4,.ares-kanban-md h5,.ares-kanban-md h6{font-size:12px}.ares-kanban-md ul,.ares-kanban-md ol{margin:4px 0;padding-left:20px}.ares-kanban-md li{margin:2px 0}.ares-kanban-md li.checked{opacity:.6}.ares-kanban-md li input[type=checkbox]{margin:0 4px 0 0;vertical-align:middle}.ares-kanban-md table{border-collapse:collapse;margin:6px 0;font-size:11px;width:100%}.ares-kanban-md td{border:1px solid var(--border);padding:4px 6px;vertical-align:top}.ares-kanban-md blockquote{margin:4px 0;padding:2px 8px;border-left:3px solid var(--accent);color:var(--muted);font-size:12px}.ares-kanban-md pre{background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;overflow-x:auto;font-size:11px;line-height:1.4;color:var(--text)}.ares-kanban-md hr{border:none;border-top:1px solid var(--border);margin:8px 0}
 
 @media (max-width: 640px){
   .kanban-board{scroll-snap-type:x mandatory;}

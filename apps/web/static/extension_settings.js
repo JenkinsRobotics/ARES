@@ -1,8 +1,8 @@
 (function(){
   'use strict';
 
-  const SETTINGS_PREFIX='hermes.ext.settings.';
-  const STORAGE_PREFIX='hermes.ext.storage.';
+  const SETTINGS_PREFIX='ares.ext.settings.';
+  const STORAGE_PREFIX='ares.ext.storage.';
   const FIELD_TYPES=new Set(['boolean','string','number','integer','enum']);
   const schemas=new Map();
   const trustedExtensions=new Map();
@@ -319,11 +319,11 @@
     clearStorageForExtension(id){return storageForExtension(id).clear();},
   };
 
-  window.HermesExtensionSettings=api;
-  window.hermesExt=window.hermesExt||{};
-  window.hermesExt.settings=window.hermesExt.settings||{};
-  window.hermesExt.storage=window.hermesExt.storage||{};
-  window.hermesExt.settings.forExtension=settingsForExtension;
-  window.hermesExt.storage.forExtension=storageForExtension;
-  primeFromStatus(window.__HERMES_EXTENSION_CONFIG__||{});
+  window.ARESExtensionSettings=api;
+  window.aresExt=window.aresExt||{};
+  window.aresExt.settings=window.aresExt.settings||{};
+  window.aresExt.storage=window.aresExt.storage||{};
+  window.aresExt.settings.forExtension=settingsForExtension;
+  window.aresExt.storage.forExtension=storageForExtension;
+  primeFromStatus(window.__ARES_EXTENSION_CONFIG__||{});
 })();

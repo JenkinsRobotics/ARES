@@ -1,118 +1,52 @@
-# ARES — agent entry
+# ARES contributor contract
 
-**CRITICAL: Read [DOCTRINE.md](./DOCTRINE.md) first.** This file contains the first principles of the system. Any proposal that violates the Doctrine is invalid.
+Read `DOCTRINE.md` before changing product behavior.
 
-| | |
-| --- | --- |
-| **Port** | ARES UI + API: **8788** |
-| **Not this repo** | hermes-webui (3rd-party) is `~/GitHub/hermes-webui` on **8787** — reference only |
-| **Owner** | Jenkins Robotics / Matthew Jenkins |
+ARES is the product UI and controller. JaegerAI is the canonical agent runtime.
+ARES may integrate other model providers and command-line workers, but it never
+reads or writes another product's private state.
 
-Read this before changing code. Do not invent Board/Leo/hands/control-plane metaphors.
+## Ownership
 
-## What ARES is
+- JaegerAI owns agent turns, authoritative transcripts, tool calls, runtime
+  history, skills, MCP configuration, credentials, models, and personas.
+- ARES owns presentation, workspaces, projects, drafts, title overrides,
+  pin/archive metadata, approvals UI, and combined projections.
+- Cross-product operations use the versioned Jaeger bridge contract.
+- Compatibility identifiers exist only in
+  `integrations/providers/jaeger/legacy_compat.py` and the one-time browser
+  storage migration.
 
-ARES is the product UI + controller that replaces hermes-webui for daily use.
-It talks to multiple backends through adapters (Jaeger AI primary local path,
-Ollama, Claude, Codex, cloud; Hermes is migration compatibility only). ARES
-owns its product state under `~/.ares/`. Runtime features and mutations are
-discovered through versioned worker contracts; worker stores are never edited
-directly.
+## Source map
 
-## Folder map (where to edit)
-
-```
-ARES/
-├── apps/web/static/           # Browser UI: HTML, JavaScript, CSS, icons
-│   ├── index.html             # Shell, panels, capability-gated controls
-│   ├── sessions.js            # Conversation and session behavior
-│   ├── panels.js              # Feature panels and settings
-│   ├── ui.js                  # Shared UI behavior
-│   └── style.css              # Current consolidated styling
-├── apps/macos/                # Native shell (WKWebView → :8788)
-├── services/controller/       # FastAPI backend
-├── integrations/              # Worker adapters (jaeger, hermes, ollama, …)
-├── core/                      # SI / memory modules (not all on chat path yet)
-└── docs/                      # Vision, architecture, ADRs, rfcs
-```
-
-### UI sizing and padding (non-coder)
-
-| Change this look | Edit this file |
-| --- | --- |
-| Page structure and capability-gated controls | `apps/web/static/index.html` |
-| Chat and session behavior | `apps/web/static/sessions.js` |
-| Feature panels and settings | `apps/web/static/panels.js` |
-| Shared browser behavior | `apps/web/static/ui.js` |
-| Layout, colors, responsive rules | `apps/web/static/style.css` |
+- `apps/web/static/`: browser UI
+- `apps/macos/`: native shell and native macOS tools
+- `services/controller/`: FastAPI routes and product services
+- `integrations/providers/jaeger/`: Jaeger bridge adapter
+- `integrations/workers/`: other worker adapters
+- `core/`: ARES-owned orchestration, memory, and authority code
 
 ## Rules
 
-1. **Smallest slice only.** One concern per change (e.g. phone padding only).
-2. **Research → plan in `~/Desktop/ARES-agent-docs/` → wait for go** before product code (unless user already said go/fix it).
-3. **Do not edit hermes-webui** unless the task is explicitly about that repo.
-4. **ARES writes only ARES state.** Worker DBs are read-only.
-5. **UI uses ARES HTTP contracts** — translate worker payloads in the controller, never in browser code.
-6. **No metaphor product language** in UI or new docs.
-7. After an approved fix: **commit locally**; **do not push** unless asked.
-8. Prove UI with controller tests and `./scripts/smoke_test.sh` (plus a phone check for layout slices).
-9. **Never infer runtime support from a backend name or version.** Negotiate the
-   worker contract, fail closed on incompatibility, and expose why a feature is
-   unavailable.
-
-## Docs to read by task
-
-| Task | Read |
-| --- | --- |
-| Product intent | `docs/vision.md` |
-| Runtime / adapters | `docs/architecture.md` + `docs/decisions/` |
-| HTTP API | `docs/api.md` |
-| Install / run | `docs/development.md` |
-| Deep contracts | `docs/rfcs/` |
-
-## Live inventory
-
-Use authenticated `GET /api/inventory` for current router, route, tool, skill,
-and capability state. Counts are calculated from registries and negotiated
-runtime health; do not copy numeric totals into documentation. New routers must
-be added once to `fastapi_app.routers.CORE_ROUTER_REGISTRY`. Tools and skills
-are discovered from their canonical catalogs.
-
-## Restart / recovery
-
-`start_ares.sh` binds `0.0.0.0` so the phone can reach it over Tailscale.
-`ctl.sh` defaults to `127.0.0.1` and **loads `services/controller/.env`, which
-overrides the shell** — so starting through it while a `0.0.0.0` server is
-already up leaves two listeners on 8788 and the phone talking to the older one.
-Stop first, then start once.
-
-```bash
-# Stop everything on 8788 (both bind styles)
-lsof -nP -iTCP:8788 -sTCP:LISTEN -t | xargs kill 2>/dev/null || true
-
-# Start fresh, bound for phone access
-cd ~/GitHub/ARES/services/controller && nohup bash ./start_ares.sh >/tmp/ares.log 2>&1 &
-
-# Verify (expect exactly one listener, on *:8788)
-lsof -nP -iTCP:8788 -sTCP:LISTEN
-curl -sS http://127.0.0.1:8788/api/health
-curl -sS http://100.74.2.15:8788/api/health   # Tailscale / phone
-```
-
-Full check: `./scripts/smoke_test.sh` (~1 min).
-
-| Symptom | Fix |
-| --- | --- |
-| `jaeger_local` says `not_installed` | Read the `fix` field in the response — it names the variable or path at fault. Usually a stale `ARES_JAEGER_HOME`. |
-| Two listeners on 8788 / phone sees stale UI | Run the stop command above, then start once via `start_ares.sh`. |
-| `ctl.sh status` says stopped but chat works | Server was started outside ctl; ctl tracks only its own state file. Use `start_ares.sh` to restart. |
-| Directives not applying | `curl -sS localhost:8788/api/ares/directives` — check `enabled` and `count`, then `~/.ares/directives.yaml`. |
-| Send returns 409 | A turn is still running. Wait, or press Stop. A dead worker is reclaimed automatically on the next send. |
+1. Never traverse or edit JaegerAI state, source, credentials, or configuration.
+2. Never infer support from a runtime name or version; negotiate capabilities.
+3. UI controls remain visible and explain unavailable capabilities unless an
+   explicit user setting disables the feature.
+4. Register routers, tools, skills, and capabilities once; inventory counts are
+   calculated from live registries and health, never copied into docs.
+5. Keep secrets out of JSON, messages, traces, logs, and API responses.
+6. Bind to loopback by default. A network bind requires authentication.
+7. Validate all workspace paths and fail closed on traversal.
+8. Commit approved work locally; do not push unless asked.
 
 ## Verification
 
 ```bash
-cd services/controller && ./scripts/test.sh   # or targeted pytest
+cd services/controller
+./scripts/test.sh -q tests/test_jaeger_ownership_literals.py
+cd ../..
+swift test
 ```
 
-Start ARES: `./start_ares.sh` or `./start.sh` with **background** for agents — port **8788**, bind `0.0.0.0` for phone.
+Use targeted controller tests for changed domains. The source guard rejects new
+retired ownership names, personal paths, and direct JaegerAI state access.

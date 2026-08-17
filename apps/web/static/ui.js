@@ -9,11 +9,11 @@ const S={session:null,messages:[],entries:[],busy:false,pendingFiles:[],toolCall
 
 function assistantDisplayName(){
   if(S.activeProfile&&S.activeProfile!=='default') return S.activeProfile.charAt(0).toUpperCase()+S.activeProfile.slice(1);
-  return window._botName||'Hermes';
+  return window._botName||'ARES';
 }
 const INFLIGHT={};  // keyed by session_id while request in-flight
 const SESSION_QUEUES={};  // keyed by session_id for queued follow-up turns
-const MAX_UPLOAD_BYTES=(window.__HERMES_CONFIG__&&window.__HERMES_CONFIG__.maxUploadBytes)||20*1024*1024;
+const MAX_UPLOAD_BYTES=(window.__ARES_CONFIG__&&window.__ARES_CONFIG__.maxUploadBytes)||20*1024*1024;
 const MAX_UPLOAD_MB=Math.round(MAX_UPLOAD_BYTES/1024/1024);
 // Tracks which session's queue to drain in setBusy(false).
 // Set to activeSid just before setBusy(false) in done/error handlers so the
@@ -199,7 +199,7 @@ function initOfflineMonitor(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initOfflineMonitor,{once:true});
 else initOfflineMonitor();
 // Redirect to login when the server responds with 401 (auth session expired).
-// Handles iOS PWA standalone mode and keeps subpath mounts like /hermes/ from
+// Handles iOS PWA standalone mode and keeps subpath mounts like /ares/ from
 // escaping to the personal site root /login.
 // #5578: on a login-shaped page, reload 'login' WITHOUT a next (avoid self-nesting).
 function _redirectIfUnauth(res){if(res&&res.status===401){var _p=(window.location.pathname||'').replace(/\/+$/,'');if(/(?:^|\/)login$/.test(_p)){window.location.href='login';}else{window.location.href='login?next='+encodeURIComponent(window.location.pathname+window.location.search);}return true;}return false;}
@@ -209,7 +209,7 @@ function _getSessionQueue(sid, create=false){
   return SESSION_QUEUES[sid]||[];
 }
 function _queueStorageKey(sid){
-  return 'hermes-queue-'+sid;
+  return 'ares-queue-'+sid;
 }
 function _clearPersistedSessionQueue(sid){
   if(!sid) return;
@@ -319,7 +319,7 @@ function _renderUserFencedBlocks(text){
   const stashContext=(label,quote)=>{contextStash.push(sentContextHtml(label,quote));return '\x00UC'+(contextStash.length-1)+'\x00';};
   const stashSelectedContextBlocks=(value)=>{
     const lines=String(value||'').split('\n');
-    const marker='<!-- hermes-selected-context -->';
+    const marker='<!-- ares-selected-context -->';
     const out=[];
     for(let i=0;i<lines.length;i++){
       const labelMatch=lines[i].match(/^\*\*([^\n]{1,200}):\*\*\s*$/);
@@ -489,7 +489,7 @@ async function startCompressionRecovery(btn){
     const data=await api('/api/session/compression-recovery/start',{method:'POST',body:JSON.stringify({session_id:sourceSid})});
     const sid=data&&data.session&&data.session.session_id;
     if(!sid) throw new Error('Compression recovery did not return a session.');
-    try{localStorage.setItem('hermes-webui-session',sid);}catch(_){}
+    try{localStorage.setItem('ares-webui-session',sid);}catch(_){}
     if(typeof loadSession==='function') await loadSession(sid,{preserveActiveInput:false});
     else if(data.session){S.session=data.session;S.messages=data.session.messages||[];syncTopbar();renderMessages();}
     if(typeof renderSessionList==='function') await renderSessionList();
@@ -1865,7 +1865,7 @@ function openExternalDashboard(event){
   return false;
 }
 // Compatibility alias for extensions and cached pages using the inherited name.
-const openHermesDashboard=openExternalDashboard;
+const openARESDashboard=openExternalDashboard;
 function _initDashboardLinkProbe(){
   loadDashboardSettings();
   refreshDashboardStatus(true);
@@ -2504,7 +2504,7 @@ const _CSV_EXTS=/\.csv$/i;
 const _EXCALIDRAW_EXTS=/\.excalidraw$/i;
 // ── Media playback speed controls ─────────────────────────────────────────
 const MEDIA_PLAYBACK_RATES=[0.5,0.75,1,1.25,1.5,2];
-const MEDIA_PLAYBACK_STORAGE_KEY='hermes-media-playback-rate';
+const MEDIA_PLAYBACK_STORAGE_KEY='ares-media-playback-rate';
 function _getStoredMediaPlaybackRate(){
   try{
     const raw=localStorage.getItem(MEDIA_PLAYBACK_STORAGE_KEY);
@@ -2814,8 +2814,8 @@ window.addEventListener('visibilitychange',()=>{
 // Dynamic model labels -- populated by populateModelDropdown(), fallback to static map
 let _dynamicModelLabels={};
 window._configuredModelBadges=window._configuredModelBadges||{};
-const MODEL_STATE_KEY='hermes-webui-model-state';
-const PENDING_SESSION_MODEL_PREFIX='hermes-webui-pending-session-model:';
+const MODEL_STATE_KEY='ares-webui-model-state';
+const PENDING_SESSION_MODEL_PREFIX='ares-webui-pending-session-model:';
 const PENDING_SESSION_MODEL_MAX_AGE_MS=10*60*1000;
 
 // ── Smart model resolver ────────────────────────────────────────────────────
@@ -3017,7 +3017,7 @@ function _readPersistedModelState(){
       }
     }
   }catch(_){}
-  const legacy=localStorage.getItem('hermes-webui-model');
+  const legacy=localStorage.getItem('ares-webui-model');
   if(!legacy) return null;
   return {model:legacy,model_provider:_providerFromModelValue(legacy)||null};
 }
@@ -3025,17 +3025,17 @@ function _writePersistedModelState(model, modelProvider){
   const value=String(model||'').trim();
   const provider=modelProvider?String(modelProvider).trim():(_providerFromModelValue(value)||null);
   if(!value){
-    localStorage.removeItem('hermes-webui-model');
+    localStorage.removeItem('ares-webui-model');
     localStorage.removeItem(MODEL_STATE_KEY);
     return;
   }
-  localStorage.setItem('hermes-webui-model', value);
+  localStorage.setItem('ares-webui-model', value);
   try{
     localStorage.setItem(MODEL_STATE_KEY, JSON.stringify({model:value,model_provider:provider||null}));
   }catch(_){}
 }
 function _clearPersistedModelState(){
-  localStorage.removeItem('hermes-webui-model');
+  localStorage.removeItem('ares-webui-model');
   localStorage.removeItem(MODEL_STATE_KEY);
 }
 function _pendingSessionModelKey(sessionId){
@@ -3654,10 +3654,10 @@ async function _fetchLiveModels(provider, sel, requestSeq=null){
     const added=_addLiveModelsToSelect(provider,data.models,sel);
     if(added>0){
       if(typeof syncModelChip==='function') syncModelChip();
-      console.debug('[hermes] Live models loaded for',provider+':',added,'new models added');
+      console.debug('[ares] Live models loaded for',provider+':',added,'new models added');
     }
   }catch(e){
-    console.debug('[hermes] Live model fetch failed for',provider,e.message);
+    console.debug('[ares] Live model fetch failed for',provider,e.message);
   }finally{
     _liveModelFetchPending.delete(provider);
   }
@@ -3665,7 +3665,7 @@ async function _fetchLiveModels(provider, sel, requestSeq=null){
 
 /**
  * Check if the given model ID belongs to a different provider than the one
- * currently configured in Hermes. Returns a warning string if mismatched,
+ * currently configured in ARES. Returns a warning string if mismatched,
  * or null if the selection looks compatible.
  *
  * Provider detection is intentionally loose — we compare the model's slash
@@ -3687,7 +3687,7 @@ function _checkProviderMismatch(modelId){
   const norm=p=>aliases[p]||p;
   if(norm(modelProvider)!==norm(ap)){
     return (window.t?window.t('provider_mismatch_warning',modelId,ap):
-      `"${modelId}" may not work with your configured provider (${ap}). Send anyway or run \`hermes model\` to switch.`);
+      `"${modelId}" may not work with your configured provider (${ap}). Send anyway or run \`ares model\` to switch.`);
   }
   return null;
 }
@@ -8671,15 +8671,15 @@ let _playingEdgeAudio=null;
 
 function _buildBrowserUtterance(text, btn){
   const utter=new SpeechSynthesisUtterance(text);
-  const savedVoice=localStorage.getItem('hermes-tts-voice');
+  const savedVoice=localStorage.getItem('ares-tts-voice');
   const voices=speechSynthesis.getVoices();
   if(savedVoice&&voices.length){
     const match=voices.find(v=>v.name===savedVoice);
     if(match) utter.voice=match;
   }
-  const savedRate=parseFloat(localStorage.getItem('hermes-tts-rate'));
+  const savedRate=parseFloat(localStorage.getItem('ares-tts-rate'));
   if(!isNaN(savedRate)) utter.rate=Math.min(2,Math.max(0.5,savedRate));
-  const savedPitch=parseFloat(localStorage.getItem('hermes-tts-pitch'));
+  const savedPitch=parseFloat(localStorage.getItem('ares-tts-pitch'));
   if(!isNaN(savedPitch)) utter.pitch=Math.min(2,Math.max(0,savedPitch));
   utter.onend=()=>{
     _ttsChunkIndex++;
@@ -8714,9 +8714,9 @@ function _playEdgeTtsChunked(text, btn){
       return;
     }
     const chunk=chunks[idx];
-    const voice=localStorage.getItem('hermes-tts-voice')||'zh-CN-XiaoxiaoNeural';
-    const savedRate=parseFloat(localStorage.getItem('hermes-tts-rate'));
-    const savedPitch=parseFloat(localStorage.getItem('hermes-tts-pitch'));
+    const voice=localStorage.getItem('ares-tts-voice')||'zh-CN-XiaoxiaoNeural';
+    const savedRate=parseFloat(localStorage.getItem('ares-tts-rate'));
+    const savedPitch=parseFloat(localStorage.getItem('ares-tts-pitch'));
     let rate='', pitch='';
     if(!isNaN(savedRate)){const pct=Math.round((savedRate-1)*100);const sign=pct>=0?'+':'';rate=sign+pct+'%';}
     if(!isNaN(savedPitch)){const hz=Math.round((savedPitch-1)*50);const sign=hz>=0?'+':'';pitch=sign+hz+'Hz';}
@@ -8780,7 +8780,7 @@ function speakMessage(btn){
   const clean=_stripForTTS(text);
   if(!clean) return;
 
-  const engine=localStorage.getItem('hermes-tts-engine')||'browser';
+  const engine=localStorage.getItem('ares-tts-engine')||'browser';
   if(engine==='openai'){
     _playOpenaiTts(clean, btn);
     return;
@@ -8793,9 +8793,9 @@ function speakMessage(btn){
     _playEdgeTtsChunked(clean, btn);
     return;
   }
-  // Extension-registered TTS engine (window.registerHermesTtsEngine). Synthesize
+  // Extension-registered TTS engine (window.registerARESTtsEngine). Synthesize
   // via the extension, then play through the shared audio-buffer path.
-  if(typeof window._hermesTtsIsRegistered==='function' && window._hermesTtsIsRegistered(engine)){
+  if(typeof window._aresTtsIsRegistered==='function' && window._aresTtsIsRegistered(engine)){
     if(btn) btn.dataset.speaking='1';
     _ttsSpeaking=true;
     const _failReg=function(msg){
@@ -8804,11 +8804,11 @@ function speakMessage(btn){
       if(msg&&typeof showToast==='function') showToast(msg,4000,'error');
     };
     const _opts={
-      voice: localStorage.getItem('hermes-tts-voice')||'',
-      rate: parseFloat(localStorage.getItem('hermes-tts-rate')),
-      pitch: parseFloat(localStorage.getItem('hermes-tts-pitch')),
+      voice: localStorage.getItem('ares-tts-voice')||'',
+      rate: parseFloat(localStorage.getItem('ares-tts-rate')),
+      pitch: parseFloat(localStorage.getItem('ares-tts-pitch')),
     };
-    Promise.resolve(window._hermesTtsSynth(engine, clean, _opts))
+    Promise.resolve(window._aresTtsSynth(engine, clean, _opts))
       .then(function(buf){ return _playAudioBuf(buf, btn, 'TTS'); })
       .catch(function(e){ _failReg((e&&e.message)||'TTS engine failed'); });
     return;
@@ -8951,9 +8951,9 @@ function stopTTS(){
 }
 
 function autoReadLastAssistant(){
-  const engine=localStorage.getItem('hermes-tts-engine')||'browser';
+  const engine=localStorage.getItem('ares-tts-engine')||'browser';
   if(engine==='browser'&&!('speechSynthesis' in window)) return;
-  const pref=localStorage.getItem('hermes-tts-auto-read');
+  const pref=localStorage.getItem('ares-tts-auto-read');
   if(pref!=='true') return;
   // Find the last assistant message segment in the DOM
   const rows=document.querySelectorAll('.msg-row[data-role="assistant"], .assistant-segment[data-raw-text]');
@@ -8975,17 +8975,17 @@ function autoReadLastAssistant(){
     _playEdgeTtsChunked(clean, null);
     return;
   }
-  // Extension-registered TTS engine (window.registerHermesTtsEngine): synth via
+  // Extension-registered TTS engine (window.registerARESTtsEngine): synth via
   // the extension, then play through the shared audio-buffer path. Mirrors the
   // registered-engine branch in speakMessage() so auto-read honors the selection.
-  if(typeof window._hermesTtsIsRegistered==='function' && window._hermesTtsIsRegistered(engine)){
+  if(typeof window._aresTtsIsRegistered==='function' && window._aresTtsIsRegistered(engine)){
     _ttsSpeaking=true;
     const _opts={
-      voice: localStorage.getItem('hermes-tts-voice')||'',
-      rate: parseFloat(localStorage.getItem('hermes-tts-rate')),
-      pitch: parseFloat(localStorage.getItem('hermes-tts-pitch')),
+      voice: localStorage.getItem('ares-tts-voice')||'',
+      rate: parseFloat(localStorage.getItem('ares-tts-rate')),
+      pitch: parseFloat(localStorage.getItem('ares-tts-pitch')),
     };
-    Promise.resolve(window._hermesTtsSynth(engine, clean, _opts))
+    Promise.resolve(window._aresTtsSynth(engine, clean, _opts))
       .then(function(buf){ return _playAudioBuf(buf, null, 'TTS'); })
       .catch(function(){ _ttsSpeaking=false; _playingEdgeAudio=null; });
     return;
@@ -9003,8 +9003,8 @@ function autoReadLastAssistant(){
 }
 
 // ── Reconnect banner (B4/B5: reload resilience) ──
-const INFLIGHT_KEY = 'hermes-webui-inflight'; // localStorage key for in-flight session tracking
-const INFLIGHT_STATE_KEY = 'hermes-webui-inflight-state'; // localStorage snapshots for mid-stream reload recovery
+const INFLIGHT_KEY = 'ares-webui-inflight'; // localStorage key for in-flight session tracking
+const INFLIGHT_STATE_KEY = 'ares-webui-inflight-state'; // localStorage snapshots for mid-stream reload recovery
 const INFLIGHT_STATE_DEFAULT_LIMITS = {
   maxSessions:8,
   messages:24,
@@ -9689,7 +9689,7 @@ function _formatUpdateTargetStatus(label,info){
 }
 function _formatManualUpdateInstruction(info){
   if(!(info&&info.no_git&&info.manual_update&&info.behind>0)) return null;
-  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/hermes-webui:latest');
+  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/ares-webui:latest');
 }
 function _formatUpdateCheckError(label,info){
   if(!info||!info.error) return null;
@@ -9770,7 +9770,7 @@ function toggleUpdateSummaryExpanded(){
   panel.classList.toggle('update-summary-expanded',expanded);
   _syncUpdateSummaryExpandButton(expanded);
 }
-const WHATS_NEW_SUMMARY_STORAGE_KEY='hermes-whats-new-generated-summaries';
+const WHATS_NEW_SUMMARY_STORAGE_KEY='ares-whats-new-generated-summaries';
 const WHATS_NEW_SUMMARY_STORAGE_MAX_BYTES=256*1024;
 function _summaryStorageByteLength(value){
   const text=typeof value==='string'?value:JSON.stringify(value);
@@ -10037,7 +10037,7 @@ function _i18nUpdateText(key, fallback){
 }
 function dismissUpdate(){
   const b=$('updateBanner');if(b)b.classList.remove('visible');
-  sessionStorage.setItem('hermes-update-dismissed','1');
+  sessionStorage.setItem('ares-update-dismissed','1');
 }
 function _isUpdateApplyNetworkError(error){
   if(error && error.status) return false;
@@ -10106,8 +10106,8 @@ async function applyUpdates(){
     }
     const stashConflictMessage=stashConflictMessages.join('\n\n');
     showToast(stashConflictMessage||'Update applied — restarting…',stashConflictMessages.length?10000:undefined,stashConflictMessages.length?'warning':undefined);
-    sessionStorage.removeItem('hermes-update-checked');
-    sessionStorage.removeItem('hermes-update-dismissed');
+    sessionStorage.removeItem('ares-update-checked');
+    sessionStorage.removeItem('ares-update-dismissed');
     _waitForServerThenReload({baselineServerIdentity});
   }catch(e){
     const msg=_formatUpdateApplyExceptionMessage(e);
@@ -10155,8 +10155,8 @@ async function applyClearUpdateLock(btn){
   try{
     const res=await api('/api/updates/clear_lock',{method:'POST',body:JSON.stringify({target}),timeoutMs:60000});
     if(res.ok){
-      sessionStorage.removeItem('hermes-update-checked');
-      sessionStorage.removeItem('hermes-update-dismissed');
+      sessionStorage.removeItem('ares-update-checked');
+      sessionStorage.removeItem('ares-update-dismissed');
       showToast('Update applied — restarting…');
       _waitForServerThenReload({});
     } else if(res.lock_held){
@@ -10302,8 +10302,8 @@ async function forceUpdate(btn){
       return;
     }
     showToast('Force update applied — restarting…');
-    sessionStorage.removeItem('hermes-update-checked');
-    sessionStorage.removeItem('hermes-update-dismissed');
+    sessionStorage.removeItem('ares-update-checked');
+    sessionStorage.removeItem('ares-update-dismissed');
     _waitForServerThenReload({baselineServerIdentity});
   }catch(e){
     if(errEl){errEl.textContent='Force update failed: '+e.message;errEl.style.display='block';}
@@ -10529,7 +10529,7 @@ function syncTopbar(){
     if(typeof _syncWorkspaceHeadingState==='function') _syncWorkspaceHeadingState();
     if(typeof syncModelChip==='function') syncModelChip();
     if(typeof syncTerminalButton==='function') syncTerminalButton();
-    if(typeof _syncHermesPanelSessionActions==='function') _syncHermesPanelSessionActions();
+    if(typeof _syncARESPanelSessionActions==='function') _syncARESPanelSessionActions();
     else {
       const sidebarName=$('sidebarWsName');
       if(sidebarName && sidebarName.textContent==='Workspace'){
@@ -10650,14 +10650,14 @@ function syncTopbar(){
   // Show Clear button only when session has messages
   const clearBtn=$('btnClearConv');
   if(clearBtn) clearBtn.style.display=(S.messages&&S.messages.filter(msg=>msg.role!=='tool').length>0)?'':'none';
-  if(typeof _syncHermesPanelSessionActions==='function') _syncHermesPanelSessionActions();
+  if(typeof _syncARESPanelSessionActions==='function') _syncARESPanelSessionActions();
   if(typeof syncWorkspaceDisplays==='function') syncWorkspaceDisplays();
   if(typeof syncTerminalButton==='function') syncTerminalButton();
   // modelSelect already set above
   // Update profile chip label.
   // The chip is the profile-SWITCHER trigger (it fronts the profile dropdown) and
   // governs where the next message / new chat routes — both follow the client
-  // active profile (the hermes_profile cookie, set only by /api/profile/switch).
+  // active profile (the ares_profile cookie, set only by /api/profile/switch).
   // It must therefore reflect S.activeProfile, NOT the loaded session's profile.
   // #3331 briefly keyed this on S.session.profile so the label would track the
   // session being browsed, but loadSession() never updates S.activeProfile, so
@@ -10788,7 +10788,7 @@ function _createAssistantTurn(tsTitle='', tpsText=''){
 }
 function _setLatestAssistantTurnLandmark(turn, isLatest){
   if(!turn) return;
-  const label='Latest Hermes response';
+  const label='Latest ARES response';
   if(isLatest){
     if(typeof document!=='undefined'){
       document.querySelectorAll('.assistant-turn[data-latest-assistant-response="true"]').forEach(el=>{
@@ -11513,7 +11513,7 @@ function _syncTransparentEventControls(turn){
     label.setAttribute('data-transparent-tool-count',String(toolCount));
   }
   bar.setAttribute('data-tool-count',String(toolCount));
-  // Wire the Hermes chat name tag toggle for the live turn.
+  // Wire the ARES chat name tag toggle for the live turn.
   _wireTransparentTurnToggle(turn);
   // Apply recency fade so the newest activity stands out while streaming. The
   // fade helper is internally gated to the live turn, so this no-ops on settled
@@ -11788,7 +11788,7 @@ function _setTransparentRowsExpanded(root, expanded){
     _setTransparentCardOpen(card,!!expanded);
   });
 }
-// ── Transparent turn-level collapse (Hermes chat name tag) ───────────────
+// ── Transparent turn-level collapse (ARES chat name tag) ───────────────
 // In transparent_stream mode the assistant role label is the turn's "name
 // tag". Clicking it collapses the entire event stack underneath so the
 // transcript shows only the final answer (Output only). A chevron on the
@@ -11953,7 +11953,7 @@ function _renderTransparentTurnFooter(turn, opts){
 // finalized into a settled assistant turn (the live attribute is removed in
 // _convertLiveActivityGroupToSettled / when liveAssistantTurn loses its id).
 let _liveActivityUserExpanded;
-const _activityDisclosureStoragePrefix='hermes-activity-disclosure:';
+const _activityDisclosureStoragePrefix='ares-activity-disclosure:';
 function _activityDisclosureStorageKey(activityKey){
   if(!activityKey||!S.session||!S.session.session_id) return null;
   return _activityDisclosureStoragePrefix+S.session.session_id+':'+activityKey;
@@ -12763,7 +12763,7 @@ function isLiveAnchorActivitySceneOwner(streamId){
   return !streamId||!current||String(streamId)===current;
 }
 function _projectLiveAnchorActivitySceneForStream(streamId, mode){
-  const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
+  const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
   const map=(typeof window!=='undefined')?window._liveAnchorRegistries:null;
   const registry=map&&streamId?map.get(streamId):null;
   if(!api||!registry||typeof api.projectAssistantTurnAnchorActivityScene!=='function') return null;
@@ -14934,7 +14934,7 @@ function _idLinkedHistoricalTurnScene(messages, turnStart, turnEnd, options){
   const end=Math.min(list.length,Math.max(start,Number(turnEnd)||0));
   const opts=options&&typeof options==='object'?options:{};
   const sessionId=String(opts.sessionId||opts.session_id||'').trim();
-  const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
+  const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
   if(!sessionId||!api||typeof api.projectAssistantTurnAnchorHistoricalTranscriptScene!=='function') return null;
 
   const declarations=[];
@@ -15597,7 +15597,7 @@ function _assistantTurnAnchorSettledFinalAnswer(message, content, context){
   const sceneFinal=_assistantAnchorSceneFinalAnswerText(message);
   const effectiveContent=String(content||'').trim()?content:sceneFinal;
   try{
-    const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
+    const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
     if(!api||typeof api.projectAssistantTurnAnchorSettledMessageFinalAnswer!=='function') return String(sceneFinal||'').trim()?sceneFinal:null;
     const result=api.projectAssistantTurnAnchorSettledMessageFinalAnswer(message,{
       session_id:context&&context.session_id,
@@ -16651,7 +16651,7 @@ function renderMessages(options){
     }catch(e){}
     S.messages.forEach((m,rawIdx)=>{
       if(!m) return;
-      // OpenAI / Hermes CLI format: role=tool with tool_call_id
+      // OpenAI / ARES CLI format: role=tool with tool_call_id
       if(m.role==='tool'){
         const tid=m.tool_call_id||m.tool_use_id||'';
         if(tid) resultsByTid[tid]=_cliToolResultSnippet(m.content);
@@ -17140,7 +17140,7 @@ function renderMessages(options){
       }
     }
   }
-  // Transparent mode per-turn wiring: collapsible Hermes chat name tag, old-event
+  // Transparent mode per-turn wiring: collapsible ARES chat name tag, old-event
   // fading, and the bottom-of-turn footer (elapsed · tokens · TTFT · status).
   // Runs after the per-turn duration block above so the footer can reuse the
   // computed durationText / tokens / TTFT for each settled assistant turn.
@@ -19609,11 +19609,11 @@ function _syncWorkspaceHiddenToggle(){
 }
 function toggleWorkspaceHiddenFiles(value){
   S.showHiddenWorkspaceFiles=!!value;
-  try{localStorage.setItem('hermes-workspace-show-hidden-files',S.showHiddenWorkspaceFiles?'1':'0');}catch(_){}
+  try{localStorage.setItem('ares-workspace-show-hidden-files',S.showHiddenWorkspaceFiles?'1':'0');}catch(_){}
   _syncWorkspaceHiddenToggle();
   renderFileTree();
 }
-try{S.showHiddenWorkspaceFiles=localStorage.getItem('hermes-workspace-show-hidden-files')==='1';}catch(_){}
+try{S.showHiddenWorkspaceFiles=localStorage.getItem('ares-workspace-show-hidden-files')==='1';}catch(_){}
 
 // ── Workspace preferences kebab menu (#1793 UX refinement) ───────────────
 // The "Show hidden files" toggle used to live as a permanent inline row

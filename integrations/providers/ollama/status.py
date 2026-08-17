@@ -2,7 +2,7 @@
 
 The simplest transport shape in the provider layout — a plain local HTTP server,
 no gateway/bridge choice, no CLI probe — which is the point: the status contract
-holds without forcing JaegerAI's or Hermes's structure onto it.
+holds without forcing JaegerAI's structure onto it.
 
 Honours ``OLLAMA_HOST`` so a remote or non-default daemon is reachable.
 """

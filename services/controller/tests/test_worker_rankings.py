@@ -51,7 +51,7 @@ def test_record_and_rank(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     record_evaluation(
         "default",
-        worker_id="hermes_local",
+        worker_id="jaeger_local",
         metrics={"task_success": 40, "user_preference": 30, "safety": 100},
         task_kind="chat",
     )

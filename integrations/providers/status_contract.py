@@ -1,6 +1,6 @@
 """Shared status contract every ARES provider implements.
 
-ARES is the Companion: it routes turns to workers (Hermes, JaegerAI, Ollama,
+ARES is the Companion: it routes turns to workers (JaegerAI, Ollama,
 cloud models) and never executes inference itself. Providers differ wildly in
 how they run a turn -- JaegerAI has three execution modes (HTTP gateway, local
 bridge subprocess over NDJSON, native app), Ollama is a plain local HTTP server,

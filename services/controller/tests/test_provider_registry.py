@@ -14,8 +14,8 @@ from api.provider_registry import (
 def test_missing_registry_is_empty_and_does_not_assume_provider_ports(tmp_path):
     path = tmp_path / "providers.json"
     assert load_provider_registry(path) == empty_registry()
-    assert provider_endpoint("hermes_local", registry=empty_registry()) == ""
-    assert provider_endpoint("jros_local", registry=empty_registry()) == ""
+    assert provider_endpoint("jaeger_local", registry=empty_registry()) == ""
+    assert provider_endpoint("jaeger_local", registry=empty_registry()) == ""
 
 
 def test_legacy_jaeger_provider_id_is_normalized_on_read(tmp_path):
@@ -23,7 +23,7 @@ def test_legacy_jaeger_provider_id_is_normalized_on_read(tmp_path):
     path.write_text(json.dumps({
         "schema_version": 1,
         "providers": {
-            "jros_local": {
+            "jaeger_local": {
                 "enabled": True,
                 "kind": "runtime",
                 "endpoint": "http://jaeger.example:8643",
@@ -34,7 +34,7 @@ def test_legacy_jaeger_provider_id_is_normalized_on_read(tmp_path):
     registry = load_provider_registry(path)
     assert set(registry["providers"]) == {"jaeger_local"}
     assert provider_endpoint("jaeger_local", registry=registry) == "http://jaeger.example:8643"
-    assert provider_endpoint("jros_local", registry=registry) == "http://jaeger.example:8643"
+    assert provider_endpoint("jaeger_local", registry=registry) == "http://jaeger.example:8643"
 
 
 def test_registry_keeps_only_normalized_non_secret_connection_metadata(tmp_path):
@@ -56,9 +56,9 @@ def test_registry_keeps_only_normalized_non_secret_connection_metadata(tmp_path)
     }), encoding="utf-8")
 
     registry = load_provider_registry(path)
-    hermes = configured_provider("hermes_local", registry=registry)
+    hermes = configured_provider("jaeger_local", registry=registry)
     assert hermes == {
-        "id": "hermes_local",
+        "id": "jaeger_local",
         "enabled": True,
         "kind": "runtime",
         "endpoint": "http://hermes-owned.example:9999",

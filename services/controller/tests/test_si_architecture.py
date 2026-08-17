@@ -63,7 +63,7 @@ class TestWorkerRegistry:
         coders = registry.find_by_capability("code_generation")
         assert len(coders) >= 1
         worker_ids = [w.worker_id for w in coders]
-        assert "hermes_local" in worker_ids
+        assert "jaeger_local" in worker_ids
 
     def test_eligible_for_public_data(self):
         from api.si.worker_registry import get_registry
@@ -296,8 +296,8 @@ class TestRouting:
     def test_route_with_user_preference(self):
         """User preference should be respected if the worker is eligible."""
         from api.si.router import route_task
-        result = route_task("conversation", data_sensitivity="personal", prefer_worker="hermes_local")
-        assert result["selected_worker"]["worker_id"] == "hermes_local"
+        result = route_task("conversation", data_sensitivity="personal", prefer_worker="jaeger_local")
+        assert result["selected_worker"]["worker_id"] == "jaeger_local"
 
     def test_route_secret_data_returns_no_worker(self):
         """Secret data should have no eligible workers."""
@@ -316,9 +316,9 @@ class TestRouting:
         """Excluded workers should not be selected."""
         from api.si.router import route_task
         result = route_task("conversation", data_sensitivity="personal",
-                            exclude_workers=["hermes_local"])
+                            exclude_workers=["jaeger_local"])
         if result["selected_worker"]:
-            assert result["selected_worker"]["worker_id"] != "hermes_local"
+            assert result["selected_worker"]["worker_id"] != "jaeger_local"
 
     def test_routing_reasons_are_provided(self):
         """Every routing decision should explain why."""

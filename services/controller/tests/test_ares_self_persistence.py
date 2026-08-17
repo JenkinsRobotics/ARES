@@ -15,7 +15,7 @@ def test_self_persistence_contract_exports_durable_ares_layer(monkeypatch):
     # `active_backend` answers "what would run a turn now", which depends on
     # whether JaegerAI is installed on this machine. Pin the probe so the
     # contract assertions do not change with the developer's setup.
-    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: False)
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", lambda: False)
 
     contract = build_self_persistence_contract({})
 
@@ -66,7 +66,7 @@ def test_self_persistence_contract_reports_jaeger_when_it_is_the_live_default(mo
     from api import backend_selector
     from api.ares_self_persistence import build_self_persistence_contract
 
-    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: True)
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", lambda: True)
 
     contract = build_self_persistence_contract({})
 

@@ -91,7 +91,7 @@ def runtime_owns_transcript(session: Any | None = None, *, backend: str = "") ->
 
 
 def runtime_command(operation: str, session_id: str, **args: Any) -> dict[str, Any]:
-    from api.providers.jaeger.gateway_streaming import command_local_companion
+    from api.providers.jaeger.streaming import command_local_companion
 
     command = {
         "create": "create_session",
@@ -108,7 +108,7 @@ def runtime_command(operation: str, session_id: str, **args: Any) -> dict[str, A
 
 
 def runtime_query(operation: str, *, session_id: str = "", query: str = "", limit: int = 500):
-    from api.providers.jaeger.gateway_streaming import query_local_companion
+    from api.providers.jaeger.streaming import query_local_companion
 
     if operation == "list":
         return query_local_companion("list_sessions", {"limit": limit})

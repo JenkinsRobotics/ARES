@@ -1,34 +1,18 @@
-import yaml
-
-from api.characters import list_characters, get_character, _character_dir
-from api.model_catalog import sync_main_model_to_jros
+from api.characters import list_characters, get_character
+from api.model_catalog import sync_main_model_to_jaeger
 
 
-def test_characters_api(tmp_path, monkeypatch):
-    # Create a temp directory structured like the JROS personality characters directory
-    char_dir = tmp_path / "characters"
-    char_dir.mkdir()
-
-    # Write character 1 (valid character/v1 schema)
-    c1_dir = char_dir / "assistant_char"
-    c1_dir.mkdir()
-    c1_yaml = c1_dir / "character.yaml"
-    c1_data = {
-        "schema": "character/v1",
+def test_characters_api(monkeypatch):
+    rows = [{
         "id": "assistant_char",
         "name": "Assistant Character",
-        "description": "Test description",
+        "role": "Assistant",
+        "voice_tone": "Neutral",
         "level": 3,
         "revision": 2.0,
-        "identity": {
-            "role": "Assistant",
-            "voice_tone": "Neutral",
-        },
-        "prompt": {
-            "custom_instructions": "Be helpful.",
-            "backstory": "Test backstory.",
-            "speech_patterns": ["Pattern 1"],
-        },
+        "custom_instructions": "Be helpful.",
+        "backstory": "Test backstory.",
+        "speech_patterns": ["Pattern 1"],
         "traits": {
             "hexaco": {"Honesty": 4},
             "special": {"IQ": 130},
@@ -41,31 +25,11 @@ def test_characters_api(tmp_path, monkeypatch):
             "ideals": ["Helpfulness"],
             "behaviors": ["Polite"],
         },
-    }
-    c1_yaml.write_text(yaml.safe_dump(c1_data), encoding="utf-8")
-
-    # Write character 2 (valid character/v1 schema, missing optional fields to test defaults)
-    c2_dir = char_dir / "basic_char"
-    c2_dir.mkdir()
-    c2_yaml = c2_dir / "character.yaml"
-    c2_data = {
-        "schema": "character/v1",
+    }, {
         "id": "basic_char",
         "name": "Basic Character",
-    }
-    c2_yaml.write_text(yaml.safe_dump(c2_data), encoding="utf-8")
-
-    # Write character 3 (invalid schema, should be skipped)
-    c3_dir = char_dir / "invalid_char"
-    c3_dir.mkdir()
-    c3_yaml = c3_dir / "character.yaml"
-    c3_yaml.write_text(yaml.safe_dump({"schema": "character/v2"}), encoding="utf-8")
-
-    # Set up env var override
-    monkeypatch.setenv("ARES_CHARACTER_DIR", str(char_dir))
-
-    # Assert _character_dir resolves correctly
-    assert _character_dir() == char_dir
+    }]
+    monkeypatch.setattr("api.characters._query", lambda what, args=None: rows if what == "characters" else next((r for r in rows if r["id"] == (args or {}).get("id")), None))
 
     # Test list_characters
     chars = list_characters()
@@ -78,7 +42,7 @@ def test_characters_api(tmp_path, monkeypatch):
     assert char1 is not None
     assert char1["id"] == "assistant_char"
     assert char1["name"] == "Assistant Character"
-    assert char1["description"] == "Test description"
+    assert char1["description"] == "Assistant"
     assert char1["role"] == "Assistant"
     assert char1["voice_tone"] == "Neutral"
     assert char1["level"] == 3
@@ -108,86 +72,82 @@ def test_characters_api(tmp_path, monkeypatch):
     assert char2["lore"]["quotes"] == []
     assert char2["custom_instructions"] == ""
 
-    # Test get_character (invalid schema)
-    char3 = get_character("invalid_char")
-    assert char3 is None
-
     # Test get_character (non-existent)
     char_none = get_character("nonexistent_char")
     assert char_none is None
 
 
-def test_sync_main_model_to_jros_success(monkeypatch):
+def test_sync_main_model_to_jaeger_success(monkeypatch):
     called_sync = []
     called_reset = []
 
     def mock_sync_provider(provider, model, targets, ares_config_path):
         called_sync.append((provider, model, targets, ares_config_path))
 
-    def mock_reset_jros_boot():
+    def mock_reset_jaeger_runtime():
         called_reset.append(True)
 
     monkeypatch.setattr("api.ares_provider_sync.sync_provider", mock_sync_provider)
-    monkeypatch.setattr("api.providers.jaeger.gateway_streaming.reset_jros_boot", mock_reset_jros_boot)
+    monkeypatch.setattr("api.providers.jaeger.streaming.reset_jaeger_runtime", mock_reset_jaeger_runtime)
     monkeypatch.setattr("api.model_catalog.active_profile_config_path", lambda: "/path/to/ares/config.yaml")
 
-    # Call with a model mapped in JROS_FALLBACK_PROVIDER_MAP (e.g. "openai")
+    # Call with a model mapped in JaegerAI_FALLBACK_PROVIDER_MAP (e.g. "openai")
     # Result contains "provider" and "model"
-    sync_main_model_to_jros({"provider": "openai", "model": "gpt-4o"})
+    sync_main_model_to_jaeger({"provider": "openai", "model": "gpt-4o"})
 
     assert len(called_sync) == 1
-    # "openai" maps to "openai" in JROS_FALLBACK_PROVIDER_MAP
-    assert called_sync[0] == ("openai", "gpt-4o", ["jros"], "/path/to/ares/config.yaml")
+    # "openai" maps to "openai" in JaegerAI_FALLBACK_PROVIDER_MAP
+    assert called_sync[0] == ("openai", "gpt-4o", ["jaeger"], "/path/to/ares/config.yaml")
     assert len(called_reset) == 1
 
 
-def test_sync_main_model_to_jros_no_mapping(monkeypatch):
+def test_sync_main_model_to_jaeger_no_mapping(monkeypatch):
     called_sync = []
     called_reset = []
 
     def mock_sync_provider(provider, model, targets, ares_config_path):
         called_sync.append((provider, model, targets, ares_config_path))
 
-    def mock_reset_jros_boot():
+    def mock_reset_jaeger_runtime():
         called_reset.append(True)
 
     monkeypatch.setattr("api.ares_provider_sync.sync_provider", mock_sync_provider)
-    monkeypatch.setattr("api.providers.jaeger.gateway_streaming.reset_jros_boot", mock_reset_jros_boot)
+    monkeypatch.setattr("api.providers.jaeger.streaming.reset_jaeger_runtime", mock_reset_jaeger_runtime)
     monkeypatch.setattr("api.model_catalog.active_profile_config_path", lambda: "/path/to/ares/config.yaml")
 
     # Call with an unmapped provider
-    sync_main_model_to_jros({"provider": "unknown-provider", "model": "some-model"})
+    sync_main_model_to_jaeger({"provider": "unknown-provider", "model": "some-model"})
 
     # Should skip sync
     assert len(called_sync) == 0
     assert len(called_reset) == 0
 
 
-def test_sync_main_model_to_jros_handles_exception(monkeypatch):
+def test_sync_main_model_to_jaeger_handles_exception(monkeypatch):
     called_reset = []
 
     def mock_sync_provider_fail(provider, model, targets, ares_config_path):
         raise RuntimeError("Sync failed")
 
-    def mock_reset_jros_boot():
+    def mock_reset_jaeger_runtime():
         called_reset.append(True)
 
     monkeypatch.setattr("api.ares_provider_sync.sync_provider", mock_sync_provider_fail)
-    monkeypatch.setattr("api.providers.jaeger.gateway_streaming.reset_jros_boot", mock_reset_jros_boot)
+    monkeypatch.setattr("api.providers.jaeger.streaming.reset_jaeger_runtime", mock_reset_jaeger_runtime)
     monkeypatch.setattr("api.model_catalog.active_profile_config_path", lambda: "/path/to/ares/config.yaml")
 
     # Should not raise exception
-    sync_main_model_to_jros({"provider": "openai", "model": "gpt-4o"})
-    # Should not call reset_jros_boot if sync failed
+    sync_main_model_to_jaeger({"provider": "openai", "model": "gpt-4o"})
+    # Should not call reset_jaeger_runtime if sync failed
     assert len(called_reset) == 0
 
 
-def test_characters_list_api_endpoint_handles_missing_jros_dir(monkeypatch, tmp_path):
+def test_characters_list_api_endpoint_handles_unavailable_jaeger(monkeypatch):
     from fastapi.testclient import TestClient
     from fastapi_app.main import create_app
 
     monkeypatch.setattr("api.auth.is_auth_enabled", lambda: False)
-    monkeypatch.setattr("api.characters._character_dir", lambda: tmp_path / "missing")
+    monkeypatch.setattr("api.characters._query", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
     with TestClient(create_app()) as client:
         response = client.get("/api/ares/characters")
 
@@ -195,12 +155,12 @@ def test_characters_list_api_endpoint_handles_missing_jros_dir(monkeypatch, tmp_
     assert response.json()["characters"] == []
 
 
-def test_character_detail_api_endpoint_handles_missing_jros_dir(monkeypatch, tmp_path):
+def test_character_detail_api_endpoint_handles_unavailable_jaeger(monkeypatch):
     from fastapi.testclient import TestClient
     from fastapi_app.main import create_app
 
     monkeypatch.setattr("api.auth.is_auth_enabled", lambda: False)
-    monkeypatch.setattr("api.characters._character_dir", lambda: tmp_path / "missing")
+    monkeypatch.setattr("api.characters._query", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
     with TestClient(create_app()) as client:
         response = client.get("/api/ares/character?id=test-character")
 

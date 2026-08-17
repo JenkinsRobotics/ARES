@@ -636,7 +636,7 @@ def delete_session(session_id: str) -> dict[str, Any]:
     jaeger_owned = canonical_jaeger_owned or bool(
         loaded is not None
         and any(
-            isinstance(message, dict) and message.get("backend") == "jros"
+            isinstance(message, dict) and message.get("backend") == "jaeger"
             for message in (getattr(loaded, "messages", None) or [])
         )
     )

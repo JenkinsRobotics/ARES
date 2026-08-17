@@ -204,9 +204,9 @@ async def shutdown_runtime() -> None:
     except ImportError:
         pass
     try:
-        from api.providers.jaeger.gateway_streaming import _reset_local_bridge_clients
+        from api.providers.jaeger.streaming import _reset_local_bridge_clients
 
-        # Each cached JrosClient (gateway_streaming._BRIDGE_CLIENTS — the
+        # Each cached JaegerClient (jaeger.streaming._BRIDGE_CLIENTS — the
         # same shared cache companion config commands and chat turns both
         # go through) owns a real subprocess that loaded an LLM + tool +
         # voice model at boot (multi-second cold start). Without this, a

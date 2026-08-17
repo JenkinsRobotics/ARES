@@ -170,22 +170,6 @@ def companion_create(
     return result
 
 
-@router.post("/jaeger/install")
-@router.post("/jros/install", include_in_schema=False)
-def jaeger_install(
-    payload: dict[str, Any],
-    _identity: Annotated[RequestIdentity, Depends(require_onboarding_mutation)],
-):
-    from api.providers.jaeger.companion import install_jros_if_missing
-
-    try:
-        return install_jros_if_missing(
-            jaeger_home=str(payload.get("jaeger_home") or "").strip() or None,
-        )
-    except Exception as exc:
-        raise CoreApiError(500, f"JaegerAI install failed: {exc}") from exc
-
-
 @router.post("/complete")
 def complete(
     _identity: Annotated[RequestIdentity, Depends(require_onboarding_mutation)],

@@ -10,12 +10,12 @@ def _contract(available=True):
 
 def test_runtime_mcp_queries_and_commands(monkeypatch):
     from api import ares_capabilities, runtime_mcp
-    from api.providers.jaeger import gateway_streaming
+    from api.providers.jaeger import streaming
     calls = []
     monkeypatch.setattr(ares_capabilities, "capability_contract_for_backend", lambda _backend: _contract())
-    monkeypatch.setattr(gateway_streaming, "query_local_companion",
+    monkeypatch.setattr(streaming, "query_local_companion",
                         lambda what, args: {"tools": [], "total": 0, "unavailable_servers": []})
-    monkeypatch.setattr(gateway_streaming, "command_local_companion",
+    monkeypatch.setattr(streaming, "command_local_companion",
                         lambda cmd, args: calls.append((cmd, args)) or {"ok": True})
 
     assert runtime_mcp.list_runtime_tools()["total"] == 0

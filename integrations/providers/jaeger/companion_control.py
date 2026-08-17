@@ -33,8 +33,8 @@ def _character_summary(value: Any) -> dict[str, Any]:
 def companion_snapshot() -> dict[str, Any]:
     """Return the live identity and character exposed by JaegerAI."""
     try:
-        from api.providers.jaeger.gateway_streaming import query_local_companion
-        from api.providers.jaeger.paths import jaeger_home, jros_instance_name
+        from api.providers.jaeger.streaming import query_local_companion
+        from api.providers.jaeger.paths import jaeger_home, jaeger_instance_name
 
         identity = _as_dict(query_local_companion("identity"))
         character = _as_dict(query_local_companion("character"))
@@ -53,7 +53,7 @@ def companion_snapshot() -> dict[str, Any]:
                 "transport": "bridge",
             },
             "agent": {
-                "id": str(identity.get("instance") or jros_instance_name() or ""),
+                "id": str(identity.get("instance") or jaeger_instance_name() or ""),
                 "name": str(identity.get("agent_name") or ""),
                 "model": identity.get("model"),
                 "avatar": identity.get("avatar"),
@@ -77,7 +77,7 @@ def update_companion(*, name: str | None = None, character_id: str | None = None
     if not clean_name and not clean_character:
         raise CompanionControlError("No Companion changes were supplied.")
     try:
-        from api.providers.jaeger.gateway_streaming import command_local_companion
+        from api.providers.jaeger.streaming import command_local_companion
 
         if clean_name:
             command_local_companion("save_identity", {"name": clean_name})

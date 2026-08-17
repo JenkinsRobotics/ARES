@@ -19,7 +19,7 @@ def _catalog():
     }
 
 
-def test_non_jros_backend_keeps_full_model_catalog(monkeypatch):
+def test_non_jaeger_backend_keeps_full_model_catalog(monkeypatch):
     from api import backend_selector, model_catalog
 
     monkeypatch.setattr("api.config.get_config", lambda: {"ares_backend": "claude_local"})
@@ -37,7 +37,7 @@ def test_non_jros_backend_keeps_full_model_catalog(monkeypatch):
     assert result["default_model"] == "grok-4.3"
 
 
-def test_jros_backend_shows_only_real_compatible_model_providers(monkeypatch):
+def test_jaeger_backend_shows_only_real_compatible_model_providers(monkeypatch):
     from api import backend_selector, model_catalog
 
     monkeypatch.setattr("api.config.get_config", lambda: {"ares_backend": "jaeger_local"})
@@ -49,7 +49,7 @@ def test_jros_backend_shows_only_real_compatible_model_providers(monkeypatch):
         "ollama-cloud",
         "ollama-local",
     ]
-    assert "jros" not in [g["provider_id"] for g in result["groups"]]
+    assert "jaeger" not in [g["provider_id"] for g in result["groups"]]
     assert result["active_provider"] == "ollama-cloud"
     assert result["default_model"] == "glm-5.1"
     # Only the resolved selection is badged. Badging every surviving model (the
@@ -64,7 +64,7 @@ def test_jros_backend_shows_only_real_compatible_model_providers(monkeypatch):
     }
 
 
-def test_jros_backend_enriches_available_models(monkeypatch):
+def test_jaeger_backend_enriches_available_models(monkeypatch):
     from api import backend_selector, model_catalog
 
     monkeypatch.setattr("api.config.get_config", lambda: {"ares_backend": "jaeger_local"})

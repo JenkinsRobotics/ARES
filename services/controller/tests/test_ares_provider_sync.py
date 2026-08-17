@@ -24,14 +24,14 @@ def test_sync_updates_ares_and_routes_jaeger_through_bridge(tmp_path, monkeypatc
         captured.update(name=name, payload=payload)
         return {"ok": True, "changed": True, "restart_required": True}
 
-    monkeypatch.setattr("api.providers.jaeger.gateway_streaming.command_local_companion", command)
-    monkeypatch.setattr("api.providers.jaeger.gateway_streaming.reset_jros_boot", lambda: None)
+    monkeypatch.setattr("api.providers.jaeger.streaming.command_local_companion", command)
+    monkeypatch.setattr("api.providers.jaeger.streaming.reset_jaeger_runtime", lambda: None)
     monkeypatch.setattr("api.model_context.resolve_context_length_for_session_model", lambda *a, **k: 128_000)
 
-    result = sync_provider("gemini", "gemini-2.5-pro", targets=["ares", "jros"], ares_config_path=ares_config)
+    result = sync_provider("gemini", "gemini-2.5-pro", targets=["ares", "jaeger"], ares_config_path=ares_config)
 
-    assert set(result["changed_targets"]) == {"ares", "jros"}
-    assert result["targets"]["jros"] == {"owner": "jaeger", "changed": True, "restart_required": True}
+    assert set(result["changed_targets"]) == {"ares", "jaeger"}
+    assert result["targets"]["jaeger"] == {"owner": "jaeger", "changed": True, "restart_required": True}
     assert captured == {"name": "configure_model", "payload": {
         "provider": "gemini", "model": "gemini-2.5-pro",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
@@ -43,7 +43,7 @@ def test_sync_updates_ares_and_routes_jaeger_through_bridge(tmp_path, monkeypatc
 
 def test_explicit_jaeger_config_path_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="Jaeger owns its configuration"):
-        sync_provider("gemini", "gemini-2.5-pro", targets=["jros"], jros_config_path=tmp_path / "config.yaml")
+        sync_provider("gemini", "gemini-2.5-pro", targets=["jaeger"], jaeger_config_path=tmp_path / "config.yaml")
 
 
 def test_unsupported_provider_is_rejected(tmp_path):
@@ -89,8 +89,8 @@ def test_fallback_chain_is_not_written_into_jaeger(tmp_path):
     _write_yaml(ares_config, {"fallback_providers": [{"provider": "ollama-cloud", "model": "glm-4.7"}]})
     result = sync_fallback_chain(ares_config_path=ares_config)
     assert result["fallback_chain_synced"] is False
-    assert result["targets"]["jros"]["owner"] == "jaeger"
-    assert result["targets"]["jros"]["supported"] is False
+    assert result["targets"]["jaeger"]["owner"] == "jaeger"
+    assert result["targets"]["jaeger"]["supported"] is False
     assert result["changed_targets"] == []
 
 

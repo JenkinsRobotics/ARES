@@ -94,13 +94,6 @@ public final class WebUIServerManager: ObservableObject {
             instanceID: NativeSystemBridge.shared.instanceID,
             stateDirectory: config.configDirectory
         )
-        env = Self.applyingGatewayEnvironment(
-            to: env,
-            hermesURL: config.hermesURL,
-            hermesAPIKey: config.hermesAPIKey,
-            jrosURL: config.jrosURL,
-            jrosAPIKey: config.jrosAPIKey
-        )
         env = Self.applyingJaegerDependencyEnvironment(
             to: env,
             controllerDirectory: dir,
@@ -144,58 +137,6 @@ public final class WebUIServerManager: ObservableObject {
         }
     }
 
-    nonisolated static func applyingGatewayEnvironment(
-        to base: [String: String],
-        hermesURL: String,
-        hermesAPIKey: String,
-        jrosURL: String,
-        jrosAPIKey: String
-    ) -> [String: String] {
-        var environment = base
-        // ARES_API_URL drives remote gateway health/tasks. Gateway-backed chat
-        // uses the more specific base URL variable; keep both in sync.
-        //
-        // Only export them for a genuinely remote gateway. Setting ARES_API_URL
-        // forces agent health into remote-HTTP probing and skips the local
-        // PID/state-file detection — with the localhost default this reported
-        // a healthy local Hermes gateway as permanently "down" because nothing
-        // serves HTTP health on that port in a local install.
-        let normalizedHermesURL = hermesURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalizedHermesURL.isEmpty {
-            environment.removeValue(forKey: "ARES_API_URL")
-            environment.removeValue(forKey: "ARES_WEBUI_GATEWAY_BASE_URL")
-        } else if Self.isLocalGatewayURL(normalizedHermesURL) {
-            environment.removeValue(forKey: "ARES_API_URL")
-            // Chat still needs this endpoint. Keeping it separate preserves
-            // PID/state-file health ownership for a locally managed gateway.
-            environment["ARES_WEBUI_GATEWAY_BASE_URL"] = normalizedHermesURL
-        } else {
-            environment["ARES_API_URL"] = normalizedHermesURL
-            environment["ARES_WEBUI_GATEWAY_BASE_URL"] = normalizedHermesURL
-        }
-        let normalizedJROSURL = jrosURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Never forward retired product variables into the controller. The
-        // controller reads them only as compatibility input for older launchers.
-        environment.removeValue(forKey: "ARES_JROS_GATEWAY_URL")
-        environment.removeValue(forKey: "ARES_JROS_GATEWAY_KEY")
-        if normalizedJROSURL.isEmpty {
-            environment.removeValue(forKey: "ARES_JAEGER_GATEWAY_URL")
-        } else {
-            environment["ARES_JAEGER_GATEWAY_URL"] = normalizedJROSURL
-        }
-        if hermesAPIKey.isEmpty {
-            environment.removeValue(forKey: "ARES_WEBUI_GATEWAY_API_KEY")
-        } else {
-            environment["ARES_WEBUI_GATEWAY_API_KEY"] = hermesAPIKey
-        }
-        if jrosAPIKey.isEmpty {
-            environment.removeValue(forKey: "ARES_JAEGER_GATEWAY_KEY")
-        } else {
-            environment["ARES_JAEGER_GATEWAY_KEY"] = jrosAPIKey
-        }
-        return environment
-    }
-
     nonisolated static func applyingNativeRuntimeEnvironment(
         to base: [String: String],
         host: String,
@@ -221,11 +162,11 @@ public final class WebUIServerManager: ObservableObject {
         fileManager: FileManager = .default
     ) -> [String: String] {
         var environment = base
-        // Retired JROS variables are migration inputs inside the controller,
+        // Retired JaegerAI variables are migration inputs inside the controller,
         // never values emitted by the current Mac launcher.
         for key in [
-            "ARES_JROS_DIR", "ARES_JROS_CONFIG_PATH", "ARES_JROS_INSTANCE",
-            "JROS_HOME", "JROS_INSTANCE_NAME",
+            "ARES_JaegerAI_DIR", "ARES_JaegerAI_CONFIG_PATH", "ARES_JaegerAI_INSTANCE",
+            "JaegerAI_HOME", "JaegerAI_INSTANCE_NAME",
         ] {
             environment.removeValue(forKey: key)
         }
@@ -249,7 +190,7 @@ public final class WebUIServerManager: ObservableObject {
         let selected: URL?
         let selectedIsSource: Bool
         if let explicitSelection {
-            // Explicit dependency selection fails closed. A stale JROS path
+            // Explicit dependency selection fails closed. A stale JaegerAI path
             // must never be hidden by switching to another checkout.
             selected = isJaegerAIProductRoot(explicitSelection.url, fileManager: fileManager)
                 ? explicitSelection.url
@@ -297,15 +238,6 @@ public final class WebUIServerManager: ObservableObject {
         else { return false }
         let launcher = root.appendingPathComponent("jaeger")
         return fileManager.isExecutableFile(atPath: launcher.path)
-    }
-
-    /// True when the configured Hermes gateway URL points at this machine —
-    /// local installs detect the gateway via PID/state files, not HTTP.
-    nonisolated static func isLocalGatewayURL(_ raw: String) -> Bool {
-        guard let url = URL(string: raw.trimmingCharacters(in: .whitespaces)),
-              let host = url.host?.lowercased()
-        else { return true }
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0"
     }
 
     public func stop() {

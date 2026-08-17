@@ -13,10 +13,10 @@ def _contract():
 
 def test_runtime_skill_queries_are_contract_gated_and_normalized(monkeypatch):
     from api import ares_capabilities, runtime_skills
-    from api.providers.jaeger import gateway_streaming
+    from api.providers.jaeger import streaming
 
     monkeypatch.setattr(ares_capabilities, "capability_contract_for_backend", lambda _backend: _contract())
-    monkeypatch.setattr(gateway_streaming, "query_local_companion", lambda what, args: {
+    monkeypatch.setattr(streaming, "query_local_companion", lambda what, args: {
         "skills": [
             {"name": "deploy", "category": "ops"},
             {"name": "summarize", "category": "research"},
@@ -30,12 +30,12 @@ def test_runtime_skill_queries_are_contract_gated_and_normalized(monkeypatch):
 
 def test_runtime_skill_mutations_use_jaeger_commands(monkeypatch):
     from api import ares_capabilities, runtime_skills
-    from api.providers.jaeger import gateway_streaming
+    from api.providers.jaeger import streaming
 
     calls = []
     monkeypatch.setattr(ares_capabilities, "capability_contract_for_backend", lambda _backend: _contract())
     monkeypatch.setattr(
-        gateway_streaming,
+        streaming,
         "command_local_companion",
         lambda command, args: calls.append((command, args)) or {"ok": True},
     )

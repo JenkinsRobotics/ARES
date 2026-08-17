@@ -61,7 +61,7 @@ PROVIDER_PRESETS: dict[str, dict[str, str | None]] = {
     },
 }
 
-JROS_FALLBACK_PROVIDER_MAP: dict[str, str | None] = {
+JaegerAI_FALLBACK_PROVIDER_MAP: dict[str, str | None] = {
     "anthropic": "anthropic",
     "gemini": "gemini",
     "lmstudio": "lmstudio",
@@ -72,7 +72,7 @@ JROS_FALLBACK_PROVIDER_MAP: dict[str, str | None] = {
     "ollama-local": "ollama",
     "openai": "openai",
     "xai": "xai",
-    # Ares OAuth provider slugs are not runnable by JROS today unless mapped.
+    # Ares OAuth provider slugs are not runnable by JaegerAI today unless mapped.
     "openai-codex": None,
     "xai-oauth": "xai",
 }
@@ -159,12 +159,12 @@ def _normalize_provider(provider: str) -> str:
 
 
 def _normalize_targets(targets: Iterable[str] | None) -> list[str]:
-    requested = list(targets or ["ares", "jros"])
+    requested = list(targets or ["ares", "jaeger"])
     normalized: list[str] = []
     for target in requested:
         value = str(target or "").strip().lower()
-        if value not in {"ares", "jros"}:
-            raise ValueError(f"Unsupported sync target: {target}. Supported targets: ares, jros")
+        if value not in {"ares", "jaeger"}:
+            raise ValueError(f"Unsupported sync target: {target}. Supported targets: ares, jaeger")
         if value not in normalized:
             normalized.append(value)
     if not normalized:
@@ -198,12 +198,12 @@ def _path_result(path: Path, changed: bool) -> dict[str, Any]:
     return {"path": str(path), "changed": changed}
 
 
-def _jros_supported_fallback_chain(
+def _jaeger_supported_fallback_chain(
     fallback_chain: list[Any],
-    jros_current: dict[str, Any],
+    jaeger_current: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    """Translate Ares fallback entries into JROS-runnable provider entries."""
-    external_model = jros_current.get("external_model") if isinstance(jros_current, dict) else None
+    """Translate Ares fallback entries into JaegerAI-runnable provider entries."""
+    external_model = jaeger_current.get("external_model") if isinstance(jaeger_current, dict) else None
     active_identity: tuple[str, str] | None = None
     if isinstance(external_model, dict) and external_model.get("enabled"):
         active_provider = str(external_model.get("provider") or "").strip().lower()
@@ -225,18 +225,18 @@ def _jros_supported_fallback_chain(
             skipped.append({"provider": provider, "model": model, "reason": "missing provider or model"})
             continue
 
-        mapped_provider = JROS_FALLBACK_PROVIDER_MAP.get(provider)
+        mapped_provider = JaegerAI_FALLBACK_PROVIDER_MAP.get(provider)
         if not mapped_provider:
             skipped.append({
                 "provider": provider,
                 "model": model,
-                "reason": "provider is not supported by JROS fallback runtime",
+                "reason": "provider is not supported by JaegerAI fallback runtime",
             })
             continue
 
         identity = (mapped_provider.lower(), model.lower())
         if active_identity is not None and identity == active_identity:
-            skipped.append({"provider": provider, "model": model, "reason": "same as active JROS external_model"})
+            skipped.append({"provider": provider, "model": model, "reason": "same as active JaegerAI external_model"})
             continue
         if identity in seen:
             skipped.append({"provider": provider, "model": model, "reason": "duplicate fallback route"})
@@ -257,7 +257,7 @@ def sync_provider(
     targets: Iterable[str] | None = None,
     api_key_env: str | None = None,
     ares_config_path: str | os.PathLike[str] | None = None,
-    jros_config_path: str | os.PathLike[str] | None = None,
+    jaeger_config_path: str | os.PathLike[str] | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Sync provider settings to requested config targets.
@@ -299,13 +299,13 @@ def sync_provider(
         if changed:
             results["changed_targets"].append("ares")
 
-    if "jros" in normalized_targets:
-        if jros_config_path is not None:
+    if "jaeger" in normalized_targets:
+        if jaeger_config_path is not None:
             raise ValueError(
-                "jros_config_path is no longer supported; Jaeger owns its configuration")
-        jros_provider = JROS_FALLBACK_PROVIDER_MAP.get(normalized_provider, normalized_provider)
-        if not jros_provider:
-            raise ValueError(f"Provider {normalized_provider} is not supported by JROS")
+                "jaeger_config_path is no longer supported; Jaeger owns its configuration")
+        jaeger_provider = JaegerAI_FALLBACK_PROVIDER_MAP.get(normalized_provider, normalized_provider)
+        if not jaeger_provider:
+            raise ValueError(f"Provider {normalized_provider} is not supported by JaegerAI")
         try:
             from api.model_context import resolve_context_length_for_session_model
 
@@ -313,10 +313,10 @@ def sync_provider(
                 normalized_model, normalized_provider, base_url=resolved_base_url)
         except Exception:
             context_length = 0
-        from api.providers.jaeger.gateway_streaming import command_local_companion
+        from api.providers.jaeger.streaming import command_local_companion
 
         runtime_result = command_local_companion("configure_model", {
-            "provider": jros_provider,
+            "provider": jaeger_provider,
             "model": normalized_model,
             "base_url": resolved_base_url,
             "context_length": context_length or None,
@@ -325,27 +325,27 @@ def sync_provider(
         if not isinstance(runtime_result, dict):
             raise RuntimeError("Jaeger returned an invalid model configuration result")
         changed = bool(runtime_result.get("changed"))
-        results["targets"]["jros"] = {
+        results["targets"]["jaeger"] = {
             "owner": "jaeger",
             "changed": changed,
             "restart_required": bool(runtime_result.get("restart_required")),
         }
         if changed:
-            results["changed_targets"].append("jros")
+            results["changed_targets"].append("jaeger")
         if changed and not dry_run:
-            from api.providers.jaeger.gateway_streaming import reset_jros_boot
+            from api.providers.jaeger.streaming import reset_jaeger_runtime
 
-            reset_jros_boot()
+            reset_jaeger_runtime()
 
     return results
 
 
 def sync_fallback_chain(
     ares_config_path: str | os.PathLike[str] | None = None,
-    jros_config_path: str | os.PathLike[str] | None = None,
+    jaeger_config_path: str | os.PathLike[str] | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Sync the fallback_providers chain from Ares config to JROS config.
+    """Sync the fallback_providers chain from Ares config to JaegerAI config.
     
     Returns a JSON-safe dictionary describing what was synced.
     """
@@ -375,11 +375,11 @@ def sync_fallback_chain(
         "fallback_entries": len(fallback_chain),
     }
     
-    if jros_config_path is not None:
+    if jaeger_config_path is not None:
         raise ValueError(
-            "jros_config_path is no longer supported; Jaeger owns its configuration")
-    _translated, skipped_entries = _jros_supported_fallback_chain(fallback_chain, {})
-    results["targets"]["jros"] = {
+            "jaeger_config_path is no longer supported; Jaeger owns its configuration")
+    _translated, skipped_entries = _jaeger_supported_fallback_chain(fallback_chain, {})
+    results["targets"]["jaeger"] = {
         "owner": "jaeger",
         "changed": False,
         "supported": False,

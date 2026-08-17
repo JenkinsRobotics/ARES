@@ -3,7 +3,7 @@
 These are the actual functions the agent can call to interact with
 ARES's runtime context and canonical task store.
 
-Each tool returns a JSON string (matching both Ares and JROS tool
+Each tool returns a JSON string (matching both Ares and JaegerAI tool
 result conventions). They are backend-agnostic and never write worker stores.
 """
 

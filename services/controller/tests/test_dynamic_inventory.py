@@ -67,7 +67,7 @@ def test_inventory_endpoint_returns_calculated_state(monkeypatch):
     from fastapi_app.request_context import RequestIdentity, require_identity
     from fastapi_app.routers import CORE_ROUTER_REGISTRY
 
-    monkeypatch.setattr("api.backend_selector.get_active_backend", lambda _config: "hermes_local")
+    monkeypatch.setattr("api.backend_selector.get_active_backend", lambda _config: "jaeger_local")
     monkeypatch.setattr("api.skills_store.list_skills", lambda: {"skills": [{"name": "one"}]})
     monkeypatch.setattr("api.runtime_skills.selected_runtime_owns_skills", lambda: False)
     app = create_app()

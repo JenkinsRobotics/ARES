@@ -1,7 +1,7 @@
 """Tests for api.context_embeddings.OllamaEmbeddingsClient.
 
 Uses a real ThreadingHTTPServer fake, the same technique as
-_FakeJrosGateway in test_jros_backend_streaming.py.
+_FakeJrosGateway in test_jaeger_backend_streaming.py.
 """
 from __future__ import annotations
 

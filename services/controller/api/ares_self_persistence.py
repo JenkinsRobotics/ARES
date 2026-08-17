@@ -4,7 +4,7 @@ This is the ARES-owned continuity layer above swappable external backends.
 ARES owns shared resources and orchestration; inference and identity remain
 projections of the explicitly elected runtime.
 
-The module is intentionally pure: no filesystem writes, no Ares/JROS imports,
+The module is intentionally pure: no filesystem writes, no Ares/JaegerAI imports,
 and no backend internals. It returns JSON-safe data for UI/API surfaces and a
 small prompt section for the active agent run.
 """

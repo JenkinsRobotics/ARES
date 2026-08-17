@@ -3,18 +3,18 @@
 import pytest
 
 
-def _fake_local_jros_root(root, monkeypatch):
+def _fake_local_jaeger_root(root, monkeypatch):
     from api.providers.jaeger import companion
 
-    monkeypatch.setattr(companion, "local_jros_root", lambda: root)
+    monkeypatch.setattr(companion, "local_jaeger_root", lambda: root)
 
 
 def test_companion_availability_uses_install_resolver(monkeypatch, tmp_path):
     from api.providers.jaeger import companion
 
-    _fake_local_jros_root(None, monkeypatch)
+    _fake_local_jaeger_root(None, monkeypatch)
     assert companion.companion_available() is False
-    _fake_local_jros_root(tmp_path, monkeypatch)
+    _fake_local_jaeger_root(tmp_path, monkeypatch)
     assert companion.companion_available() is True
 
 
@@ -30,7 +30,7 @@ def test_setup_defaults_and_exists_are_bridge_queries(monkeypatch):
         return {"characters": [{"id": "alpha", "name": "Alpha"}]}
 
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.query_local_companion", query)
+        "api.providers.jaeger.streaming.query_local_companion", query)
     assert companion.companion_exists() is True
     assert companion.list_characters() == [{"id": "alpha", "name": "Alpha"}]
     assert calls == [("instance_exists", {}), ("setup_defaults", {})]
@@ -40,7 +40,7 @@ def test_companion_exists_fails_closed(monkeypatch):
     from api.providers.jaeger import companion
 
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.query_local_companion",
+        "api.providers.jaeger.streaming.query_local_companion",
         lambda *args: (_ for _ in ()).throw(RuntimeError("offline")),
     )
     assert companion.companion_exists() is False
@@ -51,7 +51,7 @@ def test_create_companion_is_bridge_command(monkeypatch):
 
     captured = {}
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        "api.providers.jaeger.streaming.command_local_companion",
         lambda command, payload: captured.update(command=command, payload=payload) or {
             "instance": "alpha-agent", "root": "/runtime/alpha-agent"},
     )
@@ -84,7 +84,7 @@ def test_blank_character_uses_runtime_roster(monkeypatch):
     monkeypatch.setattr(companion, "list_characters", lambda: [{"id": "alpha"}])
     captured = {}
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        "api.providers.jaeger.streaming.command_local_companion",
         lambda command, payload: captured.update(payload) or {"instance": "a", "root": "/a"},
     )
     companion.create_companion(character_id="default")

@@ -77,7 +77,7 @@ authorized ownership contract exists.
 
 ## 6. Local Validation Safety
 
-Development and test runs use isolated ARES, Hermes, and provider state unless
+Development and test runs use isolated ARES, JaegerAI, and provider state unless
 the operator explicitly selects production state. Diagnostic output must not
 print API keys, OAuth tokens, cookies, password hashes, complete environment
 files, or authentication stores.

@@ -13,7 +13,7 @@ on every turn's writeback; and it can never raise, because a display
 value must not be able to fail a turn.
 """
 
-import api.providers.jaeger.gateway_streaming as gs
+import api.providers.jaeger.streaming as gs
 
 
 CLOUD = {
@@ -74,7 +74,7 @@ def test_result_is_cached_across_turns(monkeypatch):
 
 
 def test_a_reboot_invalidates_the_cached_lane(monkeypatch):
-    """``reset_jros_boot()`` is what runs after a model switch. The lane
+    """``reset_jaeger_runtime()`` is what runs after a model switch. The lane
     is fixed at boot, so a re-boot must drop what we cached about it or
     ARES keeps reporting the previous model."""
     _reset()

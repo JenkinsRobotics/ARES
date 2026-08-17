@@ -69,63 +69,6 @@ final class SourceReaderTests: XCTestCase {
         }
     }
 
-    // MARK: - Odysseus reader
-
-    func testOdysseusReaderMissingDB() throws {
-        let reader = OdysseusSessionReader(dbPath: nonexistentDir.appendingPathComponent("fake.db"))
-        XCTAssertFalse(reader.isAvailable)
-        let sessions = try reader.listSessions()
-        XCTAssertTrue(sessions.isEmpty)
-    }
-
-    func testOdysseusReaderRealData() throws {
-        let reader = OdysseusSessionReader()
-        if !reader.isAvailable {
-            print("[INFO] Odysseus DB not found on this machine — skipping real-data test")
-            return
-        }
-        let sessions = try reader.listSessions()
-        print("[ODYSSEUS] session count: \(sessions.count)")
-        XCTAssertLessThanOrEqual(sessions.count, 100)
-        for s in sessions {
-            XCTAssertEqual(s.source, "odysseus")
-            XCTAssertTrue(s.id.hasPrefix("odysseus:"))
-        }
-    }
-
-    // MARK: - Hermes reader
-
-    func testHermesReaderMissingDir() throws {
-        let reader = HermesSessionReader(sessionsDir: nonexistentDir)
-        XCTAssertFalse(reader.isAvailable)
-        let sessions = try reader.listSessions()
-        XCTAssertTrue(sessions.isEmpty)
-    }
-
-    func testHermesReaderRealData() throws {
-        let reader = HermesSessionReader()
-        if !reader.isAvailable {
-            print("[INFO] Hermes sessions dir not found — skipping real-data test")
-            return
-        }
-        let sessions = try reader.listSessions()
-        print("[HERMES] session count: \(sessions.count)")
-        XCTAssertLessThanOrEqual(sessions.count, 100)
-        // Verify sorted newest first
-        let dates = sessions.compactMap { $0.updatedAt }
-        if dates.count > 1 {
-            for i in 0..<(dates.count - 1) {
-                XCTAssertGreaterThanOrEqual(dates[i], dates[i + 1])
-            }
-        }
-        for s in sessions {
-            XCTAssertEqual(s.source, "hermes")
-            XCTAssertTrue(s.id.hasPrefix("hermes:"))
-            // Hermes reader is metadata only — should NOT read content
-            XCTAssertNil(s.title, "HermesSessionReader should not populate title (metadata only)")
-        }
-    }
-
     // MARK: - UnifiedSession baseline
 
     func testUnifiedSessionCoding() throws {

@@ -47,7 +47,7 @@ def _server_config() -> dict[str, Any]:
 
 def _query(what: str) -> dict[str, Any]:
     try:
-        from api.providers.jaeger.gateway_streaming import query_local_companion
+        from api.providers.jaeger.streaming import query_local_companion
         result = query_local_companion(what, {})
     except Exception as exc:
         raise AresToolsMCPError(f"Jaeger MCP query failed: {exc}") from exc
@@ -58,7 +58,7 @@ def _query(what: str) -> dict[str, Any]:
 
 def _command(command: str, args: dict[str, Any]) -> dict[str, Any]:
     try:
-        from api.providers.jaeger.gateway_streaming import command_local_companion
+        from api.providers.jaeger.streaming import command_local_companion
         result = command_local_companion(command, args)
     except Exception as exc:
         raise AresToolsMCPError(f"Jaeger MCP command failed: {exc}") from exc

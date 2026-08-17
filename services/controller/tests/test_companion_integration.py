@@ -46,11 +46,11 @@ def test_companion_snapshot_uses_only_bridge_contract(monkeypatch: pytest.Monkey
         ],
     }
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.query_local_companion",
+        "api.providers.jaeger.streaming.query_local_companion",
         lambda what, args=None: replies[what],
     )
     monkeypatch.setattr("api.providers.jaeger.paths.jaeger_home", lambda: Path("/opt/JaegerAI"))
-    monkeypatch.setattr("api.providers.jaeger.paths.jros_instance_name", lambda: "jarvis")
+    monkeypatch.setattr("api.providers.jaeger.paths.jaeger_instance_name", lambda: "jarvis")
 
     result = companion_control.companion_snapshot()
 
@@ -68,7 +68,7 @@ def test_companion_snapshot_uses_only_bridge_contract(monkeypatch: pytest.Monkey
 def test_companion_update_delegates_writes_to_jaeger(monkeypatch: pytest.MonkeyPatch):
     commands: list[tuple[str, dict]] = []
     monkeypatch.setattr(
-        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        "api.providers.jaeger.streaming.command_local_companion",
         lambda cmd, args=None: commands.append((cmd, args or {})),
     )
     monkeypatch.setattr(

@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from pathlib import Path
-import os
 from api.profiles import profile_env_for_active_request_readonly
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
@@ -88,64 +86,21 @@ async def get_provider_health():
     except Exception:
         pass  # Don't add if not responding
     
-    # Check Jaeger AI (Local instances, external cloud models, and gateway)
-    jaeger_status = "missing"
-    jaeger_details = "Jaeger AI not configured"
-    jaeger_models_count = 0
-    
     try:
-        from api.providers.jaeger.paths import jaeger_instances_roots, jaeger_models_roots
+        from api.providers.jaeger.status import check_status
+        from integrations.workers.model_discovery import discover_jaeger_models
 
-        instance_dirs = [
-            child
-            for root in jaeger_instances_roots() if root.is_dir()
-            for child in root.iterdir() if child.is_dir()
-        ]
-        model_roots = jaeger_models_roots()
-    except Exception:
-        instance_dirs = []
-        model_roots = []
-    for inst_path in instance_dirs:
-        cfg_path = inst_path / "config.yaml"
-        if cfg_path.is_file():
-            try:
-                import yaml
-                cfg = yaml.safe_load(cfg_path.read_text()) or {}
-                ext = cfg.get("external_model") or {}
-                if ext.get("enabled") and ext.get("model"):
-                    jaeger_status = "healthy"
-                    jaeger_details = f"External: {ext['model']} ({ext.get('provider', 'cloud')})"
-                    jaeger_models_count += 1
-            except Exception:
-                pass
-
-    for models_base in model_roots:
-        if models_base.is_dir():
-            ggufs = list(models_base.glob("**/*.gguf"))
-            if ggufs:
-                jaeger_status = "healthy"
-                jaeger_details = f"{len(ggufs)} local GGUF model(s)"
-                jaeger_models_count += len(ggufs)
-    
-    # Try to ping gateway if available
-    jaeger_gateway = os.environ.get("ARES_JAEGER_GATEWAY_URL") or "http://127.0.0.1:8000"
-    try:
-        import urllib.request
-        req = urllib.request.urlopen(f"{jaeger_gateway}/health", timeout=1)
-        if req.status == 200:
-            jaeger_status = "healthy"
-            jaeger_details = "Gateway active & responding"
-    except Exception:
-        pass
-    
-    if jaeger_status != "missing" or jaeger_models_count > 0:
+        runtime_status = check_status()
+        catalog = discover_jaeger_models()
         providers.append(ProviderHealth(
             id="jaeger_local",
             label="Jaeger AI",
-            status=jaeger_status,
-            details=jaeger_details,
-            model_count=jaeger_models_count
+            status="healthy" if runtime_status.available else "missing",
+            details=runtime_status.message,
+            model_count=len(catalog.get("models") or []),
         ))
+    except Exception:
+        pass
     
     healthy_count = sum(1 for p in providers if p.status == "healthy")
     
@@ -162,7 +117,7 @@ async def get_filtered_models():
     Get models filtered by live provider health.
     Only returns models from healthy providers.
     """
-    from integrations.workers.model_discovery import discover_jros_models
+    from integrations.workers.model_discovery import discover_jaeger_models
     from .providers import get_provider_health
     
     # Get live health status
@@ -170,7 +125,7 @@ async def get_filtered_models():
     healthy_providers = {p.id for p in health_response.providers if p.status == "healthy"}
     
     # Get all models
-    all_models = discover_jros_models()
+    all_models = discover_jaeger_models()
     
     # Filter to healthy providers only
     filtered_models = [

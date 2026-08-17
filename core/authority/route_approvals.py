@@ -63,7 +63,7 @@ def wait_for_external_approval(
 ) -> str:
     """Publish a worker approval and block until the existing UI resolves it.
 
-    This is the transport-neutral equivalent of Hermes's gateway approval
+    This is the transport-neutral equivalent of gateway approval
     queue. The worker owns execution; ARES owns the visible decision surface.
     """
     item = dict(approval or {})

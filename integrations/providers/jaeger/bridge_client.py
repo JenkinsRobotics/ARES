@@ -34,7 +34,7 @@ from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launche
 from api.providers.jaeger.paths import jros_instance_name as resolve_jros_instance_name
 
 PROTOCOL_VERSION = "1"
-INTEGRATION_CONTRACT_VERSION = 1
+INTEGRATION_CONTRACT_VERSION = 2
 
 
 class JrosError(RuntimeError):
@@ -91,10 +91,17 @@ def _encode(frame: dict[str, Any]) -> str:
     return json.dumps(frame, ensure_ascii=False) + "\n"
 
 
-def send_op(text: str, session: str = "", workspace: str = "") -> dict[str, Any]:
+def send_op(
+    text: str,
+    session: str = "",
+    workspace: str = "",
+    display_text: str = "",
+) -> dict[str, Any]:
     frame = {"op": "send", "text": text, "session": session}
     if workspace:
         frame["workspace"] = workspace
+    if display_text:
+        frame["display_text"] = display_text
     return frame
 
 
@@ -225,6 +232,7 @@ class JrosClient:
 
     # ── turns ─────────────────────────────────────────────────────
     def turn(self, text: str, session: str = "", *, workspace: str = "",
+             display_text: str = "",
              on_event: Callable[[dict], None] | None = None,
              on_request: Callable[[dict], str] | None = None) -> dict[str, Any]:
         """Run one turn; return ``{"text": ..., "error": ...}``.
@@ -235,7 +243,7 @@ class JrosClient:
         with self._io_lock:
             if self._proc is None:
                 raise JrosError("not started")
-            self._write(send_op(text, session, workspace))
+            self._write(send_op(text, session, workspace, display_text))
             for line in self._proc.stdout:        # type: ignore[union-attr]
                 frame = _parse(line)
                 if frame is None:

@@ -75,7 +75,7 @@ def test_delete_session_removes_sidecar_journals_state_and_runtime_handles(tmp_p
         "session_delete",
         "jaeger",
     }
-    assert ("jaeger", f"delete_session:webui:{session_id}") in calls
+    assert ("jaeger", f"delete_session:{session_id}") in calls
 
 
 def test_delete_session_preserves_ares_copy_when_jaeger_delete_fails(tmp_path, monkeypatch):
@@ -141,4 +141,4 @@ def test_delete_session_resolves_sidecarless_jaeger_session_before_peer_delete(m
     with pytest.raises(SessionMutationError, match="nothing was removed"):
         delete_session(session_id)
 
-    assert calls == [("delete_session", {"id": f"webui:{session_id}"})]
+    assert calls == [("delete_session", {"id": session_id})]

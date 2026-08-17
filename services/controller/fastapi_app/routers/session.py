@@ -38,6 +38,7 @@ from ..schemas import (
     SessionYoloUpdate,
 )
 from ..services import AresCoreService
+from api.session_contract import SessionCapabilityError
 
 
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -450,6 +451,8 @@ def rename_session(
             session = rename(session_id, payload.title)
     except KeyError as exc:
         raise CoreApiError(404, "Session not found") from exc
+    except SessionCapabilityError as exc:
+        raise CoreApiError(409, str(exc), code="session_operation_unavailable") from exc
     except PermissionError as exc:
         raise CoreApiError(403, str(exc)) from exc
     return {"session": session.compact()}
@@ -468,6 +471,8 @@ def clear_session(
             session = clear(session_id)
     except KeyError as exc:
         raise CoreApiError(404, "Session not found") from exc
+    except SessionCapabilityError as exc:
+        raise CoreApiError(409, str(exc), code="session_operation_unavailable") from exc
     return {"ok": True, "session": session.compact()}
 
 
@@ -543,6 +548,8 @@ def archive_session(
         raise CoreApiError(404, "Session not found") from exc
     except PermissionError as exc:
         raise CoreApiError(400, str(exc)) from exc
+    except SessionCapabilityError as exc:
+        raise CoreApiError(409, str(exc), code="session_operation_unavailable") from exc
     return {"ok": True, "session": session.compact(), **worktree_retained_payload(session)}
 
 

@@ -19,7 +19,7 @@ UI_CAPABILITIES = (
     "kanban", "delegate_task", "character_persona_editing", "voice_settings", "skills",
     "cookbook_model_serving", "deep_research", "model_compare", "caldav",
     "image_gallery", "image_editor", "visual_reports", "teacher_escalation",
-    "pdf_forms", "youtube_ingest",
+    "pdf_forms", "youtube_ingest", "session_mutations",
 )
 
 _LEGACY_CAPABILITIES: dict[str, set[str]] = {
@@ -35,6 +35,7 @@ _JAEGER_UI_FEATURES = {
     "character_persona_editing": "character_persona_editing",
     "voice_settings": "voice_settings",
     "skills": "skills",
+    "session_mutations": "sessions",
 }
 
 _CONTRACT_CACHE: dict[str, Any] = {"at": 0.0, "value": None, "error": None}
@@ -74,6 +75,21 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
             )
             for ui_name, runtime_name in _JAEGER_UI_FEATURES.items()
         }
+        session_feature = features.get("sessions") if isinstance(features, dict) else None
+        session_contract = (
+            session_feature.get("contract") if isinstance(session_feature, dict) else None
+        )
+        session_operations = (
+            session_contract.get("operations") if isinstance(session_contract, dict) else {}
+        )
+        flags["session_mutations"] = bool(
+            int((session_contract or {}).get("version") or 0) >= 2
+            and all(
+                isinstance(session_operations.get(name), dict)
+                and session_operations[name].get("available") is True
+                for name in ("create", "rename", "clear", "delete", "archive")
+            )
+        )
         flags["messaging_gateway"] = False
         # ARES's controller MCP server currently exposes project/session tools,
         # not Kanban or delegation. Those tabs remain unavailable until Jaeger

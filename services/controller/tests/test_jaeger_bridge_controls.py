@@ -27,12 +27,15 @@ def test_bridge_client_writes_cancel_and_steer_without_waiting_for_reply():
 def test_send_frame_carries_the_ares_session_workspace():
     from api.providers.jaeger.bridge_client import send_op
 
-    assert send_op("write a report", "webui:s1", "/tmp/project") == {
+    assert send_op("write a report", "s1", "/tmp/project") == {
         "op": "send",
         "text": "write a report",
-        "session": "webui:s1",
+        "session": "s1",
         "workspace": "/tmp/project",
     }
+    assert send_op(
+        "[directives] write a report", "s1", "/tmp/project", "write a report"
+    )["display_text"] == "write a report"
 
 
 def test_bridge_client_validates_integration_contract(monkeypatch):
@@ -41,7 +44,7 @@ def test_bridge_client_validates_integration_contract(monkeypatch):
     client = JrosClient(command=["jaeger", "bridge"])
     monkeypatch.setattr(client, "query", lambda _what: {
         "contract": "ares-jaeger",
-        "contract_version": 1,
+        "contract_version": 2,
         "protocol_version": "1",
         "features": {"chat": {"available": True}},
     })
@@ -49,7 +52,7 @@ def test_bridge_client_validates_integration_contract(monkeypatch):
 
     monkeypatch.setattr(client, "query", lambda _what: {
         "contract": "ares-jaeger",
-        "contract_version": 2,
+        "contract_version": 1,
         "protocol_version": "1",
         "features": {},
     })
@@ -83,8 +86,8 @@ def test_turn_control_delegates_to_the_live_bridge_client():
     control.interrupt("Cancelled by user")
     assert control.steer("use metric units") is True
     assert client.calls == [
-        ("cancel", "webui:session-1"),
-        ("steer", "use metric units", "webui:session-1"),
+        ("cancel", "session-1"),
+        ("steer", "use metric units", "session-1"),
     ]
 
 

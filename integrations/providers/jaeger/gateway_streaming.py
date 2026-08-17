@@ -3,8 +3,9 @@
 This is the JaegerAI twin of ``api.gateway_chat`` (the ARES Gateway bridge)
 and is deliberately shaped like it: /api/chat/start still creates a normal
 local WebUI stream, /api/chat/stream still receives WebUI SSE event names,
-and the final turn is persisted back into the same WebUI session model.
-The only swapped piece is execution, which resolves in this order:
+    and the final turn is projected through the same WebUI session model.
+    Jaeger is the durable transcript owner; ARES persists UI metadata only.
+    Execution resolves in this order:
 
 1. **Gateway (vestigial — see ADR-0008)** — POST the turn to a gateway
    server and relay its SSE reply. Current JaegerAI ships **no gateway
@@ -31,6 +32,7 @@ The only swapped piece is execution, which resolves in this order:
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -461,7 +463,9 @@ class _JaegerBridgeTurnControl:
     def __init__(self, client: JrosClient, session_id: str) -> None:
         self._client = client
         self.session_id = session_id
-        self._bridge_session = f"webui:{session_id}"
+        from api.session_contract import shared_session_id
+
+        self._bridge_session = shared_session_id(session_id)
 
     def interrupt(self, _reason: str = "") -> None:
         self._client.cancel(self._bridge_session)
@@ -480,6 +484,7 @@ def _run_local_jros_turn(
     cancel_event: threading.Event,
     put_jros_event=None,
     stream_id: str = "",
+    display_text: str = "",
 ) -> tuple[str, str, list[str]]:
     """One local JROS bridge turn. Returns (text, error, tool_activity)."""
     instance = _jros_instance_name()
@@ -555,13 +560,17 @@ def _run_local_jros_turn(
                 return "deny"
 
             with lock:
-                result = client.turn(
-                    str(msg_text or ""),
-                    session=f"webui:{session_id}",
-                    workspace=str(workspace or ""),
-                    on_event=on_event,
-                    on_request=_on_request,
-                )
+                from api.session_contract import shared_session_id
+
+                turn_kwargs = {
+                    "session": shared_session_id(session_id),
+                    "workspace": str(workspace or ""),
+                    "on_event": on_event,
+                    "on_request": _on_request,
+                }
+                if display_text and display_text != str(msg_text or ""):
+                    turn_kwargs["display_text"] = display_text
+                result = client.turn(str(msg_text or ""), **turn_kwargs)
             payload = dict(result or {}) if isinstance(result, dict) else {}
             error = str(payload.get("error") or "").strip()
             text = str(payload.get("text") or "").strip()
@@ -829,8 +838,31 @@ def _merge_and_save_jros_turn(
                     s.estimated_cost = float(getattr(s, "estimated_cost", 0) or 0) + float(turn_cost)
                 except (TypeError, ValueError):
                     pass
+        # Phase 2 ownership boundary: return a live display projection to the
+        # current SSE request, but persist only ARES-owned UI metadata. Jaeger
+        # already committed the authoritative transcript synchronously before
+        # the bridge reply returned.
+        display_session = copy.copy(s)
+        display_session.messages = list(s.messages or [])
+        display_session.context_messages = list(s.context_messages or [])
+        display_session.tool_calls = list(s.tool_calls or [])
+        s.transcript_owner = "jaeger"
+        s.runtime_message_count = len(display_session.messages)
+        s.messages = []
+        s.context_messages = []
+        s.tool_calls = []
         s.save()
-        return s
+        try:
+            s.path.with_suffix(".json.bak").unlink(missing_ok=True)
+        except Exception:
+            logger.debug("Could not prune legacy transcript backup for %s", session_id)
+        try:
+            from api.models import delete_cli_session
+
+            delete_cli_session(session_id)
+        except Exception:
+            logger.debug("Could not prune legacy state transcript for %s", session_id)
+        return display_session
 
 
 def _run_jros_goal_hook(*, session_id: str, stream_id: str, goal_related: bool, assistant_text: str, put_jros_event) -> None:
@@ -1039,7 +1071,7 @@ def _run_jros_chat_streaming(
             # The gateway keeps per-session context server-side; ``user`` is
             # the session key, so each WebUI conversation stays its own JROS
             # conversation.
-            "user": f"webui:{session_id}",
+            "user": session_id,
             "messages": [*context_messages, {"role": "user", "content": str(msg_text or "")}],
         }
         # Reuse the Ares gateway SSE translators — the JROS gateway
@@ -1067,7 +1099,8 @@ def _run_jros_chat_streaming(
             ran_locally = True
             update_active_run(stream_id, phase="jros-local")
             final_text, turn_error, tool_activity = _run_local_jros_turn(
-                msg_text, session_id, workspace, cancel_event, put_jros_event, stream_id
+                msg_text, session_id, workspace, cancel_event, put_jros_event, stream_id,
+                display_text=_effective_user_text,
             )
             if cancel_event.is_set():
                 put_jros_event("cancel", {"message": "Cancelled by user"})
@@ -1110,7 +1143,8 @@ def _run_jros_chat_streaming(
                 ran_locally = True
                 update_active_run(stream_id, phase="jros-local")
                 final_text, turn_error, tool_activity = _run_local_jros_turn(
-                    msg_text, session_id, workspace, cancel_event, put_jros_event, stream_id
+                    msg_text, session_id, workspace, cancel_event, put_jros_event, stream_id,
+                    display_text=_effective_user_text,
                 )
                 if cancel_event.is_set():
                     put_jros_event("cancel", {"message": "Cancelled by user"})

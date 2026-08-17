@@ -269,7 +269,7 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         # The gateway saw one chat turn keyed to this WebUI session.
         chat_calls = [c for c in _FakeJrosGateway.seen if c["path"].endswith("/chat/completions")]
         assert len(chat_calls) == 1
-        assert chat_calls[0]["body"]["user"] == f"webui:{sid}"
+        assert chat_calls[0]["body"]["user"] == sid
         assert chat_calls[0]["body"]["messages"][-1]["content"] == "hello jros"
 
         events = [item[0] for item in stream._offline_buffer]
@@ -286,10 +286,12 @@ def test_jros_gateway_turn_streams_and_persists_session(monkeypatch):
         saved = Session.load(sid)
         assert saved.active_stream_id is None
         assert saved.pending_user_message is None
-        assert [m["role"] for m in saved.messages] == ["user", "assistant"]
-        assert saved.messages[-1]["content"] == "JROS says hi"
-        assert saved.messages[-1]["backend"] == "jros"
-        assert saved.messages[-1]["model_provider"] == "test-provider"
+        assert saved.messages == []
+        assert saved.transcript_owner == "jaeger"
+        assert saved.runtime_message_count == 2
+        assert done_payload["session"]["messages"][-1]["content"] == "JROS says hi"
+        assert done_payload["session"]["messages"][-1]["backend"] == "jros"
+        assert done_payload["session"]["messages"][-1]["model_provider"] == "test-provider"
         assert saved.model == "test-model"
         assert saved.model_provider == "test-provider"
         # Regression test for the usage-persistence fix: JaegerAI turns used to
@@ -516,7 +518,7 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
         model_provider="test-provider",
     )
 
-    assert calls == [("hello jros", f"webui:{sid}", "/tmp")]
+    assert calls == [("hello jros", sid, "/tmp")]
     events = [item[0] for item in stream._offline_buffer]
     assert "tool" in events
     assert any(
@@ -525,9 +527,12 @@ def test_local_fallback_runs_turn_when_no_gateway(monkeypatch, tmp_path):
     )
     assert events[-2:] == ["done", "stream_end"]
     saved = Session.load(sid)
-    assert saved.messages[-1]["content"] == "local JROS says hi"
-    assert saved.messages[-1]["backend"] == "jros"
-    assert saved.messages[-1]["tool_calls"] == [{
+    assert saved.messages == []
+    assert saved.transcript_owner == "jaeger"
+    done_payload = next(item[1] for item in stream._offline_buffer if item[0] == "done")
+    assert done_payload["session"]["messages"][-1]["content"] == "local JROS says hi"
+    assert done_payload["session"]["messages"][-1]["backend"] == "jros"
+    assert done_payload["session"]["messages"][-1]["tool_calls"] == [{
         "name": "write_file", "args": {"path": "workspace/session_summary.md"}, "done": True,
     }]
 
@@ -656,7 +661,10 @@ def test_broken_pipe_retries_with_fresh_bridge(monkeypatch, tmp_path):
 
     assert turns == ["what llm are you using", "what llm are you using"]
     saved = Session.load(sid)
-    assert saved.messages[-1]["content"] == "recovered after restart"
+    assert saved.messages == []
+    assert saved.transcript_owner == "jaeger"
+    done_payload = next(item[1] for item in stream._offline_buffer if item[0] == "done")
+    assert done_payload["session"]["messages"][-1]["content"] == "recovered after restart"
     assert not any(item[0] == "apperror" for item in stream._offline_buffer)
 
 
@@ -739,7 +747,9 @@ def test_gateway_wins_over_local_fallback(monkeypatch, tmp_path):
         _setup_stream(sid, stream_id)
         jros_gateway_chat.run_jros_streaming(sid, "hello jros", "m", "/tmp", stream_id, [])
         assert any(c["path"].endswith("/chat/completions") for c in _FakeJrosGateway.seen)
-        assert Session.load(sid).messages[-1]["content"] == "JROS says hi"
+        saved = Session.load(sid)
+        assert saved.messages == []
+        assert saved.transcript_owner == "jaeger"
     finally:
         server.shutdown()
         server.server_close()

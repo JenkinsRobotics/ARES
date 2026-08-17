@@ -364,9 +364,65 @@ function _syncMobileSidebarPanelFromMainView(){
   return panel;
 }
 
+const ARES_PANEL_CAPABILITIES={kanban:'kanban',skills:'skills'};
+let _aresCapabilityFlags=null;
+let _aresCapabilityRequest=null;
+
+function _applyAresCapabilityFlags(flags){
+  _aresCapabilityFlags=(flags&&typeof flags==='object')?flags:{};
+  document.querySelectorAll('[data-requires-capability]').forEach(el=>{
+    const capability=String(el.dataset.requiresCapability||'').trim();
+    const available=_aresCapabilityFlags[capability]===true;
+    el.dataset.capabilityAvailable=available?'true':'false';
+    el.hidden=!available;
+    el.setAttribute('aria-hidden',available?'false':'true');
+  });
+  document.documentElement.dataset.aresCapabilitiesReady='true';
+  const required=ARES_PANEL_CAPABILITIES[_currentPanel];
+  if(required&&_aresCapabilityFlags[required]!==true){
+    switchPanel('chat',{bypassCapabilityGuard:true});
+  }
+  return _aresCapabilityFlags;
+}
+
+async function refreshAresCapabilities(){
+  if(_aresCapabilityRequest)return _aresCapabilityRequest;
+  _aresCapabilityRequest=(async()=>{
+    try{
+      const sid=typeof S!=='undefined'&&S.session&&S.session.session_id?`?session_id=${encodeURIComponent(S.session.session_id)}`:'';
+      const response=await fetch(new URL(`api/ares/backend${sid}`,document.baseURI||location.href).href,{credentials:'include',cache:'no-store'});
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      const payload=await response.json();
+      return _applyAresCapabilityFlags(payload&&payload.capabilities);
+    }catch(error){
+      console.warn('ARES capability negotiation failed; gated UI remains unavailable',error);
+      return _applyAresCapabilityFlags({});
+    }finally{
+      _aresCapabilityRequest=null;
+    }
+  })();
+  return _aresCapabilityRequest;
+}
+
+async function _ensureAresCapabilities(){
+  return _aresCapabilityFlags||refreshAresCapabilities();
+}
+
+window.refreshAresCapabilities=refreshAresCapabilities;
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',refreshAresCapabilities,{once:true});
+else refreshAresCapabilities();
+
 async function switchPanel(name, opts = {}) {
   const nextPanel = name || 'chat';
   const prevPanel = _currentPanel;
+  const requiredCapability=ARES_PANEL_CAPABILITIES[nextPanel];
+  if(requiredCapability&&!opts.bypassCapabilityGuard){
+    const capabilities=await _ensureAresCapabilities();
+    if(capabilities[requiredCapability]!==true){
+      if(typeof showToast==='function')showToast(`${nextPanel} is unavailable for the selected runtime`,'error');
+      return false;
+    }
+  }
   // ── Desktop sidebar collapse toggle (rail-click only) ──
   // If the click came from a rail icon AND we're on desktop, the rail icon
   // does double duty: clicking the already-active panel collapses the sidebar;
@@ -13251,7 +13307,12 @@ const _origSwitchSettings=switchSettingsSection;
 switchSettingsSection=function(name, opts){
   _origSwitchSettings(name, opts);
   if(name==='preferences') updateNotificationPermissionStatus();
-  if(name==='system'){loadMcpServers();loadMcpTools();loadGatewayStatus();}
+  if(name==='system'){
+    _ensureAresCapabilities().then(capabilities=>{
+      if(capabilities.mcp_server_config===true){loadMcpServers();loadMcpTools();}
+      if(capabilities.messaging_gateway===true)loadGatewayStatus();
+    });
+  }
 };
 
 // ── Checkpoints / Rollback ──────────────────────────────────────────────────

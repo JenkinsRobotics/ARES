@@ -23,6 +23,36 @@ if str(_MONOREPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_MONOREPO_ROOT))
 
 
+def _is_loopback_bind(host: str) -> bool:
+    normalized = str(host or "").strip().lower().strip("[]")
+    return normalized == "localhost" or normalized == "::1" or normalized.startswith("127.")
+
+
+def enforce_authenticated_network_bind(host: str) -> None:
+    """Refuse network exposure without authentication unless explicitly overridden."""
+    if _is_loopback_bind(host):
+        return
+    from api.auth import is_auth_enabled
+
+    if is_auth_enabled():
+        return
+    override = os.environ.get(
+        "ARES_WEBUI_ALLOW_UNAUTHENTICATED_NETWORK", "").strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        logger.critical(
+            "ARES is allowing an unauthenticated network bind to %s because "
+            "ARES_WEBUI_ALLOW_UNAUTHENTICATED_NETWORK is explicitly enabled",
+            host,
+        )
+        return
+    raise RuntimeError(
+        f"Refusing to bind ARES to {host!r} without authentication. "
+        "Configure a password, passkey, OIDC, or trusted-header authentication; "
+        "otherwise bind to 127.0.0.1. For a temporary, explicitly insecure "
+        "override set ARES_WEBUI_ALLOW_UNAUTHENTICATED_NETWORK=1."
+    )
+
+
 def _autoload_hatched_sis() -> None:
     """Auto-register any previously hatched SIs from the hatchery directory."""
     try:
@@ -101,14 +131,10 @@ async def startup_runtime() -> None:
             if not ok:
                 logger.warning("Ares Agent modules remain unavailable: %s (%s)", missing, errors)
 
-    from api.auth import get_oidc_startup_warning, is_auth_enabled
+    from api.auth import get_oidc_startup_warning
     from api.config import HOST
 
-    if HOST not in {"127.0.0.1", "::1", "localhost"} and not is_auth_enabled():
-        logger.warning(
-            "ARES is bound to %s without authentication; filesystem and runtime APIs are exposed",
-            HOST,
-        )
+    enforce_authenticated_network_bind(HOST)
     oidc_warning = get_oidc_startup_warning()
     if oidc_warning:
         logger.warning("%s", oidc_warning)

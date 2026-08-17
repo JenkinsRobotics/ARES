@@ -1,13 +1,14 @@
 #!/bin/bash
 # ARES Web UI launcher — dedicated to ARES on port 8788.
-# Binds to 0.0.0.0 so it's reachable over Tailscale.
+# Defaults to loopback. Network exposure requires an explicit host override and
+# configured authentication (enforced again during application startup).
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Port 8787 is reserved for Hermes WebUI.
 export ARES_WEBUI_PORT="${ARES_WEBUI_PORT:-8788}"
-export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-0.0.0.0}"
+export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-127.0.0.1}"
 
 # ARES product state is durable and independent of the source checkout.
 export ARES_HOME="${ARES_HOME:-$HOME/.ares}"

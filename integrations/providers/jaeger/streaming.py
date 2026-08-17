@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 import threading
 import time
 from pathlib import Path
@@ -31,7 +30,7 @@ from api.config import (
     unregister_stream_owner,
     update_active_run,
 )
-from api.helpers import _redact_text, redact_session_data
+from api.helpers import _redact_text, _redact_value, redact_session_data
 from api.models import get_session, merge_session_messages_append_only
 from api.providers.jaeger.bridge_client import JaegerClient, JaegerError
 from api.providers.jaeger.paths import jaeger_home, jaeger_instance_name
@@ -64,9 +63,8 @@ def local_jaeger_root() -> Path | None:
     on a normal user machine, and what ``ARES_JAEGER_HOME`` / ``JAEGER_HOME``
     override for nonstandard installs.
     """
-    from api.providers.jaeger.paths import is_jaeger_ai_root
-
     from api.providers.jaeger.legacy_compat import environment_value
+    from api.providers.jaeger.paths import is_jaeger_ai_root
 
     raw = environment_value(_JAEGER_SOURCE_DIR_ENV)
     if raw:
@@ -89,7 +87,7 @@ def _jaeger_instance_name() -> str | None:
 
 
 def _bridge_error_message(exc: Exception) -> str:
-    message = str(exc).strip()
+    message = _redact_text(str(exc).strip(), _enabled=True)
     lower = message.lower()
     if "lock" in lower:
         return (
@@ -175,15 +173,7 @@ def _get_or_start_bridge_client(instance: str | None = None) -> JaegerClient:
                 "legacy ARES_JaegerAI_DIR override to a validated JaegerAI source "
                 "checkout."
             )
-        env = os.environ.copy()
-        try:
-            from api.config import ARES_HOME, PORT, SESSION_DIR
-            env["ARES_SESSION_DIR"] = str(SESSION_DIR)
-            env["ARES_HOME"] = str(ARES_HOME)
-            env["ARES_CONTROLLER_PORT"] = str(PORT)
-        except Exception:
-            pass
-        client = JaegerClient(jaeger_home=str(root), instance=instance, env=env)
+        client = JaegerClient(jaeger_home=str(root), instance=instance)
         try:
             client.start()
         except Exception as exc:
@@ -278,6 +268,7 @@ def command_local_companion(cmd: str, args: dict[str, Any] | None = None) -> Any
 
 
 def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: str) -> None:
+    frame = _redact_value(frame, _enabled=True)
     kind = str(frame.get("type") or "").strip().lower()
     if kind == "tool":
         name = str(frame.get("name") or frame.get("tool") or "jaeger").strip() or "jaeger"
@@ -390,6 +381,7 @@ def _run_local_jaeger_turn(
                 if cancel_event.is_set():
                     return
                 if isinstance(frame, dict):
+                    frame = _redact_value(frame, _enabled=True)
                     preview = str(
                         frame.get("preview")
                         or frame.get("message")
@@ -452,7 +444,7 @@ def _run_local_jaeger_turn(
                     turn_kwargs["display_text"] = display_text
                 result = client.turn(str(msg_text or ""), **turn_kwargs)
             payload = dict(result or {}) if isinstance(result, dict) else {}
-            error = str(payload.get("error") or "").strip()
+            error = _redact_text(str(payload.get("error") or "").strip(), _enabled=True)
             text = str(payload.get("text") or "").strip()
             return text, error, [] if put_jaeger_event is not None else tool_activity
         except Exception as exc:
@@ -464,7 +456,7 @@ def _run_local_jaeger_turn(
                     exc,
                 )
                 continue
-            logger.warning("Local JaegerAI bridge turn failed: %s", exc, exc_info=True)
+            logger.warning("Local JaegerAI bridge turn failed: %s", _bridge_error_message(exc))
             return "", _bridge_error_message(exc), []
     return "", _bridge_error_message(last_exc or JaegerError("bridge failed")), []
 

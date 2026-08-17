@@ -24,6 +24,29 @@ def test_bridge_client_writes_cancel_and_steer_without_waiting_for_reply():
     ]
 
 
+def test_bridge_subprocess_environment_does_not_inherit_controller_secrets():
+    from api.providers.jaeger.bridge_client import JaegerClient, minimal_bridge_environment
+
+    source = {
+        "PATH": "/usr/bin",
+        "HOME": "/tmp/home",
+        "LANG": "en_US.UTF-8",
+        "OPENAI_API_KEY": "must-not-cross-boundary",
+        "UNRELATED_SECRET": "also-private",
+    }
+    assert minimal_bridge_environment(source) == {
+        "PATH": "/usr/bin",
+        "HOME": "/tmp/home",
+        "LANG": "en_US.UTF-8",
+    }
+    client = JaegerClient(
+        command=["jaeger", "bridge"],
+        env=minimal_bridge_environment(source),
+    )
+    assert "OPENAI_API_KEY" not in client._env
+    assert "UNRELATED_SECRET" not in client._env
+
+
 def test_send_frame_carries_the_ares_session_workspace():
     from api.providers.jaeger.bridge_client import send_op
 

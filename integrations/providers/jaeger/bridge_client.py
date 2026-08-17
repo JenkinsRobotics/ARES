@@ -29,12 +29,37 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from api.providers.jaeger.paths import jaeger_home as resolve_jaeger_home
+from api.providers.jaeger.paths import (
+    jaeger_home as resolve_jaeger_home,
+)
+from api.providers.jaeger.paths import (
+    jaeger_instance_name as resolve_jaeger_instance_name,
+)
 from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launcher
-from api.providers.jaeger.paths import jaeger_instance_name as resolve_jaeger_instance_name
 
 PROTOCOL_VERSION = "1"
 INTEGRATION_CONTRACT_VERSION = 6
+
+_BRIDGE_ENVIRONMENT_NAMES = {
+    "HOME", "LANG", "LC_ALL", "LOGNAME", "PATH", "SHELL",
+    "SSL_CERT_DIR", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "TMPDIR",
+    "USER", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+}
+
+
+def minimal_bridge_environment(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Return only host settings needed to launch JaegerAI.
+
+    Provider credentials belong to Jaeger's credential service. Inheriting the
+    controller's complete environment would expose unrelated ARES secrets to
+    the runtime subprocess.
+    """
+    values = os.environ if source is None else source
+    return {
+        key: value
+        for key, value in values.items()
+        if key in _BRIDGE_ENVIRONMENT_NAMES or key.startswith("LC_")
+    }
 
 
 class JaegerError(RuntimeError):
@@ -129,7 +154,7 @@ class JaegerClient:
             _append_instance_arg_if_bridge(command, resolved_instance)
             if command is not None else _default_command(jaeger_home, resolved_instance)
         )
-        self._env = dict(env) if env is not None else os.environ.copy()
+        self._env = dict(env) if env is not None else minimal_bridge_environment()
         if resolved_instance:
             self._env["JAEGER_INSTANCE_NAME"] = resolved_instance
         self._cwd = cwd

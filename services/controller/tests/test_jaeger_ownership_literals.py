@@ -48,3 +48,29 @@ def test_provider_compat_has_no_persona_or_secret_store_hardcodes():
         encoding="utf-8")
     for forbidden in ("jarvis", ".jaeger_os", "GitHub/JaegerAI", ".hermes"):
         assert forbidden not in source.lower()
+
+
+def test_ares_never_reads_jaeger_credentials_or_mcp_files_directly():
+    boundary_files = [
+        ROOT / "services/controller/api/runtime_credentials.py",
+        ROOT / "services/controller/api/runtime_mcp.py",
+        ROOT / "services/controller/fastapi_app/routers/provider_compat.py",
+        ROOT / "integrations/providers/ollama/context_probe.py",
+    ]
+    forbidden = (
+        ".jaeger_ai",
+        "mcp.json",
+        "credentials_dir",
+        "_read_jaeger_credential",
+        "ARES_SESSION_DIR",
+    )
+    findings = []
+    for path in boundary_files:
+        source = path.read_text(encoding="utf-8")
+        for literal in forbidden:
+            if literal in source:
+                findings.append(f"{path.relative_to(ROOT)}: {literal}")
+    assert findings == [], (
+        "Jaeger-owned state must be accessed through bridge services:\n"
+        + "\n".join(findings)
+    )

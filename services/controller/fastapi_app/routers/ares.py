@@ -223,7 +223,7 @@ def backend(
     registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
     session_id: str = Query(default="", max_length=256),
 ):
-    from api.ares_capabilities import capabilities_for_backend
+    from api.ares_capabilities import capability_contract_for_backend
     from api.backend_selector import get_active_backend, get_session_backend
     from api.config import get_config
 
@@ -241,13 +241,22 @@ def backend(
             for item in records.get("connections") or []
             if item.get("kind") == "runtime"
         }
+        capability_contract = capability_contract_for_backend(current)
         return {
             "current": current,
             "default": default_backend,
             "scope": scope,
             "session_id": session_id or None,
             "status": status,
-            "capabilities": capabilities_for_backend(current),
+            "capabilities": capability_contract["capabilities"],
+            "capability_negotiated": capability_contract["negotiated"],
+            "capability_source": capability_contract["source"],
+            "capability_error": capability_contract["error"],
+            "capability_domains": capability_contract["domains"],
+            "capability_ownership": capability_contract["ownership"],
+            "runtime_contract_version": (
+                (capability_contract.get("runtime_contract") or {}).get("contract_version")
+            ),
         }
 
 

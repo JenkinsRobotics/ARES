@@ -780,6 +780,10 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
             "character_persona_editing": {"available": True},
             "voice_settings": {"available": True},
             "skills": {"available": True},
+            "tool_inventory": {"available": True, "owner": "jaeger"},
+            "delegation": {"available": True, "owner": "ares"},
+            "schedules": {"available": True, "owner": "ares"},
+            "kanban": {"available": True, "owner": "ares"},
         },
     }, None))
     jros_caps = ares_capabilities.capabilities_for_backend("jros")
@@ -787,8 +791,9 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
     assert jros_caps["cloud_provider_model_settings"] is True
     assert jros_caps["mcp_server_config"] is False
     assert jros_caps["messaging_gateway"] is False
-    assert jros_caps["delegate_task"] is False
-    assert jros_caps["kanban"] is False
+    assert jros_caps["delegate_task"] is True
+    assert jros_caps["schedules"] is True
+    assert jros_caps["tool_inventory"] is True
     assert jros_caps["voice_settings"] is True
     assert jros_caps["skills"] is True
     assert all(jros_caps[name] is False for name in (
@@ -797,7 +802,9 @@ def test_ares_capabilities_follow_external_runtime_and_shared_tools(monkeypatch)
         "pdf_forms", "youtube_ingest",
     ))
 
-    assert ares_capabilities.capabilities_for_backend("jros")["kanban"] is False
+    # Contract support is necessary but not sufficient for ARES-owned
+    # features: the missing local Kanban dependency keeps the tab unavailable.
+    assert jros_caps["kanban"] is False
 
     hermes_caps = ares_capabilities.capabilities_for_backend("hermes_local")
     assert hermes_caps["cloud_provider_model_settings"] is True

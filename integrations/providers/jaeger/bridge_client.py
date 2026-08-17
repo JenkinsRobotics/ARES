@@ -34,7 +34,7 @@ from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launche
 from api.providers.jaeger.paths import jros_instance_name as resolve_jros_instance_name
 
 PROTOCOL_VERSION = "1"
-INTEGRATION_CONTRACT_VERSION = 2
+INTEGRATION_CONTRACT_VERSION = 3
 
 
 class JrosError(RuntimeError):

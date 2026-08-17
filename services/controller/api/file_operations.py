@@ -29,6 +29,11 @@ def _workspace(session_id: str) -> tuple[Path, Any]:
     return Path(session.workspace), session
 
 
+def workspace_for_session(session_id: str) -> tuple[Path, Any]:
+    """Return the profile-authorized workspace used by file services."""
+    return _workspace(session_id)
+
+
 def delete_file(session_id: str, path: str, *, recursive: bool = False) -> dict:
     from api.workspace import rmtree_anchored, safe_resolve_ws, unlink_anchored
 

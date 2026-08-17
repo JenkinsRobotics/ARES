@@ -1,75 +1,16 @@
 """ARES Tools — callable tool implementations owned by ARES.
 
 These are the actual functions the agent can call to interact with
-ARES's persistence layer: tasks, self-audit, continuity.
+ARES's runtime context and canonical task store.
 
 Each tool returns a JSON string (matching both Ares and JROS tool
-result conventions). They are backend-agnostic — they operate on the
-ARES continuity DB, not on Ares or JROS internals.
+result conventions). They are backend-agnostic and never write worker stores.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
 from pydantic import BaseModel, Field
-
-# ── ARES Continuity DB ────────────────────────────────────────────
-
-_ARES_DB_DIR = Path(os.environ.get("ARES_HOME", str(Path.home() / ".ares")))
-_ARES_DB_PATH = _ARES_DB_DIR / "ares_continuity.db"
-
-
-def _db_path() -> Path:
-    """Resolve the ARES continuity DB path."""
-    home = Path(os.environ.get("ARES_HOME", str(Path.home() / ".ares")))
-    # ARES_HOME can point to the .ares dir itself or its parent
-    if home.name == ".ares":
-        return home / "ares_continuity.db"
-    return home / ".ares" / "ares_continuity.db"
-
-
-def _get_conn() -> sqlite3.Connection:
-    """Open the continuity DB, creating tables if needed."""
-    db_path = _db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            priority TEXT DEFAULT 'medium',
-            status TEXT DEFAULT 'open',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS promises (
-            id TEXT PRIMARY KEY,
-            text TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            captured_at TEXT NOT NULL,
-            resolved INTEGER DEFAULT 0
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            turn_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            checks TEXT DEFAULT '{}',
-            timestamp TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    return conn
 
 
 # ── Tool Argument Models ──────────────────────────────────────────
@@ -84,12 +25,6 @@ class CreateTaskArgs(BaseModel):
     title: str = Field(description="Short task title")
     description: str = Field(default="", description="Task description")
     priority: str = Field(default="medium", description="Priority: low, medium, high")
-
-
-class SelfAuditArgs(BaseModel):
-    """Run a self-audit on the current turn."""
-    turn_id: str = Field(default="", description="Turn identifier for audit")
-    claims: str = Field(default="", description="Comma-separated claims to verify")
 
 
 class UpdateTaskArgs(BaseModel):
@@ -131,18 +66,22 @@ def ares_create_task(
     if not title:
         return json.dumps({"status": "error", "error": "title is required"})
 
-    task_id = str(uuid.uuid4())[:8]
-    now = datetime.now(timezone.utc).isoformat()
-
     try:
-        conn = _get_conn()
-        conn.execute(
-            "INSERT INTO tasks (id, title, description, priority, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 'open', ?, ?)",
-            (task_id, title, description, priority, now, now),
-        )
-        conn.commit()
-        conn.close()
+        from api import kanban_store
+
+        priority_value = {"low": 0, "medium": 50, "high": 100}.get(priority.lower())
+        if priority_value is None:
+            return json.dumps({"status": "error", "error": "priority must be low, medium, or high"})
+        kanban_store.init_db()
+        with kanban_store.connect_closing() as conn:
+            task_id = kanban_store.create_task(
+                conn,
+                title=title,
+                body=description or None,
+                priority=priority_value,
+                created_by="ares-agent-tool",
+            )
+            task = kanban_store.get_task(conn, task_id)
     except Exception as exc:
         return json.dumps({"status": "error", "error": str(exc)})
 
@@ -151,49 +90,7 @@ def ares_create_task(
         "id": task_id,
         "title": title,
         "priority": priority,
-    })
-
-
-def ares_self_audit(
-    turn_id: str = "",
-    claims: str = "",
-    **kwargs,
-) -> str:
-    """Run a self-audit on the current turn.
-
-    Checks whether the agent's claims are backed by tool execution
-    evidence. Returns a structured audit result.
-    """
-    now = datetime.now(timezone.utc).isoformat()
-
-    # Audit checks — these will be expanded as ARES grows
-    checks = {
-        "tools_actually_called": False,  # Will be populated by lifecycle hooks
-        "verification_attempted": False,    # Did the agent verify results?
-        "claims_backed_by_evidence": False,  # Are claims traceable to tool output?
-        "no_false_completion": True,         # Did agent claim done without running tools?
-    }
-
-    status = "pass" if all(checks.values()) else "review"
-
-    # Persist audit event
-    try:
-        conn = _get_conn()
-        conn.execute(
-            "INSERT INTO audit_events (turn_id, status, checks, timestamp) "
-            "VALUES (?, ?, ?, ?)",
-            (turn_id or "unknown", status, json.dumps(checks), now),
-        )
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass  # Audit persistence is best-effort
-
-    return json.dumps({
-        "status": status,
-        "turn_id": turn_id or "unknown",
-        "checks": checks,
-        "timestamp": now,
+        "task": task.__dict__ if task is not None else None,
     })
 
 
@@ -206,30 +103,22 @@ def ares_update_task(
     if not task_id:
         return json.dumps({"status": "error", "error": "task_id is required"})
 
-    now = datetime.now(timezone.utc).isoformat()
-
     try:
-        conn = _get_conn()
-        row = conn.execute(
-            "SELECT id FROM tasks WHERE id = ?", (task_id,)
-        ).fetchone()
-        if not row:
-            conn.close()
-            return json.dumps({"status": "error", "error": f"task {task_id} not found"})
+        from api import kanban_store
 
-        conn.execute(
-            "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-            (status, now, task_id),
-        )
-        conn.commit()
-        conn.close()
+        normalized = {"open": "ready", "in_progress": "running"}.get(status, status)
+        kanban_store.init_db()
+        with kanban_store.connect_closing() as conn:
+            updated = kanban_store.set_task_status(conn, task_id, normalized)
+        if not updated:
+            return json.dumps({"status": "error", "error": f"task {task_id} not found"})
     except Exception as exc:
         return json.dumps({"status": "error", "error": str(exc)})
 
     return json.dumps({
         "status": "updated",
         "id": task_id,
-        "new_status": status,
+        "new_status": normalized,
     })
 
 
@@ -254,15 +143,6 @@ ARES_TOOL_DEFS = [
         ),
         "fn": ares_create_task,
         "args_model": CreateTaskArgs,
-    },
-    {
-        "name": "ares_self_audit",
-        "description": (
-            "Run a self-audit on the current turn. Checks whether claims "
-            "are backed by tool execution evidence."
-        ),
-        "fn": ares_self_audit,
-        "args_model": SelfAuditArgs,
     },
     {
         "name": "ares_update_task",

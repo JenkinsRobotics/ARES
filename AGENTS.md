@@ -70,6 +70,14 @@ ARES/
 | Install / run | `docs/development.md` |
 | Deep contracts | `docs/rfcs/` |
 
+## Live inventory
+
+Use authenticated `GET /api/inventory` for current router, route, tool, skill,
+and capability state. Counts are calculated from registries and negotiated
+runtime health; do not copy numeric totals into documentation. New routers must
+be added once to `fastapi_app.routers.CORE_ROUTER_REGISTRY`. Tools and skills
+are discovered from their canonical catalogs.
+
 ## Restart / recovery
 
 `start_ares.sh` binds `0.0.0.0` so the phone can reach it over Tailscale.

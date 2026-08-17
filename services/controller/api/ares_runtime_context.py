@@ -17,10 +17,7 @@ This is backend-agnostic and never treats ARES itself as an inference runtime.
 from __future__ import annotations
 
 import logging
-import os
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
 
 # Lazy import — avoids circular dependency at module level.
@@ -51,50 +48,6 @@ def is_jros_available() -> bool:
         return bool(func())
     except Exception:
         return False
-
-
-# ── ARES Continuity DB ────────────────────────────────────────────
-
-_ARES_DB_DIR = Path(os.environ.get("ARES_HOME", os.path.expanduser("~/.ares")))
-_ARES_DB_PATH = _ARES_DB_DIR / "ares_continuity.db"
-
-
-def _ensure_db() -> sqlite3.Connection:
-    """Create or open the ARES continuity database."""
-    _ARES_DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_ARES_DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            priority TEXT DEFAULT 'medium',
-            status TEXT DEFAULT 'open',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS promises (
-            id TEXT PRIMARY KEY,
-            text TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            captured_at TEXT NOT NULL,
-            resolved TEXT DEFAULT 0
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            turn_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            checks TEXT DEFAULT '{}',
-            timestamp TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    return conn
 
 
 # ── Build Runtime Context ─────────────────────────────────────────
@@ -155,38 +108,30 @@ def build_runtime_context(
         },
     }
 
-    # Load open tasks from continuity DB
+    # Tasks use the same canonical store as the Kanban UI and dispatcher.
     open_tasks: list[dict[str, str]] = []
     try:
-        conn = _ensure_db()
-        rows = conn.execute(
-            "SELECT id, title, status, priority FROM tasks "
-            "WHERE status != 'done' ORDER BY priority DESC, created_at ASC "
-            "LIMIT 10"
-        ).fetchall()
+        from api import kanban_store
+
+        kanban_store.init_db()
+        with kanban_store.connect_closing() as conn:
+            tasks = kanban_store.list_tasks(conn)
         open_tasks = [
-            {"id": r["id"], "title": r["title"],
-             "status": r["status"], "priority": r["priority"]}
-            for r in rows
-        ]
-        conn.close()
+            {
+                "id": task.id,
+                "title": task.title,
+                "status": task.status,
+                "priority": str(task.priority),
+            }
+            for task in tasks
+            if task.status not in {"done", "archived"}
+        ][:10]
     except Exception:
         pass  # DB not ready — empty tasks is fine
 
-    # Load unresolved promises
+    # Promise persistence remains empty until it has a canonical owner and
+    # mutation contract.
     open_promises: list[dict[str, str]] = []
-    try:
-        conn = _ensure_db()
-        rows = conn.execute(
-            "SELECT id, text FROM promises WHERE resolved = 0 "
-            "ORDER BY captured_at DESC LIMIT 5"
-        ).fetchall()
-        open_promises = [
-            {"id": r["id"], "text": r["text"]} for r in rows
-        ]
-        conn.close()
-    except Exception:
-        pass
 
     device_summary: dict[str, Any] = {}
     try:

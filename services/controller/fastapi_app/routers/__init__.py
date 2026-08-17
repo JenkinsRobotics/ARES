@@ -61,6 +61,7 @@ from .jaeger_onboarding import router as jaeger_onboarding_router
 from .organizer import router as organizer_router
 from .native_system import router as native_system_router
 from .companion import router as companion_router
+from .content_features import router as content_features_router
 from .hermes_compat import router as hermes_compat_router
 from .harness import router as harness_router
 from .inventory import router as inventory_router
@@ -132,6 +133,7 @@ CORE_ROUTER_REGISTRY = (
     RouterRegistration("organizer", organizer_router),
     RouterRegistration("native_system", native_system_router),
     RouterRegistration("companion", companion_router),
+    RouterRegistration("content_features", content_features_router),
     RouterRegistration("backends", backends_router),
     RouterRegistration("realtime", realtime_router),
     RouterRegistration("research", research_router),

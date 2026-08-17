@@ -44,12 +44,12 @@ FEATURE_REGISTRY = (
     FeatureSpec("deep_research", "Iterative sourced research.", "deep_research", "api.research:health_probe", True),
     FeatureSpec("model_compare", "Compare responses from multiple models.", "model_compare", "api.model_intelligence:inventory"),
     FeatureSpec("caldav", "CalDAV calendar synchronization.", "caldav", "api.caldav_service:get_config"),
-    FeatureSpec("image_gallery", "Generated image artifact gallery."),
-    FeatureSpec("image_editor", "Image editing workflow."),
-    FeatureSpec("visual_reports", "Generated visual reports."),
+    FeatureSpec("image_gallery", "Generated image artifact gallery.", "image_gallery", "api.workspace_artifacts:health_probe", True),
+    FeatureSpec("image_editor", "Image editing workflow.", "image_editor", "api.generated_artifacts:image_editor_health_probe", True),
+    FeatureSpec("visual_reports", "Generated visual reports.", "visual_reports", "api.workspace_artifacts:health_probe", True),
     FeatureSpec("teacher_escalation", "Escalate difficult turns to a stronger model.", "teacher_escalation", "api.model_intelligence:inventory"),
-    FeatureSpec("pdf_forms", "PDF extraction and form filling."),
-    FeatureSpec("youtube_ingest", "YouTube transcript ingestion."),
+    FeatureSpec("pdf_forms", "PDF extraction and form filling.", "pdf_forms", "api.ingestion:pdf_health_probe", True),
+    FeatureSpec("youtube_ingest", "YouTube transcript ingestion.", "youtube_ingest", "api.ingestion:youtube_health_probe", True),
     FeatureSpec("session_mutations", "Versioned session mutation contract.", "sessions"),
 )
 
@@ -73,7 +73,7 @@ _CONTRACT_CACHE: dict[str, Any] = {"at": 0.0, "value": None, "error": None}
 _CONTRACT_CACHE_SECONDS = 5.0
 
 
-def _ares_owned_feature_available(feature: str) -> bool:
+def _ares_owned_feature_health(feature: str) -> tuple[bool, str | None]:
     """Health-check ARES-owned halves of the negotiated integration.
 
     Jaeger advertises whether the combined product contract supports the
@@ -85,16 +85,15 @@ def _ares_owned_feature_available(feature: str) -> bool:
         None,
     )
     if spec is None or not spec.local_probe:
-        return False
+        return False, "ARES has no registered health probe for this feature"
     try:
         module_name, attribute_name = spec.local_probe.split(":", 1)
         probe = getattr(import_module(module_name), attribute_name)
         if spec.invoke_probe:
             probe()
-        return True
-    except Exception:  # noqa: BLE001 - optional owner probes fail closed
-        return False
-    return False
+        return True, None
+    except Exception as exc:  # noqa: BLE001 - optional owner probes fail closed
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 def reset_capability_contract_cache() -> None:
@@ -130,6 +129,7 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
             )
             for ui_name, runtime_name in _JAEGER_UI_FEATURES.items()
         }
+        local_reasons: dict[str, str] = {}
         for ui_name, runtime_name in _JAEGER_UI_FEATURES.items():
             feature = features.get(runtime_name)
             if (
@@ -137,7 +137,10 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
                 and isinstance(feature, dict)
                 and feature.get("owner") == "ares"
             ):
-                flags[ui_name] = _ares_owned_feature_available(runtime_name)
+                available, reason = _ares_owned_feature_health(runtime_name)
+                flags[ui_name] = available
+                if reason:
+                    local_reasons[ui_name] = reason
         session_feature = features.get("sessions") if isinstance(features, dict) else None
         session_contract = (
             session_feature.get("contract") if isinstance(session_feature, dict) else None
@@ -176,6 +179,18 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
                     "runtime_name": feature.runtime_name or feature.name,
                     "owner": ownership.get(feature.name, "none"),
                     "available": bool(flags.get(feature.name, False)),
+                    "status": "available" if flags.get(feature.name, False) else "unavailable",
+                    "reason": local_reasons.get(feature.name)
+                    or str(
+                        (
+                            features.get(feature.runtime_name or feature.name) or {}
+                        ).get("reason")
+                        or (
+                            features.get(feature.runtime_name or feature.name) or {}
+                        ).get("error")
+                        or error
+                        or ""
+                    ),
                 }
                 for feature in FEATURE_REGISTRY
             },
@@ -197,6 +212,8 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
                 "runtime_name": feature.runtime_name or feature.name,
                 "owner": "legacy" if feature.name in enabled else "none",
                 "available": feature.name in enabled,
+                "status": "available" if feature.name in enabled else "unavailable",
+                "reason": "" if feature.name in enabled else "Not advertised by this backend",
             }
             for feature in FEATURE_REGISTRY
         },

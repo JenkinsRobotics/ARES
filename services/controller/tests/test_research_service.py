@@ -43,3 +43,14 @@ def test_research_llm_uses_canonical_backend_router(tmp_path, monkeypatch):
 
     call = ResearchHandler()._make_llm_callable("session-1")
     assert asyncio.run(call("prompt", "system")) == "answer"
+
+
+def test_research_extraction_rejects_private_network_sources(monkeypatch):
+    from api.research.search_bridge import _public_http_url
+
+    monkeypatch.setattr(
+        "api.research.search_bridge.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(None, None, None, None, ("127.0.0.1", 80))],
+    )
+    with pytest.raises(ValueError, match="private or local"):
+        _public_http_url("http://example.test/internal")

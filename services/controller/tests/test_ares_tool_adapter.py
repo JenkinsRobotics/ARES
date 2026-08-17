@@ -153,12 +153,12 @@ class TestAresTools:
         from api.ares_tools import (
             ares_get_runtime_context,
             ares_create_task,
-            ares_self_audit,
+            ares_update_task,
         )
 
         assert callable(ares_get_runtime_context)
         assert callable(ares_create_task)
-        assert callable(ares_self_audit)
+        assert callable(ares_update_task)
 
     def test_get_runtime_context_returns_json(self):
         """ares_get_runtime_context returns valid JSON string."""
@@ -181,16 +181,6 @@ class TestAresTools:
         parsed = json.loads(result)
         assert parsed["status"] == "created"
         assert parsed["title"] == "Test task"
-
-    def test_self_audit_returns_result(self):
-        """ares_self_audit returns a structured audit result."""
-        from api.ares_tools import ares_self_audit
-
-        result = ares_self_audit(turn_id="test-turn-001")
-        parsed = json.loads(result)
-        assert "status" in parsed
-        assert "checks" in parsed
-
 
 # ── Integration: Runtime Context injection into streaming ─────────
 

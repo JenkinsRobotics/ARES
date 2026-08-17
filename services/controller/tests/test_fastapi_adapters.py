@@ -319,6 +319,9 @@ def test_realtime_service_honors_explicit_connection_without_overloading_provide
 
 
 def test_connection_model_and_mcp_routes_use_registry(tmp_path: Path, monkeypatch):
+    # This contract test intentionally exercises the injected local registry,
+    # independent of whichever runtime is selected in the developer's profile.
+    monkeypatch.setattr("api.runtime_mcp.selected_runtime_owns_mcp", lambda: False)
     recording = RecordingAdapter()
     unavailable = RecordingAdapter()
     unavailable.adapter_id = "offline"

@@ -116,7 +116,6 @@ async def list_providers(
     deepseek_key = "deepseek_api_key" in credential_names
     openrouter_key = "openrouter_api_key" in credential_names
     groq_key = "groq_api_key" in credential_names
-    mistral_key = "mistral_api_key" in credential_names
     hf_token = "hf_token" in credential_names
     ollama_cloud_key = "ollama_cloud_api_key" in credential_names
 
@@ -502,47 +501,6 @@ async def refresh_models(
 
 
 # ---------------------------------------------------------------------------
-# /api/personality/set — Set the active personality
-# ---------------------------------------------------------------------------
-
-@router.post("/personality/set")
-async def set_personality(
-    request: Request,
-    _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
-):
-    """Set the active personality (Hermes compatibility → ARES persona)."""
-    body = await request.json()
-    personality = body.get("personality", "")
-
-    try:
-        from api.config import save_settings
-        save_settings({"active_personality": personality})
-        return {"ok": True, "personality": personality}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-
-
-# ---------------------------------------------------------------------------
-# /api/notes/search — Search notes (compatibility shim)
-# ---------------------------------------------------------------------------
-
-@router.get("/notes/search")
-async def search_notes_compat(
-    _identity: Annotated[RequestIdentity, Depends(require_identity)],
-    q: str = "",
-):
-    """Search notes (Hermes compatibility → ARES notes)."""
-    if not q:
-        return {"results": []}
-    try:
-        from api.notes import search_notes
-        results = search_notes(q)
-        return {"results": results or []}
-    except Exception:
-        return {"results": []}
-
-
-# ---------------------------------------------------------------------------
 # /api/onboarding/probe — Onboarding probe
 # ---------------------------------------------------------------------------
 
@@ -568,24 +526,6 @@ async def onboarding_probe(
             "agent_name": "Jaeger AI",
             "backend": "jaeger_local",
         }
-
-
-# ---------------------------------------------------------------------------
-# /api/onboarding/complete — Complete onboarding
-# ---------------------------------------------------------------------------
-
-@router.post("/onboarding/complete")
-async def onboarding_complete(
-    request: Request,
-    _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
-):
-    """Mark onboarding as complete (Hermes compatibility)."""
-    try:
-        from api.onboarding import mark_onboarding_complete
-        mark_onboarding_complete()
-        return {"ok": True}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
@@ -641,23 +581,6 @@ async def get_goal_compat(
         return {"goals": get_session_goals(session_id) or []}
     except Exception:
         return {"goals": []}
-
-
-# ---------------------------------------------------------------------------
-# /api/wiki/browse — Browse wiki
-# ---------------------------------------------------------------------------
-
-@router.get("/wiki/browse")
-async def wiki_browse_compat(
-    _identity: Annotated[RequestIdentity, Depends(require_identity)],
-    path: str = "",
-):
-    """Browse wiki pages (Hermes compatibility)."""
-    try:
-        from api.wiki import browse_wiki
-        return browse_wiki(path) or {"pages": [], "path": path}
-    except Exception:
-        return {"pages": [], "path": path}
 
 
 __all__ = ["router"]

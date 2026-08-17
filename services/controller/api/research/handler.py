@@ -18,22 +18,25 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from api.research.deep_researcher import DeepResearcher
-from api.research.utils import is_low_quality
+from .deep_researcher import DeepResearcher
+from .utils import is_low_quality
 
 logger = logging.getLogger(__name__)
 
-# Default data directory for research results
-_DEFAULT_RESEARCH_DIR = Path.home() / ".ares" / "research"
 
+def _validate_research_id(value: str) -> str:
+    from api.models import is_safe_session_id
+
+    research_id = str(value or "").strip()
+    if len(research_id) > 256 or not is_safe_session_id(research_id):
+        raise ValueError("research session_id must contain only letters, numbers, '_' or '-'")
+    return research_id
 
 def _research_data_dir() -> Path:
-    """Get the ARES research data directory."""
-    try:
-        from api.config import HOME
-        return Path(HOME) / "research"
-    except Exception:
-        return _DEFAULT_RESEARCH_DIR
+    """Return the active profile's ARES-owned research directory."""
+    from api.profiles import get_active_ares_home
+
+    return Path(get_active_ares_home()) / "research"
 
 
 class ResearchHandler:
@@ -56,15 +59,22 @@ class ResearchHandler:
         async def llm_call(prompt: str, system: str = "", timeout: int = 120):
             try:
                 from api.backends.router import get_router
+                from api.backend_selector import get_active_backend
                 from api.config import get_config
-                router = get_router(get_config())
-                # Use the configured model for research
-                response = await router.chat(
-                    messages=[{"role": "system", "content": system}] if system else [] +
-                              [{"role": "user", "content": prompt}],
-                    stream=False,
+                backend_id = get_active_backend(get_config())
+                backend = get_router().select(backend_id)
+                if backend is None:
+                    raise RuntimeError(f"Runtime unavailable: {backend_id}")
+                message = f"{system}\n\n{prompt}" if system else prompt
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        backend.run_turn,
+                        message,
+                        f"research:{session_id or 'anonymous'}",
+                    ),
+                    timeout=timeout,
                 )
-                return response
+                return str((response or {}).get("text") or "")
             except Exception as e:
                 logger.error(f"ARES LLM call failed: {e}")
                 return None
@@ -76,7 +86,7 @@ class ResearchHandler:
             try:
                 # Use ARES's search integration
                 # This will be connected to the configured search backend
-                from api.research.search_bridge import web_search
+                from .search_bridge import web_search
                 return await web_search(query)
             except Exception as e:
                 logger.error(f"ARES search failed: {e}")
@@ -87,7 +97,7 @@ class ResearchHandler:
         """Create an async extract function using ARES web extraction."""
         async def extract(url: str, goal: str):
             try:
-                from api.research.search_bridge import web_extract
+                from .search_bridge import web_extract
                 return await web_extract(url, goal)
             except Exception as e:
                 logger.error(f"ARES extract failed for {url}: {e}")
@@ -106,6 +116,7 @@ class ResearchHandler:
         category: Optional[str] = None,
     ) -> dict:
         """Start research as a background task. Returns task info dict."""
+        session_id = _validate_research_id(session_id)
         # Cancel any existing research for this session
         if session_id in self._active_tasks:
             existing = self._active_tasks[session_id]
@@ -161,6 +172,7 @@ class ResearchHandler:
 
     def get_status(self, session_id: str) -> Optional[dict]:
         """Get current research status for a session."""
+        session_id = _validate_research_id(session_id)
         if session_id in self._active_tasks:
             entry = self._active_tasks[session_id]
             return {
@@ -186,6 +198,7 @@ class ResearchHandler:
 
     def cancel_research(self, session_id: str) -> bool:
         """Cancel running research for a session."""
+        session_id = _validate_research_id(session_id)
         if session_id not in self._active_tasks:
             return False
         entry = self._active_tasks[session_id]
@@ -202,6 +215,7 @@ class ResearchHandler:
 
     def get_result(self, session_id: str) -> Optional[str]:
         """Get the completed research result."""
+        session_id = _validate_research_id(session_id)
         if session_id in self._active_tasks:
             entry = self._active_tasks[session_id]
             if entry["status"] in ("done", "error", "cancelled"):
@@ -218,6 +232,7 @@ class ResearchHandler:
 
     def get_sources(self, session_id: str) -> Optional[List[dict]]:
         """Get deduplicated source list from research findings."""
+        session_id = _validate_research_id(session_id)
         if session_id in self._active_tasks:
             entry = self._active_tasks[session_id]
             if entry.get("sources"):
@@ -251,6 +266,7 @@ class ResearchHandler:
 
     def clear_result(self, session_id: str):
         """Remove persisted result after it's been consumed."""
+        session_id = _validate_research_id(session_id)
         self._active_tasks.pop(session_id, None)
         path = _research_data_dir() / f"{session_id}.json"
         if path.exists():
@@ -262,6 +278,7 @@ class ResearchHandler:
     def _save_result(self, session_id: str, entry: dict):
         """Persist completed research result to disk."""
         try:
+            session_id = _validate_research_id(session_id)
             sources = []
             researcher = entry.get("researcher")
             if researcher and researcher.findings:

@@ -15,7 +15,6 @@ License: AGPL-3.0
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -23,8 +22,7 @@ import time
 from datetime import datetime
 from typing import Callable, Dict, List, Optional, Set
 
-from api.research.utils import strip_thinking, is_low_quality
-from api.research.prompts import EXTRACTOR_SYSTEM
+from .utils import is_low_quality, strip_thinking
 
 logger = logging.getLogger(__name__)
 

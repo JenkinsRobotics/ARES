@@ -7,6 +7,8 @@ that do not expose a discovery contract.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from importlib import import_module
 import time
 from typing import Any
 
@@ -14,14 +16,45 @@ from api.backend_catalog import JAEGER_BACKEND_ID
 from api.backend_selector import VALID_BACKENDS, normalize_backend
 
 
-UI_CAPABILITIES = (
-    "chat", "approvals", "cloud_provider_model_settings", "mcp_server_config",
-    "tool_inventory", "messaging_gateway", "kanban", "delegate_task", "schedules",
-    "character_persona_editing", "voice_settings", "skills",
-    "cookbook_model_serving", "deep_research", "model_compare", "caldav",
-    "image_gallery", "image_editor", "visual_reports", "teacher_escalation",
-    "pdf_forms", "youtube_ingest", "session_mutations",
+@dataclass(frozen=True)
+class FeatureSpec:
+    """Stable UI name plus its negotiated runtime feature and local probe."""
+
+    name: str
+    description: str
+    runtime_name: str | None = None
+    local_probe: str | None = None
+    invoke_probe: bool = False
+
+
+FEATURE_REGISTRY = (
+    FeatureSpec("chat", "Conversation execution and streaming."),
+    FeatureSpec("approvals", "User approval requests for consequential actions."),
+    FeatureSpec("cloud_provider_model_settings", "Runtime provider and model settings.", "runtime_settings"),
+    FeatureSpec("mcp_server_config", "MCP server configuration."),
+    FeatureSpec("tool_inventory", "Tools advertised by the selected runtime."),
+    FeatureSpec("messaging_gateway", "Legacy external messaging gateway.", None),
+    FeatureSpec("kanban", "Persistent work board.", "kanban", "api.kanban_bridge:_kb", True),
+    FeatureSpec("delegate_task", "Task delegation.", "delegation", "api.delegation_runner:delegate"),
+    FeatureSpec("schedules", "Time-based task execution.", "schedules", "api.schedules_store:ensure_schedule_runtime", True),
+    FeatureSpec("character_persona_editing", "Assistant character and persona editing."),
+    FeatureSpec("voice_settings", "Voice input and output settings."),
+    FeatureSpec("skills", "Runtime skill discovery and management."),
+    FeatureSpec("cookbook_model_serving", "Local model recipes and serving.", "cookbook_model_serving", "api.backends.ollama_hatchery:get_hatchery_status"),
+    FeatureSpec("deep_research", "Iterative sourced research.", "deep_research", "api.research:health_probe", True),
+    FeatureSpec("model_compare", "Compare responses from multiple models.", "model_compare", "api.model_intelligence:inventory"),
+    FeatureSpec("caldav", "CalDAV calendar synchronization.", "caldav", "api.caldav_service:get_config"),
+    FeatureSpec("image_gallery", "Generated image artifact gallery."),
+    FeatureSpec("image_editor", "Image editing workflow."),
+    FeatureSpec("visual_reports", "Generated visual reports."),
+    FeatureSpec("teacher_escalation", "Escalate difficult turns to a stronger model.", "teacher_escalation", "api.model_intelligence:inventory"),
+    FeatureSpec("pdf_forms", "PDF extraction and form filling."),
+    FeatureSpec("youtube_ingest", "YouTube transcript ingestion."),
+    FeatureSpec("session_mutations", "Versioned session mutation contract.", "sessions"),
 )
+
+UI_CAPABILITIES = tuple(feature.name for feature in FEATURE_REGISTRY)
+FEATURES_BY_NAME = {feature.name: feature for feature in FEATURE_REGISTRY}
 
 _LEGACY_CAPABILITIES: dict[str, set[str]] = {
     "hermes_local": {
@@ -31,28 +64,9 @@ _LEGACY_CAPABILITIES: dict[str, set[str]] = {
 }
 
 _JAEGER_UI_FEATURES = {
-    "chat": "chat",
-    "approvals": "approvals",
-    "cloud_provider_model_settings": "runtime_settings",
-    "mcp_server_config": "mcp_server_config",
-    "tool_inventory": "tool_inventory",
-    "kanban": "kanban",
-    "delegate_task": "delegation",
-    "schedules": "schedules",
-    "character_persona_editing": "character_persona_editing",
-    "voice_settings": "voice_settings",
-    "skills": "skills",
-    "session_mutations": "sessions",
-    "cookbook_model_serving": "cookbook_model_serving",
-    "deep_research": "deep_research",
-    "model_compare": "model_compare",
-    "caldav": "caldav",
-    "image_gallery": "image_gallery",
-    "image_editor": "image_editor",
-    "visual_reports": "visual_reports",
-    "teacher_escalation": "teacher_escalation",
-    "pdf_forms": "pdf_forms",
-    "youtube_ingest": "youtube_ingest",
+    feature.name: feature.runtime_name or feature.name
+    for feature in FEATURE_REGISTRY
+    if feature.name != "messaging_gateway"
 }
 
 _CONTRACT_CACHE: dict[str, Any] = {"at": 0.0, "value": None, "error": None}
@@ -66,33 +80,18 @@ def _ares_owned_feature_available(feature: str) -> bool:
     feature. ARES still has to prove its local owner can load before exposing
     the UI; a contract claim alone must never turn a broken route into a tab.
     """
+    spec = next(
+        (item for item in FEATURE_REGISTRY if (item.runtime_name or item.name) == feature),
+        None,
+    )
+    if spec is None or not spec.local_probe:
+        return False
     try:
-        if feature == "kanban":
-            from api.kanban_bridge import _kb
-
-            _kb()
-            return True
-        if feature == "delegation":
-            from api.delegation_runner import delegate  # noqa: F401
-
-            return True
-        if feature == "schedules":
-            from api.schedules_store import ensure_schedule_runtime
-
-            ensure_schedule_runtime()
-            return True
-        if feature == "caldav":
-            from api.caldav_service import get_config  # noqa: F401
-
-            return True
-        if feature in {"model_compare", "teacher_escalation"}:
-            from api.model_intelligence import inventory  # noqa: F401
-
-            return True
-        if feature == "cookbook_model_serving":
-            from api.backends.ollama_hatchery import get_hatchery_status  # noqa: F401
-
-            return True
+        module_name, attribute_name = spec.local_probe.split(":", 1)
+        probe = getattr(import_module(module_name), attribute_name)
+        if spec.invoke_probe:
+            probe()
+        return True
     except Exception:  # noqa: BLE001 - optional owner probes fail closed
         return False
     return False
@@ -171,6 +170,15 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
             "runtime_contract": contract,
             "domains": contract.get("domains", {}) if isinstance(contract, dict) else {},
             "ownership": ownership,
+            "features": {
+                feature.name: {
+                    "description": feature.description,
+                    "runtime_name": feature.runtime_name or feature.name,
+                    "owner": ownership.get(feature.name, "none"),
+                    "available": bool(flags.get(feature.name, False)),
+                }
+                for feature in FEATURE_REGISTRY
+            },
             "capabilities": {name: bool(flags.get(name, False)) for name in UI_CAPABILITIES},
         }
 
@@ -183,6 +191,15 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
         "runtime_contract": None,
         "domains": {},
         "ownership": {},
+        "features": {
+            feature.name: {
+                "description": feature.description,
+                "runtime_name": feature.runtime_name or feature.name,
+                "owner": "legacy" if feature.name in enabled else "none",
+                "available": feature.name in enabled,
+            }
+            for feature in FEATURE_REGISTRY
+        },
         "capabilities": {name: name in enabled for name in UI_CAPABILITIES},
     }
 

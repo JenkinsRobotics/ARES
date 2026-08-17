@@ -44,7 +44,7 @@ def test_bridge_client_validates_integration_contract(monkeypatch):
     client = JrosClient(command=["jaeger", "bridge"])
     monkeypatch.setattr(client, "query", lambda _what: {
         "contract": "ares-jaeger",
-        "contract_version": 2,
+        "contract_version": 3,
         "protocol_version": "1",
         "features": {"chat": {"available": True}},
     })

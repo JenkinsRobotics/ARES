@@ -154,7 +154,7 @@
 <div class="layout">
   <nav class="rail" aria-label="Primary navigation">
     <button class="rail-btn nav-tab active has-tooltip" data-panel="chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat" aria-label="Chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="kanban" data-requires-capability="kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban" aria-label="Kanban"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="skills" data-requires-capability="skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills" aria-label="Skills"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory" aria-label="Memory"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
@@ -173,7 +173,7 @@
     </button>
     <div class="sidebar-nav">
       <button class="nav-tab active has-tooltip has-tooltip--bottom" data-panel="chat" data-label="Chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="kanban" data-requires-capability="kanban" data-label="Kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="skills" data-requires-capability="skills" data-label="Skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="memory" data-label="Memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
@@ -371,13 +371,9 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
             <span data-i18n="settings_tab_preferences">Preferences</span>
           </button>
-          <button type="button" class="side-menu-item" data-settings-section="providers" onclick="switchSettingsSection('providers',{fromSidebarItem:true})">
+          <button type="button" class="side-menu-item" data-settings-section="providers" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings" onclick="switchSettingsSection('providers',{fromSidebarItem:true})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
             <span data-i18n="providers_tab_title">Providers</span>
-          </button>
-          <button type="button" class="side-menu-item" data-settings-section="plugins" onclick="switchSettingsSection('plugins',{fromSidebarItem:true})">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.3 2.1 7L12 16.2 5.4 20.3l2.1-7L2 9h7z"/></svg>
-            <span data-i18n="settings_tab_plugins">Plugins</span>
           </button>
           <button type="button" class="side-menu-item" data-settings-section="extensions" onclick="switchSettingsSection('extensions',{fromSidebarItem:true})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M7 8h10v4a5 5 0 0 1-10 0V8z"/><path d="M12 17v5"/></svg>
@@ -428,6 +424,13 @@
         <button class="update-btn update-primary" id="btnStaleClientRefresh" type="button" onclick="hardRefreshWebUIClient()" data-i18n="update_hard_refresh_now">Hard refresh now</button>
       </div>
     </div>
+    <div class="runtime-capability-banner" id="runtimeCapabilityBanner" role="status" aria-live="polite" hidden>
+      <div>
+        <strong id="runtimeCapabilityTitle">Selected runtime unavailable</strong>
+        <span id="runtimeCapabilityDetail">Runtime-owned features are unavailable until capability negotiation succeeds.</span>
+      </div>
+      <button type="button" onclick="refreshAresCapabilities()">Retry</button>
+    </div>
     <div id="mainChat" class="main-view">
     <div class="messages-shell">
       <button id="jumpToSessionStartBtn" class="session-jump-btn session-jump-btn--start" aria-label="Jump to beginning of session" data-i18n-aria-label="session_jump_start_label" data-i18n-title="session_jump_start_label" onclick="jumpToSessionStart()" style="display:none"><span aria-hidden="true">↑</span><span data-i18n="session_jump_start">Start</span></button>
@@ -468,7 +471,7 @@
       <div class="offline-copy">
         <strong id="offlineTitle" data-i18n="offline_title">Connection lost</strong>
         <span id="offlineDetails" data-i18n="offline_browser_detail">Your browser reports that this device is offline.</span>
-        <span id="offlineAutorefresh" data-i18n="offline_autorefresh">I will refresh this page automatically when Hermes is reachable again.</span>
+        <span id="offlineAutorefresh" data-i18n="offline_autorefresh">I will refresh this page automatically when ARES is reachable again.</span>
       </div>
       <button class="offline-action" id="offlineCheckNow" type="button" onclick="checkOfflineRecoveryNow()" data-i18n="offline_check_now">Check now</button>
     </div>
@@ -594,7 +597,7 @@
           <span class="voice-mode-indicator" id="voiceModeIndicator"></span>
           <span class="voice-mode-label" id="voiceModeLabel"></span>
         </div>
-        <textarea id="msg" rows="1" placeholder="Message Hermes…"></textarea>
+        <textarea id="msg" rows="1" placeholder="Message ARES…"></textarea>
         <div id="composerWorkspaceContext" class="sr-only"></div>
         <div class="composer-footer">
           <div class="composer-left">
@@ -1164,10 +1167,10 @@
             <div class="settings-section-head">
               <div>
                 <div class="settings-section-title" data-i18n="settings_section_preferences_title">Preferences</div>
-                <div class="settings-section-meta" data-i18n="settings_section_preferences_meta">Defaults and UI behavior for Hermes Web UI.</div>
+                <div class="settings-section-meta" data-i18n="settings_section_preferences_meta">Defaults and UI behavior for ARES.</div>
               </div>
             </div>
-            <div class="settings-field">
+            <div class="settings-field" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings">
               <label for="settingsModelChip" data-i18n="settings_label_model">Default Model</label>
               <div class="model-advanced-row">
                 <button type="button" id="settingsModelChip" class="settings-model-chip" aria-haspopup="listbox" aria-expanded="false">Default Model</button>
@@ -1177,7 +1180,7 @@
               </div>
               <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_model">Used for new conversations. Existing conversations keep their selected model.</div>
             </div>
-            <div class="settings-field">
+            <div class="settings-field" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings">
               <label data-i18n="settings_label_auxiliary_models">Auxiliary Models</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:10px" data-i18n="settings_desc_auxiliary_models">Side-task routing for vision, compression, title generation, etc. "Auto" uses your main chat model.</div>
               <div id="auxModelsContainer"></div>
@@ -1252,7 +1255,7 @@
                 <input type="checkbox" id="settingsVoiceModeEnabled" style="width:15px;height:15px;accent-color:var(--accent)">
                 <span data-i18n="settings_label_voice_mode">Hands-free voice mode button</span>
               </label>
-              <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_voice_mode">Show the voice-mode button (audio waveform) next to the dictation mic. Lets you speak naturally — Hermes auto-sends after a pause and reads replies aloud. Requires a browser that supports both speech recognition and TTS.</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_voice_mode">Show the voice-mode button (audio waveform) next to the dictation mic. ARES auto-sends after a pause and reads replies aloud. Requires a browser that supports both speech recognition and TTS.</div>
             </div>
             <div class="settings-field">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -1299,7 +1302,7 @@
                 <span id="notificationPermissionButtonWrap" style="display:inline-flex">
                   <button type="button" class="sm-btn" id="notificationPermissionButton" onclick="requestNotificationPermission()" style="padding:5px 10px;font-size:12px" data-i18n="notifications_enable_btn">Enable notifications</button>
                 </span>
-                <button type="button" class="sm-btn" onclick="sendBrowserNotification('Hermes test','Notifications are ready.',{force:true});" style="padding:5px 10px;font-size:12px" data-i18n="notifications_test_btn">Send test</button>
+                <button type="button" class="sm-btn" onclick="sendBrowserNotification('ARES test','Notifications are ready.',{force:true});" style="padding:5px 10px;font-size:12px" data-i18n="notifications_test_btn">Send test</button>
                 <span id="notificationPermissionStatus" style="font-size:11px;color:var(--muted)"></span>
               </div>
             </div>
@@ -1440,13 +1443,6 @@
             </div>
             <div class="settings-field">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" id="settingsSyncInsights" style="width:15px;height:15px;accent-color:var(--accent)">
-                <span data-i18n="settings_label_sync_insights">Sync usage to /insights</span>
-              </label>
-              <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_sync_insights">Mirrors WebUI token usage to state.db so <code>hermes /insights</code> includes browser session data. Off by default.</div>
-            </div>
-            <div class="settings-field">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" id="settingsCheckUpdates" style="width:15px;height:15px;accent-color:var(--accent)">
                 <span data-i18n="settings_label_check_updates">Check for updates</span>
               </label>
@@ -1477,12 +1473,12 @@
             <div class="settings-field">
               <label for="settingsBotName" data-i18n="settings_label_bot_name">Default assistant name</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:6px" data-i18n="settings_desc_bot_name">Used for the default profile only. Other profiles use their own profile names.</div>
-              <input type="text" id="settingsBotName" placeholder="Hermes" maxlength="64" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px;font-size:13px">
+              <input type="text" id="settingsBotName" placeholder="ARES" maxlength="64" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px;font-size:13px">
             </div>
             <button class="sm-btn" onclick="saveSettings()" style="margin-top:12px;width:100%;padding:8px;font-weight:600" data-i18n="settings_save_btn">Save Settings</button>
             <div id="settingsPreferencesAutosaveStatus" class="settings-autosave-status" aria-live="polite"></div>
           </div>
-          <div class="settings-pane" id="settingsPaneProviders">
+          <div class="settings-pane" id="settingsPaneProviders" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings">
             <div class="settings-section-head">
               <div>
                 <div class="settings-section-title" data-i18n="providers_section_title">Providers</div>
@@ -1494,20 +1490,6 @@
             </div>
             <div id="providersEmpty" style="display:none;text-align:center;padding:32px 0;color:var(--muted);font-size:13px" data-i18n="providers_empty">
               No configurable providers found.
-            </div>
-          </div>
-          <div class="settings-pane" id="settingsPanePlugins">
-            <div class="settings-section-head">
-              <div>
-                <div class="settings-section-title" data-i18n="settings_plugins_title">Plugins</div>
-                <div class="settings-section-meta" data-i18n="settings_plugins_meta">View installed Hermes plugins and the lifecycle hooks they register. This panel is read-only.</div>
-              </div>
-            </div>
-            <div id="pluginsList" style="display:flex;flex-direction:column;margin-top:4px">
-              <!-- Populated dynamically by loadPluginsPanel() -->
-            </div>
-            <div id="pluginsEmpty" style="display:none;text-align:center;padding:32px 0;color:var(--muted);font-size:13px" data-i18n="settings_plugins_empty">
-              No Hermes plugins are currently visible. Install or enable plugins from the Hermes CLI/config to see them here.
             </div>
           </div>
           <div class="settings-pane" id="settingsPaneExtensions">
@@ -1629,14 +1611,14 @@
               <div id="gatewayStatusCard"><span style="color:var(--muted);font-size:12px">Loading…</span></div>
             </div>
             <!-- MCP Servers Section -->
-            <div class="settings-field" data-requires-capability="mcp_server_config" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="settings-field" data-capability-domain="extensibility" data-requires-capability="mcp_server_config" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
               <label data-i18n="mcp_servers_title">MCP Servers</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="mcp_servers_desc">View Model Context Protocol servers configured in config.yaml.</div>
               <div id="mcpServerList"></div>
-              <div class="mcp-restart-hint" data-i18n="mcp_restart_hint">Server changes are read-only here for now. Edit config.yaml and restart the selected runtime for changes to take effect.</div>
+              <div class="mcp-restart-hint" data-i18n="mcp_restart_hint">Server changes are sent to Jaeger through its validated MCP commands.</div>
             </div>
             <!-- MCP Tools Section -->
-            <div class="settings-field" data-requires-capability="mcp_server_config" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="settings-field" data-capability-domain="extensibility" data-requires-capability="tool_inventory" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
               <label data-i18n="mcp_tools_title">MCP Tools</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="mcp_tools_desc">Search known tools across active MCP servers.</div>
               <input type="search" id="mcpToolSearch" class="mcp-tool-search" data-i18n-placeholder="mcp_tools_search_placeholder" placeholder="Search tools by name, server, or description…" oninput="filterMcpTools()" autocomplete="off">
@@ -1744,8 +1726,8 @@
     <div class="onboarding-shell">
       <div class="onboarding-sidebar">
         <div class="onboarding-badge" data-i18n="onboarding_badge">FIRST RUN</div>
-        <h2 id="onboardingTitle" data-i18n="onboarding_title">Welcome to Hermes Web UI</h2>
-        <p id="onboardingLead" data-i18n="onboarding_lead">A quick guided setup will check your Hermes install, choose a workspace and model, and optionally protect the app with a password.</p>
+        <h2 id="onboardingTitle" data-i18n="onboarding_title">Welcome to ARES</h2>
+        <p id="onboardingLead" data-i18n="onboarding_lead">A quick guided setup will check your Jaeger runtime, choose a workspace and model, and optionally protect the app with a password.</p>
         <div class="onboarding-steps" id="onboardingSteps"></div>
       </div>
       <div class="onboarding-main">

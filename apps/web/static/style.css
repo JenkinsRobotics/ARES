@@ -4955,6 +4955,12 @@ main.main > #mainPlugin{display:none;}
 /* Runtime-owned surfaces fail closed until capability negotiation completes. */
 html:not([data-ares-capabilities-ready]) [data-requires-capability],
 [data-requires-capability][data-capability-available="false"] { display:none !important; }
+.runtime-capability-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 16px;background:rgba(224,155,48,.12);border-bottom:1px solid rgba(224,155,48,.35);color:var(--text);font-size:12px;line-height:1.4;}
+.runtime-capability-banner[hidden]{display:none!important;}
+.runtime-capability-banner>div{display:flex;flex-direction:column;gap:2px;}
+.runtime-capability-banner strong{color:#e8a030;}
+.runtime-capability-banner span{color:var(--muted);}
+.runtime-capability-banner button{border:1px solid rgba(224,155,48,.4);border-radius:6px;background:transparent;color:var(--text);padding:5px 10px;cursor:pointer;}
 #mainPlugin .main-view-body{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #pluginPageContainer{flex:1;display:flex;flex-direction:column;min-height:0;}
 #mainSettings{overflow-y:auto;}

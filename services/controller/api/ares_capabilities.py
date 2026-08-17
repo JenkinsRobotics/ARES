@@ -15,8 +15,9 @@ from api.backend_selector import VALID_BACKENDS, normalize_backend
 
 
 UI_CAPABILITIES = (
-    "cloud_provider_model_settings", "mcp_server_config", "messaging_gateway",
-    "kanban", "delegate_task", "character_persona_editing", "voice_settings", "skills",
+    "chat", "approvals", "cloud_provider_model_settings", "mcp_server_config",
+    "tool_inventory", "messaging_gateway", "kanban", "delegate_task", "schedules",
+    "character_persona_editing", "voice_settings", "skills",
     "cookbook_model_serving", "deep_research", "model_compare", "caldav",
     "image_gallery", "image_editor", "visual_reports", "teacher_escalation",
     "pdf_forms", "youtube_ingest", "session_mutations",
@@ -30,16 +31,59 @@ _LEGACY_CAPABILITIES: dict[str, set[str]] = {
 }
 
 _JAEGER_UI_FEATURES = {
+    "chat": "chat",
+    "approvals": "approvals",
     "cloud_provider_model_settings": "runtime_settings",
     "mcp_server_config": "mcp_server_config",
+    "tool_inventory": "tool_inventory",
+    "kanban": "kanban",
+    "delegate_task": "delegation",
+    "schedules": "schedules",
     "character_persona_editing": "character_persona_editing",
     "voice_settings": "voice_settings",
     "skills": "skills",
     "session_mutations": "sessions",
+    "cookbook_model_serving": "cookbook_model_serving",
+    "deep_research": "deep_research",
+    "model_compare": "model_compare",
+    "caldav": "caldav",
+    "image_gallery": "image_gallery",
+    "image_editor": "image_editor",
+    "visual_reports": "visual_reports",
+    "teacher_escalation": "teacher_escalation",
+    "pdf_forms": "pdf_forms",
+    "youtube_ingest": "youtube_ingest",
 }
 
 _CONTRACT_CACHE: dict[str, Any] = {"at": 0.0, "value": None, "error": None}
 _CONTRACT_CACHE_SECONDS = 5.0
+
+
+def _ares_owned_feature_available(feature: str) -> bool:
+    """Health-check ARES-owned halves of the negotiated integration.
+
+    Jaeger advertises whether the combined product contract supports the
+    feature. ARES still has to prove its local owner can load before exposing
+    the UI; a contract claim alone must never turn a broken route into a tab.
+    """
+    try:
+        if feature == "kanban":
+            from api.kanban_bridge import _kb
+
+            _kb()
+            return True
+        if feature == "delegation":
+            from api.delegation_runner import delegate  # noqa: F401
+
+            return True
+        if feature == "schedules":
+            from api.schedules_store import ensure_schedule_runtime
+
+            ensure_schedule_runtime()
+            return True
+    except Exception:  # noqa: BLE001 - optional owner probes fail closed
+        return False
+    return False
 
 
 def reset_capability_contract_cache() -> None:
@@ -75,6 +119,14 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
             )
             for ui_name, runtime_name in _JAEGER_UI_FEATURES.items()
         }
+        for ui_name, runtime_name in _JAEGER_UI_FEATURES.items():
+            feature = features.get(runtime_name)
+            if (
+                flags.get(ui_name) is True
+                and isinstance(feature, dict)
+                and feature.get("owner") == "ares"
+            ):
+                flags[ui_name] = _ares_owned_feature_available(runtime_name)
         session_feature = features.get("sessions") if isinstance(features, dict) else None
         session_contract = (
             session_feature.get("contract") if isinstance(session_feature, dict) else None
@@ -90,18 +142,23 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
                 for name in ("create", "rename", "clear", "delete", "archive")
             )
         )
+        # The messaging gateway is a legacy Hermes transport and is not part
+        # of the ARES-Jaeger contract. It remains unavailable unless a future
+        # versioned contract gives it an explicit owner.
         flags["messaging_gateway"] = False
-        # ARES's controller MCP server currently exposes project/session tools,
-        # not Kanban or delegation. Those tabs remain unavailable until Jaeger
-        # explicitly advertises corresponding runtime features.
-        flags["kanban"] = False
-        flags["delegate_task"] = False
+        ownership = {
+            ui_name: str((features.get(runtime_name) or {}).get("owner") or "none")
+            for ui_name, runtime_name in _JAEGER_UI_FEATURES.items()
+            if isinstance(features.get(runtime_name), dict)
+        }
         return {
             "backend": selected,
             "source": "runtime" if contract else "unavailable",
             "negotiated": contract is not None,
             "error": error,
             "runtime_contract": contract,
+            "domains": contract.get("domains", {}) if isinstance(contract, dict) else {},
+            "ownership": ownership,
             "capabilities": {name: bool(flags.get(name, False)) for name in UI_CAPABILITIES},
         }
 
@@ -112,6 +169,8 @@ def capability_contract_for_backend(backend: str) -> dict[str, Any]:
         "negotiated": False,
         "error": None,
         "runtime_contract": None,
+        "domains": {},
+        "ownership": {},
         "capabilities": {name: name in enabled for name in UI_CAPABILITIES},
     }
 

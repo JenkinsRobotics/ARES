@@ -364,23 +364,52 @@ function _syncMobileSidebarPanelFromMainView(){
   return panel;
 }
 
-const ARES_PANEL_CAPABILITIES={kanban:'kanban',skills:'skills'};
+const ARES_PANEL_CAPABILITIES={tasks:'schedules',kanban:'kanban',skills:'skills'};
 let _aresCapabilityFlags=null;
 let _aresCapabilityRequest=null;
+let _aresCapabilityPayload=null;
 
-function _applyAresCapabilityFlags(flags){
+function _renderRuntimeCapabilityState(payload){
+  const banner=$('runtimeCapabilityBanner');
+  if(!banner)return;
+  const current=String((payload&&payload.current)||'selected runtime');
+  const health=payload&&payload.status&&payload.status[current];
+  const negotiated=payload&&payload.capability_negotiated===true;
+  const unavailable=!negotiated||health===false;
+  banner.hidden=!unavailable;
+  if(!unavailable)return;
+  const title=$('runtimeCapabilityTitle');
+  const detail=$('runtimeCapabilityDetail');
+  if(title)title.textContent=`${current} is unavailable`;
+  if(detail){
+    const error=String((payload&&payload.capability_error)||'').trim();
+    detail.textContent=error||'Runtime-owned features are unavailable until capability negotiation succeeds.';
+  }
+}
+
+function _applyAresCapabilityFlags(flags,payload){
   _aresCapabilityFlags=(flags&&typeof flags==='object')?flags:{};
+  _aresCapabilityPayload=payload&&typeof payload==='object'?payload:null;
+  const ownership=(_aresCapabilityPayload&&_aresCapabilityPayload.capability_ownership)||{};
   document.querySelectorAll('[data-requires-capability]').forEach(el=>{
     const capability=String(el.dataset.requiresCapability||'').trim();
     const available=_aresCapabilityFlags[capability]===true;
     el.dataset.capabilityAvailable=available?'true':'false';
+    el.dataset.capabilityOwner=String(ownership[capability]||'none');
     el.hidden=!available;
     el.setAttribute('aria-hidden',available?'false':'true');
   });
   document.documentElement.dataset.aresCapabilitiesReady='true';
+  document.documentElement.dataset.aresRuntimeState=(
+    _aresCapabilityPayload&&_aresCapabilityPayload.capability_negotiated===true
+  )?'negotiated':'unavailable';
+  _renderRuntimeCapabilityState(_aresCapabilityPayload);
   const required=ARES_PANEL_CAPABILITIES[_currentPanel];
   if(required&&_aresCapabilityFlags[required]!==true){
     switchPanel('chat',{bypassCapabilityGuard:true});
+  }
+  if(_currentPanel==='settings'&&_settingsSection==='providers'&&_aresCapabilityFlags.cloud_provider_model_settings!==true){
+    switchSettingsSection('conversation');
   }
   return _aresCapabilityFlags;
 }
@@ -393,10 +422,13 @@ async function refreshAresCapabilities(){
       const response=await fetch(new URL(`api/ares/backend${sid}`,document.baseURI||location.href).href,{credentials:'include',cache:'no-store'});
       if(!response.ok)throw new Error(`HTTP ${response.status}`);
       const payload=await response.json();
-      return _applyAresCapabilityFlags(payload&&payload.capabilities);
+      return _applyAresCapabilityFlags(payload&&payload.capabilities,payload);
     }catch(error){
       console.warn('ARES capability negotiation failed; gated UI remains unavailable',error);
-      return _applyAresCapabilityFlags({});
+      return _applyAresCapabilityFlags({}, {
+        capability_negotiated:false,
+        capability_error:error&&error.message?error.message:String(error),
+      });
     }finally{
       _aresCapabilityRequest=null;
     }
@@ -8137,25 +8169,16 @@ function switchSettingsSection(name,opts){
     _settingsSection = name;
     return;
   }
-  let section=(name==='appearance'||name==='preferences'||name==='providers'||name==='plugins'||name==='extensions'||name==='system'||name==='help')?name:'conversation';
-  // Deep-linking to the Plugins pane when the tab is hidden (no plugins
-  // installed, #3457) falls back to Conversation. Resolve this BEFORE toggling
-  // panes/sidebar/dropdown below so every downstream selection uses the
-  // corrected section — otherwise the plugins pane would still render active
-  // but empty. (#3457)
-  if(section==='plugins'){
-    const pluginsTabBtn=document.querySelector('[data-settings-section="plugins"]');
-    if(pluginsTabBtn && pluginsTabBtn.style.display==='none') section='conversation';
-  }
+  let section=(name==='appearance'||name==='preferences'||name==='providers'||name==='extensions'||name==='system'||name==='help')?name:'conversation';
   _settingsSection=section;
   _currentSettingsSection=section;
-  const map={conversation:'Conversation',appearance:'Appearance',preferences:'Preferences',providers:'Providers',plugins:'Plugins',extensions:'Extensions',system:'System',help:'Help'};
+  const map={conversation:'Conversation',appearance:'Appearance',preferences:'Preferences',providers:'Providers',extensions:'Extensions',system:'System',help:'Help'};
   // Sidebar menu items
   document.querySelectorAll('#settingsMenu .side-menu-item').forEach(it=>{
     it.classList.toggle('active', it.dataset.settingsSection===section);
   });
   // Panes in main
-  ['conversation','appearance','preferences','providers','plugins','extensions','system','help'].forEach(key=>{
+  ['conversation','appearance','preferences','providers','extensions','system','help'].forEach(key=>{
     const pane=$('settingsPane'+map[key]);
     if(pane) pane.classList.toggle('active', key===section);
   });
@@ -8167,7 +8190,6 @@ function switchSettingsSection(name,opts){
   // fresh fetch, which would detach the field it is about to scroll to.
   if(!(opts&&opts.skipLazyLoad)){
     if(section==='providers') loadProvidersPanel();
-    if(section==='plugins') loadPluginsPanel();
     if(section==='extensions') loadExtensionsPanel();
   }
   if(opts&&opts.fromSidebarItem)_closeMobileSidebarAfterPanelSelection();
@@ -8221,7 +8243,7 @@ async function _buildSettingsIndex() {
   if (_settingsIndexPromise) return _settingsIndexPromise;
   const promise = (async () => {
     // Ensure lazy-loaded panes are populated before reading the DOM
-    await Promise.all([loadProvidersPanel(), loadPluginsPanel(), loadExtensionsPanel()]);
+    await Promise.all([loadProvidersPanel(), loadExtensionsPanel()]);
     const index = [];
     const add = (entry) => {
       index.push({ ...entry, _settingsSearchIndex: index.length });
@@ -9819,7 +9841,6 @@ async function loadSettingsPanel(){
     _syncHermesPanelSessionActions();
     if(typeof loadDashboardSettings==='function') loadDashboardSettings();
     loadProvidersPanel(); // load provider cards in background
-    loadPluginsPanel(); // load plugin/hook visibility in background
     loadExtensionsPanel(); // load extension diagnostics in background
     switchSettingsSection(_settingsSection);
   }catch(e){
@@ -10787,7 +10808,10 @@ async function loadPluginsPanel(){
   const empty=$('pluginsEmpty');
   if(!list) return;
   try{
-    const data=await api('/api/plugins');
+    // Hermes lifecycle plugins are not part of the ARES-Jaeger contract.
+    // Keep this legacy helper inert for older extension bundles that may still
+    // reference it; no current ARES surface calls or advertises it.
+    const data={plugins:[],empty:true};
     const plugins=Array.isArray((data||{}).plugins)?data.plugins:[];
     // Hide the Plugins tab when no plugins are installed (#3457)
     const tabBtn=document.querySelector('[data-settings-section="plugins"]');

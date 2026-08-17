@@ -254,6 +254,7 @@ def backend(
             "capability_error": capability_contract["error"],
             "capability_domains": capability_contract["domains"],
             "capability_ownership": capability_contract["ownership"],
+            "capability_features": capability_contract["features"],
             "runtime_contract_version": (
                 (capability_contract.get("runtime_contract") or {}).get("contract_version")
             ),

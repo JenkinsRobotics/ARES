@@ -19,16 +19,34 @@ def test_overlapping_runtime_surfaces_declare_capability_requirements():
     assert "openCalDav" in index
 
 
-def test_capability_gate_fails_closed_and_guards_programmatic_navigation():
+def test_capability_status_stays_visible_unless_user_enables_hide_setting():
+    index = (ROOT / "apps/web/static/index.html").read_text(encoding="utf-8")
     panels = (ROOT / "apps/web/static/panels.js").read_text(encoding="utf-8")
     styles = (ROOT / "apps/web/static/style.css").read_text(encoding="utf-8")
     assert "content:['deep_research','youtube_ingest','pdf_forms','image_gallery','image_editor','visual_reports']" in panels
     assert "requiredCapabilities.some(capability=>capabilities[capability]===true)" in panels
-    assert "gated UI remains unavailable" in panels
+    assert "window._hideUnavailableFeatures===true&&requiredCapabilities.length" in panels
+    assert "settingsHideUnavailableFeatures" in index
+    assert '"hide_unavailable_features": False' in (ROOT / "services/controller/api/config.py").read_text(encoding="utf-8")
+    assert "runtime features marked unavailable" in panels
     assert "capability_negotiated===true" in panels
     assert "runtimeCapabilityBanner" in panels
-    assert "html:not([data-ares-capabilities-ready]) [data-requires-capability]" in styles
-    assert "[data-requires-any-capability][data-capability-available=\"false\"]" in styles
+    assert "html:not([data-ares-capabilities-ready]) [data-requires-capability]" not in styles
+    assert ".capability-unavailable" in styles
+
+
+def test_hide_unavailable_features_preference_defaults_visible_and_round_trips(
+    monkeypatch, tmp_path
+):
+    import api.config as config
+
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(config, "SETTINGS_FILE", settings_path)
+    assert config.load_settings()["hide_unavailable_features"] is False
+    assert config.save_settings({"hide_unavailable_features": True})[
+        "hide_unavailable_features"
+    ] is True
+    assert config.load_settings()["hide_unavailable_features"] is True
 
 
 def test_unimplemented_prototypes_are_not_advertised_or_loaded():

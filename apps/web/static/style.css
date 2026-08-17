@@ -4957,10 +4957,9 @@ main.main.showing-plugin > #mainPlugin{display:flex;}
 main.main > #mainPlugin{display:none;}
 
 /* Runtime-owned surfaces fail closed until capability negotiation completes. */
-html:not([data-ares-capabilities-ready]) [data-requires-capability],
-html:not([data-ares-capabilities-ready]) [data-requires-any-capability],
-[data-requires-capability][data-capability-available="false"],
-[data-requires-any-capability][data-capability-available="false"] { display:none !important; }
+button.capability-unavailable,.side-menu-item.capability-unavailable{opacity:.58;filter:saturate(.55);}
+.settings-section.capability-unavailable{border-left:3px solid rgba(224,155,48,.55);padding-left:12px;}
+.settings-section.capability-unavailable::before{content:"Currently unavailable";display:block;color:#e8a030;font-size:11px;font-weight:600;margin-bottom:8px;}
 .runtime-capability-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 16px;background:rgba(224,155,48,.12);border-bottom:1px solid rgba(224,155,48,.35);color:var(--text);font-size:12px;line-height:1.4;}
 .runtime-capability-banner[hidden]{display:none!important;}
 .runtime-capability-banner>div{display:flex;flex-direction:column;gap:2px;}

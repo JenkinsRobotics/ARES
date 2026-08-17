@@ -9,14 +9,12 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 export ARES_WEBUI_PORT="${ARES_WEBUI_PORT:-8788}"
 export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-0.0.0.0}"
 
-# Separate state dir — ARES has its own sessions, settings, and database
-export ARES_WEBUI_STATE_DIR="${ARES_WEBUI_STATE_DIR:-$DIR/.ares_state}"
+# ARES product state is durable and independent of the source checkout.
+export ARES_HOME="${ARES_HOME:-$HOME/.ares}"
+export ARES_WEBUI_STATE_DIR="${ARES_WEBUI_STATE_DIR:-$ARES_HOME/webui}"
 
 # PID file for single-instance enforcement
 _PID_FILE="${ARES_WEBUI_STATE_DIR}/webui-${ARES_WEBUI_PORT}.pid"
-
-# Point at the same Ares Agent install (the brain)
-export ARES_HOME="${ARES_HOME:-$HOME/.ares}"
 
 # Point ARES at the standard local JROS/Jaeger install when present.
 if [ -z "${ARES_JAEGER_HOME:-}" ] && [ -x "$HOME/jaeger/jaeger" ]; then

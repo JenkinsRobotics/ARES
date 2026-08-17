@@ -112,3 +112,33 @@ def test_delete_session_preserves_ares_copy_when_jaeger_delete_fails(tmp_path, m
     assert exc_info.value.status_code == 502
     assert sidecar.exists()
     assert session_id in config.SESSIONS
+
+
+def test_delete_session_resolves_sidecarless_jaeger_session_before_peer_delete(monkeypatch):
+    from api.session_mutations import SessionMutationError, delete_session
+
+    session_id = "sidecarless-jaeger-session"
+    session = SimpleNamespace(
+        session_id=session_id,
+        messages=[{"role": "assistant", "backend": "jros"}],
+    )
+    calls = []
+
+    monkeypatch.setattr("api.models.Session.load", lambda _sid: None)
+    monkeypatch.setattr("api.models.get_session", lambda _sid, metadata_only=False: session)
+    monkeypatch.setattr("api.session_access.lookup_cli_session_metadata", lambda _sid: {})
+    monkeypatch.setattr("api.session_access.session_is_subagent_view_only", lambda _sid: False)
+
+    def fail_peer_delete(command, args):
+        calls.append((command, args))
+        raise RuntimeError("bridge unavailable")
+
+    monkeypatch.setattr(
+        "api.providers.jaeger.gateway_streaming.command_local_companion",
+        fail_peer_delete,
+    )
+
+    with pytest.raises(SessionMutationError, match="nothing was removed"):
+        delete_session(session_id)
+
+    assert calls == [("delete_session", {"id": f"webui:{session_id}"})]

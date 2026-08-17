@@ -92,3 +92,16 @@ def test_config_state_dir_explicit_override_takes_precedence(tmp_path):
         ARES_WEBUI_STATE_DIR=explicit,
     )
     assert state_dir == explicit.resolve()
+
+
+def test_start_ares_uses_the_same_durable_state_default():
+    script = (REPO_ROOT / "start_ares.sh").read_text(encoding="utf-8")
+
+    home_assignment = 'export ARES_HOME="${ARES_HOME:-$HOME/.ares}"'
+    state_assignment = (
+        'export ARES_WEBUI_STATE_DIR="${ARES_WEBUI_STATE_DIR:-$ARES_HOME/webui}"'
+    )
+    assert home_assignment in script
+    assert state_assignment in script
+    assert script.index(home_assignment) < script.index(state_assignment)
+    assert '$DIR/.ares_state' not in script

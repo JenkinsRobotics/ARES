@@ -42,7 +42,7 @@ WEBUI_DIR="$INSTALL_DIR/services/controller"
 PYTHON_VERSION="3.11"
 BRANCH="main"
 PORT="${ARES_WEBUI_PORT:-8788}"
-HOST="${ARES_WEBUI_HOST:-0.0.0.0}"
+HOST="${ARES_WEBUI_HOST:-127.0.0.1}"
 RUN_SETUP=true
 USE_VENV=true
 JSON_OUTPUT=false
@@ -102,7 +102,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-setup    Skip interactive setup wizard"
             echo "  --branch NAME   Git branch to install (default: main)"
             echo "  --port PORT     Web UI port (default: 8788)"
-            echo "  --host HOST     Bind address (default: 0.0.0.0)"
+            echo "  --host HOST     Bind address (default: 127.0.0.1; network binds require authentication)"
             echo "  --dir PATH      Install directory (default: ~/.ares)"
             echo "  --manifest      Print desktop bootstrap stage manifest as JSON"
             echo "  --stage NAME    Run one desktop bootstrap stage"

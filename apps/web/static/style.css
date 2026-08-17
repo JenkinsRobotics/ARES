@@ -4951,6 +4951,10 @@ main.main.showing-profiles > #mainProfiles{display:flex;}
 main.main.showing-logs > #mainLogs{display:flex;}
 main.main.showing-plugin > #mainPlugin{display:flex;}
 main.main > #mainPlugin{display:none;}
+
+/* Runtime-owned surfaces fail closed until capability negotiation completes. */
+html:not([data-ares-capabilities-ready]) [data-requires-capability],
+[data-requires-capability][data-capability-available="false"] { display:none !important; }
 #mainPlugin .main-view-body{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #pluginPageContainer{flex:1;display:flex;flex-direction:column;min-height:0;}
 #mainSettings{overflow-y:auto;}

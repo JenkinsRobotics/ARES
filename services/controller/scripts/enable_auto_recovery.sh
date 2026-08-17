@@ -41,9 +41,9 @@ cat <<EOF > "$PLIST_PATH"
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${HOME}/.local/bin</string>
         <key>PYTHONPATH</key>
         <string>${REPO_ROOT}/services/controller:${REPO_ROOT}</string>
-        <key>ARES_BIND_HOST</key>
-        <string>0.0.0.0</string>
-        <key>ARES_PORT</key>
+        <key>ARES_WEBUI_HOST</key>
+        <string>127.0.0.1</string>
+        <key>ARES_WEBUI_PORT</key>
         <string>8788</string>
         <key>ARES_HEADLESS</key>
         <string>1</string>

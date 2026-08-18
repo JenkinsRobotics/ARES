@@ -1541,6 +1541,16 @@
   .app-titlebar-stats-dot.model-active{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,0.6);animation:pulse-glow 1.5s infinite;}
   .app-titlebar-stats-badge{background:rgba(59,130,246,0.15);color:#60a5fa;padding:1px 6px;border-radius:6px;font-size:9.5px;font-weight:600;letter-spacing:0.02em;text-transform:uppercase;}
   @keyframes pulse-glow{0%,100%{opacity:1;}50%{opacity:0.4;}}
+  /* On a phone-width titlebar there isn't room for "CPU 20% · 14.67 GB" plus
+     an "AI READY" badge next to the hamburger and app title — the pill's
+     white-space:nowrap text ran past its own width and visually collided
+     with the sibling controls. Below this width, keep the pill as a live
+     status dot only (still tappable, still opens the full telemetry panel)
+     instead of letting the label/badge text overflow into them. */
+  @media (max-width:480px){
+    .app-titlebar-stats{gap:0;padding:0;width:26px;justify-content:center;}
+    .app-titlebar-stats-label,.app-titlebar-stats-badge{display:none;}
+  }
   .system-telemetry-popover{position:fixed;z-index:350;width:340px;background:var(--surface);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:0 12px 32px rgba(0,0,0,0.36);display:flex;flex-direction:column;gap:12px;color:var(--text);font-size:12px;}
   .system-telemetry-head{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:8px;}
   .system-telemetry-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;}

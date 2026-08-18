@@ -843,9 +843,24 @@ def test_server():
     # Never let a developer's sibling JaegerAI checkout silently change the
     # integration-test runtime. Capability tests opt into Jaeger explicitly;
     # the shared HTTP server uses a deterministic non-bridge backend.
-    (TEST_STATE_DIR / "config.yaml").write_text(
-        "ares_backend: openai_cloud\n", encoding="utf-8"
-    )
+    #
+    # This used to write "ares_backend: openai_cloud" straight into
+    # TEST_STATE_DIR/config.yaml. That file is also what the *pytest process
+    # itself* resolves to (os.environ['ARES_CONFIG_PATH'] is pointed here at
+    # module scope, above, for every test in the session — not just the
+    # subprocess this fixture launches). Once the file held real content,
+    # any in-process api.config.get_available_models()/get_config() call
+    # whose own test isolation relies on mutating config.cfg directly (not
+    # on ARES_CONFIG_PATH) could have its override silently reloaded away
+    # from this shared file mid-test — see test_issue2545_xai_oauth_provider
+    # ::test_xai_oauth_model_picker_group_uses_live_catalog, which failed
+    # with an empty catalog purely from this fixture having already run.
+    # The subprocess this fixture spawns gets its own explicit
+    # ARES_CONFIG_PATH in its dedicated env dict below regardless, so it
+    # never depended on this file existing beforehand; achieve the same
+    # "don't let a sibling JaegerAI checkout steer the shared server"
+    # isolation via that subprocess-scoped env instead of a file every
+    # in-process test's config resolution can also see.
 
     # Symlink real skills into test home so skill-related tests work,
     # but all write-heavy state stays isolated.
@@ -916,6 +931,16 @@ def test_server():
     # Without this, the subprocess can make outbound requests that the
     # pytest-side block can't see.
     env["ARES_WEBUI_TEST_NETWORK_BLOCK"] = "1"
+    # Never let a developer's sibling JaegerAI checkout silently change the
+    # integration-test runtime. Capability tests opt into Jaeger explicitly;
+    # this out-of-process server uses a deterministic non-bridge backend.
+    # Lives in its own file, not TEST_STATE_DIR/config.yaml — that path is
+    # also what every in-process test resolves to (ARES_CONFIG_PATH is set
+    # process-wide, above), so writing real content there let this
+    # subprocess-only override leak into unrelated tests' own config
+    # isolation (see the test_server() docstring/comment above).
+    _subprocess_config_path = TEST_STATE_DIR / "server-config.yaml"
+    _subprocess_config_path.write_text("ares_backend: openai_cloud\n", encoding="utf-8")
     env.update({
         "ARES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE": "1",
         # Small archive-extraction cap so the zip-bomb guard is exercisable
@@ -929,7 +954,7 @@ def test_server():
         "ARES_WEBUI_DEFAULT_WORKSPACE": str(TEST_WORKSPACE),
         "ARES_WEBUI_DEFAULT_MODEL":     "openai/gpt-5.4-mini",
         "ARES_HOME":                    str(TEST_STATE_DIR),
-        "ARES_CONFIG_PATH":             str(TEST_STATE_DIR / 'config.yaml'),
+        "ARES_CONFIG_PATH":             str(_subprocess_config_path),
         "ARES_PROVIDER_REGISTRY_PATH":  str(TEST_STATE_DIR / 'providers.json'),
         # Belt-and-suspenders: ARES_BASE_HOME hard-locks _DEFAULT_ARES_HOME
         # in api/profiles.py to the test state dir regardless of profile switching

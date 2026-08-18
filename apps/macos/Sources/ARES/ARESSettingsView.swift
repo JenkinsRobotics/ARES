@@ -259,15 +259,30 @@ public struct ARESSettingsView: View {
                     Button("Start Server") {
                         Task { await serverManager.start() }
                     }
-                    .disabled(serverManager.isRunning)
-                    
+                    .disabled(serverManager.isRunning || serverManager.conflictingStandaloneInstance)
+
                     Button("Stop Server") {
                         Task { await serverManager.stop() }
                     }
                     .disabled(!serverManager.isRunning)
-                    
+
                     Button("Restart Server") {
                         Task { await serverManager.restart() }
+                    }
+                    .disabled(serverManager.conflictingStandaloneInstance)
+
+                    if serverManager.conflictingStandaloneInstance {
+                        // A controller is already running on this port and
+                        // proved itself to be ARES's own (started outside
+                        // this app, e.g. via `ares start`) — offer to take
+                        // it over instead of leaving Start/Stop/Restart all
+                        // disabled with no way to actually control it.
+                        Button("Take Control & Restart") {
+                            Task {
+                                await serverManager.stopConflictingStandaloneInstance()
+                                await serverManager.start()
+                            }
+                        }
                     }
                 }
                 .padding(.bottom, 8)

@@ -25,6 +25,16 @@ public final class WebUIServerManager: ObservableObject {
 
     @Published public var isRunning = false
     @Published public var portConflict = false
+    // Set only when the process occupying the port answers the ARES health
+    // check AND self-reports as a "standalone" instance (started outside
+    // this app, e.g. via `ares start`/ctl.sh) — never for a genuinely
+    // foreign process, and never for another mac_app-owned instance. This
+    // is the one case where offering the user a "stop it and take over"
+    // action is safe: it's provably ARES's own controller, just not one
+    // this app instance launched. `start()` used to just give up silently
+    // here with no way to start/stop/restart anything (the user's own
+    // controller effectively became invisible to the app).
+    @Published public var conflictingStandaloneInstance = false
     @Published public var serverHealth = "Stopped" // "Stopped", "Starting...", "Running (Healthy)", "Running (Degraded)", "Running (Unreachable)", "Failed"
     @Published public var recentLogs = ""
 
@@ -62,10 +72,15 @@ public final class WebUIServerManager: ObservableObject {
         let inUse = await isPortInUse(port, host: host)
         if inUse {
             portConflict = true
-            serverHealth = "Port \(port) is owned by another process"
+            let owner = await Self.runtimeOwner(host: host, port: port)
+            conflictingStandaloneInstance = (owner == "standalone")
+            serverHealth = conflictingStandaloneInstance
+                ? "Port \(port) is running your own controller, started outside this app"
+                : "Port \(port) is owned by another process"
             return
         }
         portConflict = false
+        conflictingStandaloneInstance = false
         serverHealth = "Starting..."
 
         let webuiDir = findWebUIDir()
@@ -291,6 +306,64 @@ public final class WebUIServerManager: ObservableObject {
         await start()
     }
 
+    /// Gracefully stop a standalone controller this app didn't launch, so
+    /// the port frees up and a subsequent ``start()`` can take over.
+    ///
+    /// Only ever call this when ``conflictingStandaloneInstance`` is true —
+    /// that flag is only set when the occupying process proved itself to be
+    /// ARES's own controller via a live health check, matching the same
+    /// safety bar the shell CLI (`bin/ares`) already applies before it
+    /// hands lifecycle ownership to this app. This does not run on its own;
+    /// it exists so the UI can offer the user an explicit "take over"
+    /// action instead of leaving them with no start/stop/restart control at
+    /// all over a controller that is, in fact, theirs.
+    public func stopConflictingStandaloneInstance() async {
+        guard conflictingStandaloneInstance else { return }
+        guard let dir = findWebUIDir() else {
+            serverHealth = "WebUI directory not found"
+            return
+        }
+        let ctlScript = dir.appendingPathComponent("ctl.sh")
+        guard FileManager.default.isExecutableFile(atPath: ctlScript.path)
+            || FileManager.default.fileExists(atPath: ctlScript.path)
+        else {
+            serverHealth = "ctl.sh not found — stop the other instance manually"
+            return
+        }
+        serverHealth = "Stopping other instance..."
+        let config = ARESConfiguration.shared
+        var env = ProcessInfo.processInfo.environment
+        env["ARES_WEBUI_HOST"] = config.webuiHost
+        env["ARES_WEBUI_PORT"] = String(config.webuiPort)
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+        proc.arguments = [ctlScript.path, "stop"]
+        proc.environment = env
+        proc.currentDirectoryURL = dir
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            proc.terminationHandler = { _ in continuation.resume() }
+            do {
+                try proc.run()
+            } catch {
+                serverHealth = "Failed to stop other instance: \(error.localizedDescription)"
+                continuation.resume()
+            }
+        }
+
+        // Give the port a moment to actually release before the caller
+        // retries start() — ctl.sh's own stop_cmd already polls/escalates
+        // internally, but the OS can lag a beat behind the process exiting.
+        let deadline = Date().addingTimeInterval(5.0)
+        while await isPortInUse(config.webuiPort, host: config.webuiHost), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        portConflict = false
+        conflictingStandaloneInstance = false
+        serverHealth = "Stopped"
+    }
+
     private func checkHealth() async {
         var exitedProcess: Process?
         if let p = process, !p.isRunning {
@@ -355,6 +428,30 @@ public final class WebUIServerManager: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// The occupying process's self-reported ``runtime_owner`` ("standalone"
+    /// or "mac_app"), or ``nil`` when it isn't answering an ARES health
+    /// check at all (a genuinely foreign process). Mirrors the shell CLI's
+    /// own ``_ares_runtime_owner()`` check in ``bin/ares`` — the app and the
+    /// CLI should agree on what's safe to take over.
+    nonisolated static func runtimeOwner(host: String, port: Int) async -> String? {
+        guard let url = URL(string: "http://\(host):\(port)/health") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 1.0
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResp = response as? HTTPURLResponse
+        else { return nil }
+        return runtimeOwner(statusCode: httpResp.statusCode, data: data)
+    }
+
+    /// Pure parsing half of ``runtimeOwner(host:port:)``, split out so it's
+    /// testable without a live server (mirrors ``isAresHealthResponse``).
+    nonisolated static func runtimeOwner(statusCode: Int, data: Data) -> String? {
+        guard isAresHealthResponse(statusCode: statusCode, data: data),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return payload["runtime_owner"] as? String
     }
 
     private func readLastLogs() {

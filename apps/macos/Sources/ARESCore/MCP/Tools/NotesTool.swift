@@ -10,21 +10,39 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
     public let name = "notes_operations"
 
     public let description = """
-    Search, read, and create Apple Notes using macOS AppleScript.
+    Search, read, create, and organize Apple Notes using macOS AppleScript.
 
     OPERATIONS:
     • search - Search notes by keyword (query, optional: folder, max_results)
     • get_note - Get full content of a note (note_name, optional: folder)
     • create_note - Create a new note (title, body, optional: folder)
-    • list_folders - List all note folders
+    • list_folders - List all note folders with note counts
     • list_notes - List notes in a folder (optional: folder, max_results)
     • append_note - Append text to an existing note (note_name, text, optional: folder)
+    • create_folder - Create a note folder (folder)
+    • move_notes - Move notes into a folder (note_ids, target_folder)
+    • delete_folder - Delete an EMPTY folder (folder)
+
+    ORGANIZING NOTES — always drive moves by note id, never by title:
+    list_notes and search return a stable `id:` (x-coredata://…) for every
+    note. Apple Notes truncates long titles with an ellipsis in some views,
+    so title matching silently misses those notes; ids never do. Pass ids
+    to move_notes as a comma-separated list to move a whole batch in ONE
+    AppleScript call — moving notes one call at a time is what makes large
+    reorganizations time out partway and leave folders half-migrated.
+
+    delete_folder refuses a folder that still holds notes unless
+    confirm_non_empty is true, so a mistargeted delete cannot take the
+    notes with it. Move the notes out first, then delete the empty folder.
 
     Notes are returned as plain text. HTML formatting in note bodies is stripped for readability.
     """
 
     public var supportedOperations: [String] {
-        return ["search", "get_note", "create_note", "list_folders", "list_notes", "append_note"]
+        return [
+            "search", "get_note", "create_note", "list_folders", "list_notes",
+            "append_note", "create_folder", "move_notes", "delete_folder"
+        ]
     }
 
     public var parameters: [String: MCPToolParameter] {
@@ -69,6 +87,21 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
                 type: .integer,
                 description: "Maximum results to return (default: 20)",
                 required: false
+            ),
+            "note_ids": MCPToolParameter(
+                type: .string,
+                description: "Comma-separated note ids (x-coredata://…) to move. Ids come from list_notes/search. Prefer ids over titles: Apple Notes truncates long titles, so title matching silently skips notes.",
+                required: false
+            ),
+            "target_folder": MCPToolParameter(
+                type: .string,
+                description: "Destination folder name for move_notes",
+                required: false
+            ),
+            "confirm_non_empty": MCPToolParameter(
+                type: .boolean,
+                description: "Required (true) to delete a folder that still contains notes. Deleting a folder deletes the notes inside it, so this defaults to false.",
+                required: false
             )
         ]
     }
@@ -106,6 +139,12 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
             return await listNotes(parameters: parameters)
         case "append_note":
             return await appendNote(parameters: parameters)
+        case "create_folder":
+            return await createFolder(parameters: parameters)
+        case "move_notes":
+            return await moveNotes(parameters: parameters)
+        case "delete_folder":
+            return await deleteFolder(parameters: parameters)
         default:
             return operationError(operation, message: "Unknown operation")
         }
@@ -206,7 +245,7 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
                 set noteBody to plaintext of n
                 if (noteName contains "\(escapedQuery)") or (noteBody contains "\(escapedQuery)") then
                     set noteDate to modification date of n
-                    set end of matchingNotes to noteName & "|||" & (noteDate as string) & "|||" & (text 1 thru (min of {200, length of noteBody}) of noteBody)
+                    set end of matchingNotes to noteName & "|||" & (noteDate as string) & "|||" & (text 1 thru (min of {200, length of noteBody}) of noteBody) & "|||" & (id of n as string)
                     set noteCount to noteCount + 1
                 end if
             end repeat
@@ -233,7 +272,11 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
             if parts.count >= 3 {
                 formatted += "- **\(parts[0])**\n"
                 formatted += "  Modified: \(parts[1])\n"
-                formatted += "  Preview: \(stripHTML(parts[2]))...\n\n"
+                formatted += "  Preview: \(stripHTML(parts[2]))...\n"
+                if parts.count >= 4 {
+                    formatted += "  id: \(parts[3])\n"
+                }
+                formatted += "\n"
             } else if !entry.isEmpty {
                 formatted += "- \(entry)\n\n"
             }
@@ -337,7 +380,7 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
         tell application "Notes"
             set folderList to {}
             repeat with f in folders
-                set end of folderList to name of f
+                set end of folderList to name of f & "|||" & ((count of notes of f) as string)
             end repeat
             set AppleScript's text item delimiters to ":::"
             return folderList as string
@@ -357,7 +400,14 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
         let folders = output.components(separatedBy: ":::")
         var formatted = "Note Folders (\(folders.count)):\n\n"
         for folder in folders {
-            formatted += "- \(folder)\n"
+            let parts = folder.components(separatedBy: "|||")
+            if parts.count >= 2 {
+                // The count is what makes "is this folder safe to delete?"
+                // answerable without a second round trip.
+                formatted += "- \(parts[0]) (\(parts[1]) notes)\n"
+            } else if !folder.isEmpty {
+                formatted += "- \(folder)\n"
+            }
         }
 
         return MCPToolResult(success: true, output: MCPOutput(content: formatted))
@@ -380,7 +430,7 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
             repeat with n in notes\(folderFilter)
                 if noteCount >= \(maxResults) then exit repeat
                 set noteDate to modification date of n
-                set end of noteList to name of n & "|||" & (noteDate as string)
+                set end of noteList to name of n & "|||" & (noteDate as string) & "|||" & (id of n as string)
                 set noteCount to noteCount + 1
             end repeat
             set AppleScript's text item delimiters to ":::"
@@ -405,7 +455,11 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
 
         for entry in entries {
             let parts = entry.components(separatedBy: "|||")
-            if parts.count >= 2 {
+            if parts.count >= 3 {
+                // The id is what move_notes consumes — emit it for every row so
+                // a reorganization never has to fall back to title matching.
+                formatted += "- **\(parts[0])** (modified: \(parts[1]))\n  id: \(parts[2])\n"
+            } else if parts.count >= 2 {
                 formatted += "- **\(parts[0])** (modified: \(parts[1]))\n"
             } else if !entry.isEmpty {
                 formatted += "- \(entry)\n"
@@ -413,6 +467,165 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
         }
 
         return MCPToolResult(success: true, output: MCPOutput(content: formatted))
+    }
+
+    @MainActor
+    private func createFolder(parameters: [String: Any]) async -> MCPToolResult {
+        guard let folder = parameters["folder"] as? String, !folder.isEmpty else {
+            return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: folder"))
+        }
+        let escaped = escapeAppleScript(folder)
+        let script = """
+        tell application "Notes"
+            if (count of (folders whose name is "\(escaped)")) > 0 then
+                return "EXISTS"
+            end if
+            make new folder with properties {name:"\(escaped)"}
+            return "CREATED"
+        end tell
+        """
+
+        let (output, success) = await runAppleScript(script)
+        if !success {
+            return MCPToolResult(success: false, output: MCPOutput(content: output))
+        }
+        if output == "EXISTS" {
+            return MCPToolResult(success: true, output: MCPOutput(content: "Folder '\(folder)' already exists."))
+        }
+        return MCPToolResult(success: true, output: MCPOutput(content: "Created folder '\(folder)'."))
+    }
+
+    /// Move notes into ``target_folder`` by id, in one AppleScript call.
+    ///
+    /// Ids rather than titles because Apple Notes truncates long titles with
+    /// an ellipsis, so a title-matched move silently skips exactly the notes
+    /// whose names are longest. One call rather than one call per note
+    /// because each osascript invocation pays Notes' scripting-bridge
+    /// startup cost; a per-note loop over a large folder is what runs long
+    /// enough to hit a tool timeout and leave a reorganization half-applied.
+    ///
+    /// Reports per-note outcomes instead of failing the whole batch on the
+    /// first bad id, so a partial move is visible and resumable rather than
+    /// silently partial.
+    @MainActor
+    private func moveNotes(parameters: [String: Any]) async -> MCPToolResult {
+        guard let target = parameters["target_folder"] as? String, !target.isEmpty else {
+            return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: target_folder"))
+        }
+        let rawIds = (parameters["note_ids"] as? String) ?? ""
+        let ids = rawIds
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !ids.isEmpty else {
+            return MCPToolResult(
+                success: false,
+                output: MCPOutput(content: "Missing required parameter: note_ids (comma-separated ids from list_notes/search)")
+            )
+        }
+
+        let escapedTarget = escapeAppleScript(target)
+        let idList = ids.map { "\"\(escapeAppleScript($0))\"" }.joined(separator: ", ")
+        let script = """
+        tell application "Notes"
+            set targetMatches to folders whose name is "\(escapedTarget)"
+            if (count of targetMatches) is 0 then
+                return "NOFOLDER"
+            end if
+            set destFolder to item 1 of targetMatches
+            set movedCount to 0
+            set failedIds to {}
+            repeat with rawId in {\(idList)}
+                try
+                    move (note id (rawId as string)) to destFolder
+                    set movedCount to movedCount + 1
+                on error
+                    set end of failedIds to (rawId as string)
+                end try
+            end repeat
+            set AppleScript's text item delimiters to ":::"
+            return (movedCount as string) & "|||" & (failedIds as string)
+        end tell
+        """
+
+        let (output, success) = await runAppleScript(script)
+        if !success {
+            return MCPToolResult(success: false, output: MCPOutput(content: output))
+        }
+        if output == "NOFOLDER" {
+            return MCPToolResult(
+                success: false,
+                output: MCPOutput(content: "Target folder '\(target)' does not exist. Create it first with create_folder.")
+            )
+        }
+
+        let parts = output.components(separatedBy: "|||")
+        let moved = Int(parts.first ?? "") ?? 0
+        let failed = parts.count > 1
+            ? parts[1].components(separatedBy: ":::").filter { !$0.isEmpty }
+            : []
+
+        var formatted = "Moved \(moved) of \(ids.count) note(s) into '\(target)'.\n"
+        if !failed.isEmpty {
+            formatted += "\nFailed (\(failed.count)) — id not found or not movable:\n"
+            for id in failed {
+                formatted += "- \(id)\n"
+            }
+        }
+        return MCPToolResult(success: failed.isEmpty, output: MCPOutput(content: formatted))
+    }
+
+    /// Delete a folder, refusing a non-empty one unless explicitly confirmed.
+    ///
+    /// Deleting a Notes folder deletes the notes inside it. The default is
+    /// therefore empty-only: the safe cleanup order is move the notes out,
+    /// verify, then delete the now-empty folder.
+    @MainActor
+    private func deleteFolder(parameters: [String: Any]) async -> MCPToolResult {
+        guard let folder = parameters["folder"] as? String, !folder.isEmpty else {
+            return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: folder"))
+        }
+        let confirmNonEmpty = (parameters["confirm_non_empty"] as? Bool) ?? false
+        let escaped = escapeAppleScript(folder)
+        let script = """
+        tell application "Notes"
+            set matches to folders whose name is "\(escaped)"
+            if (count of matches) is 0 then
+                return "NOFOLDER"
+            end if
+            set f to item 1 of matches
+            set n to count of notes of f
+            if n > 0 and not \(confirmNonEmpty ? "true" : "false") then
+                return "NONEMPTY|||" & (n as string)
+            end if
+            delete f
+            return "DELETED|||" & (n as string)
+        end tell
+        """
+
+        let (output, success) = await runAppleScript(script)
+        if !success {
+            return MCPToolResult(success: false, output: MCPOutput(content: output))
+        }
+        if output == "NOFOLDER" {
+            return MCPToolResult(success: false, output: MCPOutput(content: "Folder '\(folder)' does not exist."))
+        }
+
+        let parts = output.components(separatedBy: "|||")
+        let count = parts.count > 1 ? (Int(parts[1]) ?? 0) : 0
+        if parts.first == "NONEMPTY" {
+            return MCPToolResult(
+                success: false,
+                output: MCPOutput(content: """
+                Refusing to delete '\(folder)': it still contains \(count) note(s), and deleting a \
+                folder deletes the notes inside it. Move those notes out with move_notes first, then \
+                delete the empty folder. To delete the folder AND its notes anyway, pass \
+                confirm_non_empty: true.
+                """)
+            )
+        }
+        let suffix = count > 0 ? " (and \(count) note(s) inside it)" : ""
+        return MCPToolResult(success: true, output: MCPOutput(content: "Deleted folder '\(folder)'\(suffix)."))
     }
 
     @MainActor

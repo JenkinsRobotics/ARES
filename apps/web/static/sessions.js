@@ -410,7 +410,7 @@ async function _manualTitleRegenerateTimeoutMs(){
 
 function _formatSessionModelWithGateway(s){
   if(!s||!s.model)return'';
-  const routing=(typeof _latestGatewayRoutingForSession==='function')?_latestGatewayRoutingForSession(s):(s.gateway_routing||null);
+  const routing=(typeof _latestGatewayRoutingForSession==='function')?_latestGatewayRoutingForSession(s,s.model):(s.gateway_routing||null);
   if(typeof _formatGatewayModelLabel==='function'){
     return _formatGatewayModelLabel(s.model,s.model,routing)||getModelLabel(s.model);
   }
@@ -2209,6 +2209,10 @@ async function loadSession(sid){
     if(typeof startClarifyPolling==='function') startClarifyPolling(sid);
     if(typeof _fetchYoloState==='function') _fetchYoloState(sid);
   }else{
+    if(typeof setBusy==='function') setBusy(false);
+    else S.busy=false;
+    S.activeStreamId=null;
+    if(typeof setComposerStatus==='function') setComposerStatus('');
     // Phase 2b: Idle session — load full messages lazily for rendering.
     // _ensureMessagesLoaded is idempotent; it skips if S.messages already populated.
     // #5177: when the caller asked us to keep stale messages until the new ones

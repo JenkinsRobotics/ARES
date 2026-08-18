@@ -23,6 +23,11 @@ class CompanionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
     character_id: str | None = Field(default=None, min_length=1, max_length=128)
     owner_name: str | None = Field(default=None, max_length=120)
+    custom_instructions: str | None = Field(default=None, max_length=50000)
+    role: str | None = Field(default=None, max_length=5000)
+    voice_tone: str | None = Field(default=None, max_length=5000)
+    soul: str | None = Field(default=None, max_length=10000)
+    backstory: str | None = Field(default=None, max_length=10000)
 
 
 def _snapshot() -> dict[str, Any]:
@@ -80,15 +85,31 @@ def patch_companion(
         raise CoreApiError(400, "Companion name cannot be blank.", code="invalid_companion_name")
     if payload.character_id is not None and not clean_character:
         raise CoreApiError(400, "Character cannot be blank.", code="invalid_companion_character")
-    if not any(value is not None for value in (clean_name, clean_character, clean_owner)):
+    if not any(
+        value is not None
+        for value in (
+            clean_name,
+            clean_character,
+            clean_owner,
+            payload.custom_instructions,
+            payload.role,
+            payload.voice_tone,
+            payload.soul,
+            payload.backstory,
+        )
+    ):
         raise CoreApiError(400, "No Companion changes were supplied.", code="empty_companion_update")
 
     with profile_scope(identity.profile):
         try:
-            snapshot = (
-                update_companion(name=clean_name, character_id=clean_character)
-                if clean_name or clean_character
-                else _snapshot()
+            snapshot = update_companion(
+                name=clean_name,
+                character_id=clean_character,
+                custom_instructions=payload.custom_instructions,
+                role=payload.role,
+                voice_tone=payload.voice_tone,
+                soul=payload.soul,
+                backstory=payload.backstory,
             )
         except CompanionControlError as exc:
             raise CoreApiError(

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Network
+import Darwin
 import ARESCore
 
 private final class PortProbeCompletion: @unchecked Sendable {
@@ -240,17 +241,53 @@ public final class WebUIServerManager: ObservableObject {
         return fileManager.isExecutableFile(atPath: launcher.path)
     }
 
-    public func stop() {
+    /// Stop the controller and wait for it to actually exit before returning.
+    ///
+    /// A prior version sent SIGTERM and immediately reported "Stopped"
+    /// without confirming the process had died. `restart()` then raced a
+    /// fresh `start()` against a controller (and its grandchild JaegerAI
+    /// bridge subprocess) that was still mid-shutdown — the bridge subprocess
+    /// could outlive the controller and orphan-hold its instance lock,
+    /// producing "instance is locked by pid X (still running)" on every
+    /// subsequent chat until a human ran `jaeger kill` by hand. Waiting here,
+    /// bounded, closes that race at the source.
+    ///
+    /// The bound (~9.5s) is deliberately a little longer than the
+    /// controller's own graceful-shutdown budget — FastAPI's lifespan
+    /// shutdown chain runs bridge-client teardown last of five best-effort
+    /// steps, and closing the bridge client itself budgets up to ~9s (three
+    /// quit/terminate/kill stages). Giving Python's shutdown enough room to
+    /// run means the grandchild bridge process exits cleanly through its own
+    /// lock-release path instead of being orphaned by an early SIGKILL here.
+    public func stop() async {
         guard let p = process else { return }
-        p.terminate()
         process = nil
+        serverHealth = "Stopping..."
+        p.terminate()
+
+        let deadline = Date().addingTimeInterval(9.5)
+        while p.isRunning && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s poll
+        }
+
+        if p.isRunning {
+            // Graceful shutdown didn't finish in time — escalate. This must
+            // never leave the manager claiming "Stopped" while the PID is
+            // still alive, since that mismatch is exactly what let the
+            // restart race happen before.
+            kill(p.processIdentifier, SIGKILL)
+            let killDeadline = Date().addingTimeInterval(1.0)
+            while p.isRunning && Date() < killDeadline {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+
         isRunning = false
-        serverHealth = "Stopped"
+        serverHealth = p.isRunning ? "Stop timed out" : "Stopped"
     }
 
     public func restart() async {
-        stop()
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1 second
+        await stop()
         await start()
     }
 

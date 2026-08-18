@@ -93,7 +93,6 @@ struct OnboardingView: View {
                                     asleepModel: onboardingManager.selectedAsleepModel ?? "llama3.2:1b"
                                 )
                                 onboardingManager.markCompleted()
-                                NSApp.setActivationPolicy(.regular)
                                 NSApp.activate(ignoringOtherApps: true)
                             }
                         }

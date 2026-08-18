@@ -1627,6 +1627,8 @@ class Session:
         return n
 
     def compact(self, include_runtime=False, active_stream_ids=None) -> dict:
+        from api.session_contract import SESSION_CONTRACT_VERSION
+
         active_stream_ids = active_stream_ids if active_stream_ids is not None else set()
         has_pending_user_message = bool(self.pending_user_message)
         message_count = (
@@ -1679,7 +1681,9 @@ class Session:
             'recommended_recovery_action': self.recommended_recovery_action,
             'ares_backend': self.ares_backend,
             'transcript_owner': self.transcript_owner,
-            'session_contract_version': 2 if self.transcript_owner == 'jaeger' else None,
+            'session_contract_version': (
+                SESSION_CONTRACT_VERSION if self.transcript_owner == 'jaeger' else None
+            ),
             'gateway_routing': self.gateway_routing,
             'gateway_routing_history': self.gateway_routing_history,
             'manual_title': self.manual_title,

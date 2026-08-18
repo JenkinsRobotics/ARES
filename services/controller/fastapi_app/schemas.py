@@ -407,6 +407,13 @@ class ChatStart(BaseModel):
     workspace: str | None = Field(default=None, max_length=4096)
     profile: str | None = Field(default=None, max_length=80)
     attachments: list[ChatAttachment] | None = Field(default=None)
+    # The composer sends these only when set, but ``extra="forbid"`` rejects the
+    # whole request when it does — so an explicit model pick from the dropdown
+    # failed every send with "Invalid request". Declared here because the intent
+    # is real: ``explicit_model_pick`` tells model resolution the operator chose
+    # this model deliberately and it must not be silently replaced by a fallback.
+    explicit_model_pick: bool | None = Field(default=None)
+    moa_config: bool | None = Field(default=None)
 
     @field_validator("message")
     @classmethod

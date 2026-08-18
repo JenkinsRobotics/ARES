@@ -6,10 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-APPROVED = {
-    Path("integrations/providers/jaeger/legacy_compat.py"),
-    Path("apps/web/static/legacy_browser_migration.js"),
-}
+APPROVED: set[Path] = set()
 
 
 def test_runtime_sources_do_not_hardcode_jaeger_internal_paths():

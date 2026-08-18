@@ -237,7 +237,17 @@ def test_status_returns_summary(cleanup_test_sessions):
 
 
 def test_status_returns_profile_specific_ares_home(cleanup_test_sessions):
-    data = _post(TEST_BASE, '/api/session/new', {'profile': 'research'})
+    data = _post(
+        TEST_BASE,
+        '/api/session/new',
+        {
+            'profile': 'research',
+            'model': 'openai/gpt-5.4-mini',
+            'model_provider': 'openai_cloud',
+        },
+        headers={'Cookie': 'ares_profile=research'},
+    )
+    assert 'session' in data, f"session creation failed: {data}"
     sid = data['session']['session_id']
     cleanup_test_sessions.append(sid)
 

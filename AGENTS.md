@@ -13,9 +13,9 @@ reads or writes another product's private state.
 - ARES owns presentation, workspaces, projects, drafts, title overrides,
   pin/archive metadata, approvals UI, and combined projections.
 - Cross-product operations use the versioned Jaeger bridge contract.
-- Compatibility identifiers exist only in
-  `integrations/providers/jaeger/legacy_compat.py` and the one-time browser
-  storage migration.
+- Cross-product identifiers are canonical and opaque. Retired Hermes/JROS
+  backend names, environment variables, browser keys, and session prefixes
+  must not be reintroduced.
 
 ## Source map
 

@@ -5699,7 +5699,7 @@ function _renderKnowledgeFoldersSection() {
       <div class="knowledge-folders-manager" style="padding:16px 0">
         <div class="folders-manager-header">
           <h3>Connected Knowledge Folders</h3>
-          <p>Folders indexed by ARES for RAG vector search, Knowledge Graph exploration, and Jarvis recall.</p>
+          <p>Folders indexed by ARES for RAG vector search, Knowledge Graph exploration, and assistant recall.</p>
         </div>
         
         <div class="add-folder-card">
@@ -7089,14 +7089,135 @@ function _renderProfileDetail(p, activeName){
   body.innerHTML = `
     <div class="main-view-content">
       <div class="detail-card">
-        <div class="detail-card-title">Profile</div>
+        <div class="detail-card-title">Profile Configuration</div>
         ${rows.join('')}
       </div>
+      <div id="companionSettingsCard" style="margin-top:16px"></div>
     </div>`;
   body.style.display = '';
   if (empty) empty.style.display = 'none';
   _profileMode = 'read';
   _setProfileHeaderButtons('read', p, activeName);
+  api('/api/companion').then(comp => {
+    const container = $('companionSettingsCard');
+    if (container && comp && comp.character) _renderCompanionSection(container, comp);
+  }).catch(() => {});
+}
+
+function _renderCompanionSection(container, comp) {
+  if (!container || !comp || !comp.character) return;
+  const c = comp.character;
+  const chars = comp.characters || [];
+  const charOptions = chars.map(ch => 
+    `<option value="${esc(ch.id)}" ${ch.id === c.id ? 'selected' : ''}>${esc(ch.name)} (${esc(ch.role || 'Companion')})</option>`
+  ).join('');
+
+  container.innerHTML = `
+    <div class="detail-card">
+      <div class="detail-card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>🤖 Character Persona & Prompt Injections (Jaeger AI)</span>
+        <span class="detail-badge ok" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Bridge Connected</span>
+      </div>
+      <div class="detail-row">
+        <div class="detail-row-label">Active Character</div>
+        <div class="detail-row-value">
+          <select id="compCharacterSelect" onchange="_onCompanionCharacterChange()" style="width:100%;max-width:340px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;font-family:inherit">
+            ${charOptions}
+          </select>
+        </div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-row-label">Role / Voice Tone</div>
+        <div class="detail-row-value">
+          <input type="text" id="compRoleInput" value="${esc(c.role || '')}" placeholder="e.g. Tony Stark's impeccably polite AI butler" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <label style="font-size:12px;font-weight:600;color:var(--text)">Custom Instructions & Prompt Injections</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn btn-sm" onclick="_insertPromptPreset('research')" style="font-size:11px;padding:3px 8px;background:var(--hover-bg);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text)">🔍 Force Web Research</button>
+            <button type="button" class="btn btn-sm" onclick="_insertPromptPreset('mac_automation')" style="font-size:11px;padding:3px 8px;background:var(--hover-bg);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text)">💻 Mac Automation</button>
+            <button type="button" class="btn btn-sm" onclick="_insertPromptPreset('concise')" style="font-size:11px;padding:3px 8px;background:var(--hover-bg);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text)">⚡ Direct & Concise</button>
+          </div>
+        </div>
+        <textarea id="compCustomInstructions" rows="6" placeholder="Add custom instructions, tool execution rules, or prompt injections..." style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-family:inherit;font-size:12px;line-height:1.45;resize:vertical">${esc(c.custom_instructions || '')}</textarea>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button type="button" class="btn btn-secondary" onclick="_pullCompanionFromJaeger()" style="padding:6px 12px;font-size:12px;cursor:pointer;background:var(--hover-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">⬇ Pull from Jaeger</button>
+        <button type="button" class="btn btn-primary" onclick="_saveAndPushCompanionToJaeger()" style="padding:6px 14px;font-size:12px;cursor:pointer;background:var(--accent);border:none;border-radius:6px;color:#fff;font-weight:600">⬆ Save & Push to Jaeger</button>
+      </div>
+    </div>
+  `;
+}
+
+function _insertPromptPreset(type) {
+  const ta = $('compCustomInstructions');
+  if (!ta) return;
+  let preset = '';
+  if (type === 'research') {
+    preset = "\nAlways perform real research: when asked to research, compare, find out, or look up information, invoke perform_task to execute live web search and deep research tools rather than answering from memory.";
+  } else if (type === 'mac_automation') {
+    preset = "\nAlways inspect system state: when asked about open browser tabs, running applications, or macOS system files, invoke perform_task to query the system via AppleScript and system tools.";
+  } else if (type === 'concise') {
+    preset = "\nBe concise, direct, and actionable. Avoid filler phrases, boilerplate disclaimers, or excessive conversational padding.";
+  }
+  ta.value = (ta.value.trim() + preset).trim();
+}
+
+async function _saveAndPushCompanionToJaeger() {
+  const charId = $('compCharacterSelect') ? $('compCharacterSelect').value : null;
+  const role = $('compRoleInput') ? $('compRoleInput').value : null;
+  const instructions = $('compCustomInstructions') ? $('compCustomInstructions').value : null;
+  try {
+    const res = await api('/api/companion', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        character_id: charId,
+        role: role,
+        custom_instructions: instructions,
+      }),
+    });
+    if (typeof showToast === 'function') showToast('Successfully pushed prompt & character to Jaeger AI!', 'success');
+    if (res && res.character) {
+      const container = $('companionSettingsCard');
+      if (container) _renderCompanionSection(container, res);
+    }
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('Failed to push to Jaeger: ' + err.message, 'error');
+  }
+}
+
+async function _pullCompanionFromJaeger() {
+  try {
+    const comp = await api('/api/companion');
+    const container = $('companionSettingsCard');
+    if (container && comp) {
+      _renderCompanionSection(container, comp);
+      if (typeof showToast === 'function') showToast('Pulled latest character instructions from Jaeger AI', 'info');
+    }
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('Failed to pull from Jaeger: ' + err.message, 'error');
+  }
+}
+
+async function _onCompanionCharacterChange() {
+  const sel = $('compCharacterSelect');
+  if (!sel) return;
+  const newId = sel.value;
+  try {
+    const res = await api('/api/companion', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ character_id: newId }),
+    });
+    if (typeof showToast === 'function') showToast(`Switched active character to ${newId}`, 'success');
+    const container = $('companionSettingsCard');
+    if (container && res) _renderCompanionSection(container, res);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('Failed to switch character: ' + err.message, 'error');
+  }
 }
 
 function _setProfileHeaderButtons(mode, p, activeName){

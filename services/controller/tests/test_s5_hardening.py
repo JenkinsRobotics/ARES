@@ -75,14 +75,18 @@ def test_stale_jaeger_override_names_the_variable_and_the_repair(monkeypatch):
     """The exact misconfiguration that made Jaeger look uninstalled."""
     from api.providers.jaeger import paths, status
 
-    for name in (paths.JAEGER_HOME_ENV, paths.ARES_JAEGER_SOURCE_DIR_ENV, paths.LEGACY_JaegerAI_DIR_ENV):
+    for name in (
+        paths.ARES_JAEGER_HOME_ENV,
+        paths.JAEGER_HOME_ENV,
+        paths.ARES_JAEGER_SOURCE_DIR_ENV,
+    ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/nonexistent/JaegerAI")
 
     result = remediation(status.check_status(use_cache=False))
 
     assert "ARES_JAEGER_HOME" in result["reason"]
-    assert "/nonexistent/JaegerAI" in result["reason"]
+    assert "/nonexistent/JaegerAI" not in result["reason"]
     assert "ARES_JAEGER_HOME" in result["fix"]
 
 
@@ -261,9 +265,9 @@ def test_smoke_script_fails_fast_when_no_controller_is_running():
     assert "not reachable" in result.stdout
 
 
-def test_restart_recipe_is_documented():
-    agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    assert "Restart / recovery" in agents
-    assert "start_ares.sh" in agents
-    assert "lsof" in agents
-    assert "smoke_test.sh" in agents
+def test_restart_and_smoke_recovery_are_executable_contracts():
+    ctl = (REPO_ROOT / "services" / "controller" / "ctl.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "restart) stop_cmd; start_cmd" in ctl
+    assert (REPO_ROOT / "scripts" / "smoke_test.sh").stat().st_mode & 0o111

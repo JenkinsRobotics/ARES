@@ -150,6 +150,11 @@ def test_session_new_route_creates_worktree_backed_session(tmp_path, monkeypatch
     from fastapi_app.main import create_app
     import api.worktrees as worktrees
 
+    monkeypatch.setattr("api.session_contract.require_operation", lambda *_a, **_k: {})
+    monkeypatch.setattr(
+        "api.session_contract.runtime_owns_transcript", lambda *_a, **_k: False
+    )
+
     repo = tmp_path / "repo"
     worktree = repo / ".worktrees" / "ares-route"
     worktree.mkdir(parents=True)
@@ -181,6 +186,11 @@ def test_session_new_worktree_fallback_workspace_is_resolved(tmp_path, monkeypat
     from fastapi.testclient import TestClient
     from fastapi_app.main import create_app
     import api.worktrees as worktrees
+
+    monkeypatch.setattr("api.session_contract.require_operation", lambda *_a, **_k: {})
+    monkeypatch.setattr(
+        "api.session_contract.runtime_owns_transcript", lambda *_a, **_k: False
+    )
 
     repo = tmp_path / "repo"
     worktree = repo / ".worktrees" / "ares-route"

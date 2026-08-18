@@ -41,7 +41,6 @@ class AdapterRegistry:
         if execution_adapters is None:
             execution_adapters = (
                 JaegerAdapter(turn_starter=turn_starter),
-                ClaudeLocalAdapter(turn_starter=turn_starter),
                 CodexLocalAdapter(turn_starter=turn_starter),
                 GeminiLocalAdapter(turn_starter=turn_starter),
                 GeminiCloudAdapter(turn_starter=turn_starter),

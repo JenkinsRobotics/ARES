@@ -9384,6 +9384,15 @@ def _run_agent_streaming(
                     _history = list(getattr(s, 'gateway_routing_history', None) or [])
                     _history.append(_gateway_routing)
                     s.gateway_routing_history = _history[-50:]
+                    from api.model_resolution import reconcile_session_provider_after_turn
+
+                    reconcile_session_provider_after_turn(
+                        s,
+                        _gateway_routing,
+                        turn_owns_model=_turn_owns_persisted_model,
+                        last_persisted_model=_last_persisted_model,
+                        last_persisted_provider=_last_persisted_provider,
+                    )
                 if s.messages:
                     for _dm in reversed(s.messages):
                         if isinstance(_dm, dict) and _dm.get('role') == 'assistant':

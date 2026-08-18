@@ -48,7 +48,8 @@ def test_runtime_selection_has_no_implicit_or_legacy_builtin_fallback():
     assert normalize_backend("") == ""
     assert normalize_backend("ares") == ""
     assert normalize_backend("hybrid") == ""
-    assert normalize_backend("hermes") == "jaeger_local"
+    assert normalize_backend("hermes") == ""
+    assert normalize_backend("jros") == ""
     assert normalize_backend("jaeger") == "jaeger_local"
     assert normalize_backend("jaeger_local") == "jaeger_local"
 

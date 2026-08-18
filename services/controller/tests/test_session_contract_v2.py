@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -23,11 +24,19 @@ def _contract():
     }
 
 
-def test_shared_session_id_removes_only_legacy_webui_alias():
+def test_shared_session_id_preserves_opaque_identifiers():
     from api.session_contract import shared_session_id
 
-    assert shared_session_id("webui:shared-1") == "shared-1"
     assert shared_session_id("telegram:42") == "telegram:42"
+    assert shared_session_id("shared-1") == "shared-1"
+
+
+def test_gateway_emits_opaque_session_keys_without_ui_namespace():
+    source = (Path(__file__).parents[1] / "api" / "gateway_chat.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'headers["X-Ares-Session-Key"] = session_id' in source
+    assert 'f"webui:' not in source
 
 
 def test_canonical_mutation_fails_closed_without_v2_contract(monkeypatch):

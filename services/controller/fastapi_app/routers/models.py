@@ -114,7 +114,9 @@ def _set_main(payload: dict[str, Any]):
         provider=provider,
         advanced=payload.get("advanced"),
     )
-    sync_main_model_to_jaeger(result)
+    sync_outcome = sync_main_model_to_jaeger(result)
+    if not sync_outcome.get("ok"):
+        result["model_sync_warning"] = sync_outcome.get("error") or "JaegerAI did not accept this model."
     return result
 
 

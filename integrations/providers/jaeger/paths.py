@@ -4,8 +4,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from api.providers.jaeger.legacy_compat import configured_alias, environment_value
-
 ARES_JAEGER_HOME_ENV = "ARES_JAEGER_HOME"
 JAEGER_HOME_ENV = "JAEGER_HOME"
 ARES_JAEGER_SOURCE_DIR_ENV = "ARES_JAEGER_SOURCE_DIR"
@@ -27,7 +25,7 @@ def is_jaeger_ai_root(path: str | os.PathLike[str]) -> bool:
 
 
 def discover_jaeger_ai_source_root() -> Path | None:
-    override = environment_value(ARES_JAEGER_SOURCE_DIR_ENV)
+    override = str(os.environ.get(ARES_JAEGER_SOURCE_DIR_ENV) or "").strip()
     if override:
         root = expand_path(override)
         return root if is_jaeger_ai_root(root) else None
@@ -65,12 +63,13 @@ def configured_root_override() -> tuple[str, str] | None:
         value = str(os.environ.get(name) or "").strip()
         if value:
             return name, value
-    return configured_alias(ARES_JAEGER_SOURCE_DIR_ENV)
+    value = str(os.environ.get(ARES_JAEGER_SOURCE_DIR_ENV) or "").strip()
+    return (ARES_JAEGER_SOURCE_DIR_ENV, value) if value else None
 
 
 def jaeger_instance_name() -> str | None:
     """Return only an explicit selector; Jaeger owns default resolution."""
-    return environment_value(ARES_JAEGER_INSTANCE_ENV) or str(
+    return str(os.environ.get(ARES_JAEGER_INSTANCE_ENV) or "").strip() or str(
         os.environ.get("JAEGER_INSTANCE_NAME") or ""
     ).strip() or None
 

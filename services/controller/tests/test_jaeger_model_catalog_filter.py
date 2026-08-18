@@ -85,6 +85,94 @@ def test_jaeger_backend_enriches_available_models(monkeypatch):
     }
 
 
+def test_jaeger_local_group_drops_models_the_ollama_group_already_lists(monkeypatch):
+    """The same local Ollama daemon is discoverable two ways — ARES's own
+    direct probe and JaegerAI's own catalog, which discovers it internally.
+    A model reachable both ways must appear once, not twice under two
+    different provider labels ("Ollama (Local)" vs "Local (Jaeger AI / MLX /
+    GGUF)").
+    """
+    from api import backend_selector, model_catalog
+
+    monkeypatch.setattr("api.config.get_config", lambda: {"ares_backend": "jaeger_local"})
+    monkeypatch.setattr(backend_selector, "get_active_backend", lambda config: config["ares_backend"])
+    monkeypatch.setattr(model_catalog, "_jaeger_credential_names", lambda: set())
+    monkeypatch.setattr(
+        model_catalog,
+        "_fetch_ollama_local_models",
+        lambda: [{"id": "qwen3.6:35b-mlx", "label": "qwen3.6:35b-mlx", "provider": "ollama", "provider_id": "ollama"}],
+    )
+    monkeypatch.setattr(
+        model_catalog,
+        "_get_jaeger_local_models",
+        lambda: [
+            # A duplicate of what the direct Ollama probe already found.
+            {"id": "qwen3.6:35b-mlx", "label": "qwen3.6:35b-mlx", "provider": "ollama", "provider_id": "ollama"},
+            # A genuinely distinct raw GGUF registry entry.
+            {"id": "gemma-4-e4b-it-q4_k_m", "label": "gemma-4-e4b-it-q4_k_m", "provider": "local", "provider_id": "local"},
+        ],
+    )
+
+    result = model_catalog.filter_catalog_for_active_backend({"groups": []}, enrich=True)
+
+    groups = {g["provider_id"]: g for g in result["groups"]}
+    assert [m["id"] for m in groups["ollama"]["models"]] == ["qwen3.6:35b-mlx"]
+    assert [m["id"] for m in groups["local"]["models"]] == ["gemma-4-e4b-it-q4_k_m"]
+
+
+def test_ollama_cloud_group_prefers_jaegers_live_catalog_over_the_curated_fallback(monkeypatch):
+    """JaegerAI already live-discovers the full Ollama Cloud catalog (it holds
+    the API key ARES never sees) as part of the same ``model_catalog`` bridge
+    response ARES already fetches for the local-model groups. Using only a
+    small hardcoded list here — when JaegerAI handed over the real one —
+    is the same class of bug B4 fixed for local models.
+    """
+    from api import backend_selector, model_catalog
+
+    monkeypatch.setattr("api.config.get_config", lambda: {"ares_backend": "jaeger_local"})
+    monkeypatch.setattr(backend_selector, "get_active_backend", lambda config: config["ares_backend"])
+    monkeypatch.setattr(model_catalog, "_jaeger_credential_names", lambda: {"ollama_cloud_api_key"})
+    monkeypatch.setattr(model_catalog, "_fetch_ollama_local_models", lambda: [])
+    monkeypatch.setattr(
+        "api.backends.model_discovery.discover_jaeger_models",
+        lambda: {
+            "models": [
+                {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "location": "cloud", "provider": "ollama-cloud", "context_length": 131072},
+                {"id": "a-brand-new-cloud-model", "label": "a-brand-new-cloud-model", "location": "cloud", "provider": "ollama-cloud", "context_length": 65536},
+                {"id": "some-local-file", "label": "some-local-file", "location": "local", "provider": "in-process"},
+            ],
+            "providers": [],
+            "default": {},
+        },
+    )
+
+    result = model_catalog.filter_catalog_for_active_backend({"groups": []}, enrich=True)
+
+    groups = {g["provider_id"]: g for g in result["groups"]}
+    cloud_ids = [m["id"] for m in groups["ollama-cloud"]["models"]]
+    assert cloud_ids == ["qwen3.5:397b", "a-brand-new-cloud-model"]
+    assert "some-local-file" not in cloud_ids
+
+
+def test_ollama_cloud_group_falls_back_to_curated_list_when_jaeger_has_nothing_live(monkeypatch):
+    from api import backend_selector, model_catalog
+
+    monkeypatch.setattr("api.config.get_config", lambda: {"ares_backend": "jaeger_local"})
+    monkeypatch.setattr(backend_selector, "get_active_backend", lambda config: config["ares_backend"])
+    monkeypatch.setattr(model_catalog, "_jaeger_credential_names", lambda: {"ollama_cloud_api_key"})
+    monkeypatch.setattr(model_catalog, "_fetch_ollama_local_models", lambda: [])
+    monkeypatch.setattr(
+        "api.backends.model_discovery.discover_jaeger_models",
+        lambda: {"models": [], "providers": [], "default": {}},
+    )
+
+    result = model_catalog.filter_catalog_for_active_backend({"groups": []}, enrich=True)
+
+    groups = {g["provider_id"]: g for g in result["groups"]}
+    cloud_ids = [m["id"] for m in groups["ollama-cloud"]["models"]]
+    assert "qwen3.5:397b" in cloud_ids  # the curated fallback, not empty
+
+
 def test_badges_mark_only_the_selection_not_the_whole_catalog(monkeypatch):
     """Regression guard for the flattened model picker.
 

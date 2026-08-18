@@ -93,8 +93,9 @@ def test_sync_main_model_to_jaeger_success(monkeypatch):
 
     # Call with a model mapped in JaegerAI_FALLBACK_PROVIDER_MAP (e.g. "openai")
     # Result contains "provider" and "model"
-    sync_main_model_to_jaeger({"provider": "openai", "model": "gpt-4o"})
+    outcome = sync_main_model_to_jaeger({"provider": "openai", "model": "gpt-4o"})
 
+    assert outcome == {"ok": True}
     assert len(called_sync) == 1
     # "openai" maps to "openai" in JaegerAI_FALLBACK_PROVIDER_MAP
     assert called_sync[0] == ("openai", "gpt-4o", ["jaeger"], "/path/to/ares/config.yaml")
@@ -116,9 +117,10 @@ def test_sync_main_model_to_jaeger_no_mapping(monkeypatch):
     monkeypatch.setattr("api.model_catalog.active_profile_config_path", lambda: "/path/to/ares/config.yaml")
 
     # Call with an unmapped provider
-    sync_main_model_to_jaeger({"provider": "unknown-provider", "model": "some-model"})
+    outcome = sync_main_model_to_jaeger({"provider": "unknown-provider", "model": "some-model"})
 
     # Should skip sync
+    assert outcome == {"ok": True}
     assert len(called_sync) == 0
     assert len(called_reset) == 0
 
@@ -136,8 +138,11 @@ def test_sync_main_model_to_jaeger_handles_exception(monkeypatch):
     monkeypatch.setattr("api.providers.jaeger.streaming.reset_jaeger_runtime", mock_reset_jaeger_runtime)
     monkeypatch.setattr("api.model_catalog.active_profile_config_path", lambda: "/path/to/ares/config.yaml")
 
-    # Should not raise exception
-    sync_main_model_to_jaeger({"provider": "openai", "model": "gpt-4o"})
+    # Should not raise exception, but must report the failure rather than
+    # swallowing it — a caller that can't tell success from failure can't
+    # warn the user their model pick didn't actually take.
+    outcome = sync_main_model_to_jaeger({"provider": "openai", "model": "gpt-4o"})
+    assert outcome == {"ok": False, "error": "Sync failed"}
     # Should not call reset_jaeger_runtime if sync failed
     assert len(called_reset) == 0
 

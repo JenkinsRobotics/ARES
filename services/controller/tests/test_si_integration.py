@@ -137,10 +137,12 @@ class TestBridgePipeline:
         from api.si.bridge import si_turn
         from api.backends.router import get_router
 
-        # Register an unavailable mock
+        # Register an unavailable mock and a mock jaeger_local fallback
         mock = MockBackend("mock_unavailable", available=False)
+        mock_fallback = MockBackend("jaeger_local", available=True)
         router = get_router()
         router.register("mock_unavailable", mock)
+        router.register("jaeger_local", mock_fallback)
 
         result = si_turn(
             "hello",
@@ -358,19 +360,13 @@ class TestMemoryLifecycleIntegration:
 
     def test_full_lifecycle(self):
         """Ingest → classify → score → retrieve → correct → delete."""
-        import sqlite3
         from api.si.memory import (
             ingest_memory, classify_memory, score_importance,
-            retrieve_memories, correct_memory, delete_memory,
+            retrieve_memories, correct_memory, delete_memory, _get_db,
         )
 
-        # Use the same DB path as _get_db() (respects ARES_HOME)
-        ares_home = os.environ.get("ARES_HOME", os.path.expanduser("~/.ares"))
-        db_path = os.path.join(ares_home, "journal", "journal.db")
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-
         # Ensure core tables exist (memory module only creates its own tables)
-        conn = sqlite3.connect(db_path)
+        conn = _get_db()
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -417,9 +413,7 @@ class TestMemoryLifecycleIntegration:
 
         # If FTS5 still hasn't indexed, verify via direct SQL as fallback
         if not found:
-            import sqlite3 as _sql
-            _conn = _sql.connect(db_path)
-            _conn.row_factory = _sql.Row
+            _conn = _get_db()
             _row = _conn.execute(
                 "SELECT c.session_id FROM conversations c JOIN messages m ON m.conversation_id = c.id WHERE m.content LIKE ?",
                 ("%zzintegtestzz%",),

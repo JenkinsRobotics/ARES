@@ -8,7 +8,6 @@
      MUST appear before manifest/favicon links so browsers resolve relative URLs against the
      correct base when the page is served from /session/<id> routes. See #2226. -->
 <script>(function(){var path=location.pathname,marker='/session/',i=path.indexOf(marker),p;i>=0?p=(path.slice(0,i+1)||'/'):p=(path.endsWith('/')?path:(path.replace(/\/[^\/]*$/,'/')||'/'));document.write('<base href="'+location.origin+p+'">');})()</script>
-<script src="static/legacy_browser_migration.js?v=__WEBUI_VERSION__"></script>
 <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32.png?v=__WEBUI_VERSION__">
 <link rel="icon" type="image/png" sizes="192x192" href="static/favicon-192.png?v=__WEBUI_VERSION__">
 <link rel="icon" type="image/png" sizes="512x512" href="static/assets/ares-app-icon.png?v=__WEBUI_VERSION__">
@@ -126,6 +125,11 @@
       <span class="app-titlebar-profile-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
       <span class="app-titlebar-profile-label" id="titlebarProfileLabel">default</span>
       <span class="app-titlebar-profile-chevron" aria-hidden="true"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+    </button>
+    <button class="app-titlebar-stats has-tooltip has-tooltip--bottom" id="titlebarSystemStatsBtn" type="button" onclick="toggleSystemTelemetryModal(event)" aria-label="System & Model Telemetry" data-tooltip="System & AI Model Health">
+      <span class="app-titlebar-stats-dot" id="titlebarStatsDot"></span>
+      <span class="app-titlebar-stats-label" id="titlebarStatsLabel">CPU 0% · 0 GB</span>
+      <span class="app-titlebar-stats-badge" id="titlebarModelBadge">AI Idle</span>
     </button>
     <button class="app-titlebar-hamburger has-tooltip has-tooltip--bottom" id="btnHamburger" onclick="toggleMobileSidebar()" type="button" data-tooltip="Menu" aria-label="Menu">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>

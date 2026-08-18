@@ -763,6 +763,7 @@ def update_session(
                 model_was_set=model_was_set,
                 provider_was_set=provider_was_set,
             )
+            model_sync_warning = None
             if model_was_set or provider_was_set:
                 try:
                     from api.backend_selector import BACKEND_JAEGER, get_active_backend
@@ -770,10 +771,20 @@ def update_session(
                     from api.model_catalog import sync_main_model_to_jaeger
 
                     if get_active_backend(get_config()) == BACKEND_JAEGER and session.model:
-                        sync_main_model_to_jaeger({
+                        sync_outcome = sync_main_model_to_jaeger({
                             "model": session.model,
                             "provider": session.model_provider or "auto",
                         })
+                        if not sync_outcome.get("ok"):
+                            # The pick was recorded in the session, but JaegerAI
+                            # rejected it (e.g. an unresolvable local model
+                            # name) — say so now, rather than let the chat
+                            # silently fall back to the previous model with no
+                            # visible sign anything went wrong.
+                            model_sync_warning = (
+                                sync_outcome.get("error")
+                                or "JaegerAI did not accept this model; the previous model may keep serving."
+                            )
                 except Exception:
                     logger.warning(
                         "Failed to sync session model %s (%s) to Jaeger",
@@ -806,7 +817,10 @@ def update_session(
         raise CoreApiError(404, "Session not found") from exc
     except SessionMutationError as exc:
         raise CoreApiError(exc.status_code, str(exc)) from exc
-    return {"session": session.compact() | {"messages": session.messages}}
+    response = {"session": session.compact() | {"messages": session.messages}}
+    if model_sync_warning:
+        response["model_sync_warning"] = model_sync_warning
+    return response
 
 
 @router.post("/session/compression-recovery/start")

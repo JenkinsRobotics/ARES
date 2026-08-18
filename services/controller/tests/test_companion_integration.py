@@ -77,12 +77,24 @@ def test_companion_update_delegates_writes_to_jaeger(monkeypatch: pytest.MonkeyP
         lambda: {"agent": {"name": "Athena"}, "character": {"id": "tars"}},
     )
 
-    result = companion_control.update_companion(name="Athena", character_id="tars")
+    result = companion_control.update_companion(
+        name="Athena",
+        character_id="tars",
+        custom_instructions="Always search the web.",
+        role="Tactical robot",
+    )
 
     assert commands == [
         ("save_identity", {"name": "Athena"}),
         ("select_character", {"id": "tars"}),
         ("make_default", {"id": "tars"}),
+        (
+            "save_profile",
+            {
+                "custom_instructions": "Always search the web.",
+                "role": "Tactical robot",
+            },
+        ),
     ]
     assert result["agent"]["name"] == "Athena"
 

@@ -214,6 +214,9 @@ def test_start_prefers_repository_virtualenv_python(tmp_path):
         repo_root=repo_root,
         env={
             "FAKE_PYTHON_LOG": str(fake_log),
+            # Without an explicit port this binds the default 8788 and fails
+            # whenever a real controller is running on the developer's machine.
+            "ARES_WEBUI_PORT": "18994",
             "ARES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT": "1",
         },
     )

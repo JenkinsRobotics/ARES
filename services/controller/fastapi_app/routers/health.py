@@ -44,6 +44,17 @@ def agent_health(
     return service.agent_health()
 
 
+@router.get("/api/system/stats")
+def system_stats(
+    request: Request,
+    _identity: Annotated[RequestIdentity, Depends(require_identity)],
+):
+    from api.system_stats import get_system_stats
+
+    profile = getattr(_identity, "profile", None)
+    return get_system_stats(profile_name=profile)
+
+
 @router.post("/api/health/restart")
 def restart_gateway(
     response: Response,

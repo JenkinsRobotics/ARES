@@ -186,6 +186,43 @@ def _manifest(root: Path) -> Response:
     )
 
 
+def _webui_version() -> str:
+    """Version token shared by the SPA shell and the service worker."""
+    try:
+        from api.updates import WEBUI_VERSION
+        return WEBUI_VERSION or "dev"
+    except Exception:
+        return "dev"
+
+
+def _service_worker(root: Path) -> Response:
+    """Serve sw.js with the version token substituted.
+
+    The worker derives its cache name and its pre-cache URLs from
+    ``__WEBUI_VERSION__``. Served as a plain static file the token stays
+    literal, so the cache name never changes across releases and the shell
+    cache can never be invalidated -- a stale icon, manifest, or offline shell
+    then outlives every upgrade.
+    """
+    target = _resolve_file(root, "sw.js")
+    if target is None:
+        return _json_not_found()
+    try:
+        source = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return _json_not_found()
+    return Response(
+        source.replace(_WEBUI_VERSION_PLACEHOLDER, _webui_version()),
+        media_type="application/javascript",
+        headers={
+            # A cached worker script cannot ship a new cache version to clients.
+            "Cache-Control": "no-store",
+            "X-ARES-Frontend": "ares",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 def _spa_shell(root: Path, request: Request, resolve_csrf: CsrfTokenResolver) -> Response:
     """Serve index.html with ARES template tokens substituted."""
     index_path = _resolve_file(root, "index.html")
@@ -205,11 +242,7 @@ def _spa_shell(root: Path, request: Request, resolve_csrf: CsrfTokenResolver) ->
     csrf_token = resolve_csrf(request)
     csrf_json = json.dumps({"csrfToken": csrf_token}, ensure_ascii=False).replace("<", "\\u003c")
 
-    try:
-        from api.updates import WEBUI_VERSION
-        version = WEBUI_VERSION or "dev"
-    except Exception:
-        version = "dev"
+    version = _webui_version()
 
     try:
         from api.config import MAX_UPLOAD_BYTES
@@ -301,6 +334,8 @@ def create_frontend_router(
 
         if clean_path in _MANIFEST_ALIASES:
             return _manifest(root)
+        if clean_path in ("sw.js", "static/sw.js"):
+            return _service_worker(root)
         if _is_static_asset(clean_path):
             return _frontend_file(root, clean_path)
         # SPA fallback: serve index.html for all other paths

@@ -30,13 +30,11 @@ def _fake_jaeger_root(tmp_path):
 
 
 def _clear_jaeger_env(monkeypatch):
-    from api.providers.jaeger import legacy_compat
-
     for name in (
         paths.ARES_JAEGER_HOME_ENV,
         paths.JAEGER_HOME_ENV,
         paths.ARES_JAEGER_SOURCE_DIR_ENV,
-        *(alias for aliases in legacy_compat._ENV_ALIASES.values() for alias in aliases),
+        paths.ARES_JAEGER_INSTANCE_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
 

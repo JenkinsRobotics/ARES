@@ -229,6 +229,37 @@ final class WebUIServerManagerTests: XCTestCase {
         XCTAssertFalse(WebUIServerManager.isAresHealthResponse(statusCode: 503, data: currentPayload))
     }
 
+    /// A standalone controller (started outside this app, e.g. `ares start`)
+    /// must be distinguishable from both a foreign process and another
+    /// mac_app-owned instance — that distinction is what makes it safe to
+    /// offer the user a "take over" action on port conflict.
+    func testRuntimeOwnerDistinguishesStandaloneFromMacAppAndForeignProcesses() throws {
+        let standalonePayload = try JSONSerialization.data(withJSONObject: [
+            "service": "ares-webui",
+            "status": "ok",
+            "runtime_owner": "standalone",
+        ])
+        XCTAssertEqual(
+            WebUIServerManager.runtimeOwner(statusCode: 200, data: standalonePayload),
+            "standalone"
+        )
+
+        let macAppPayload = try JSONSerialization.data(withJSONObject: [
+            "service": "ares-webui",
+            "status": "ok",
+            "runtime_owner": "mac_app",
+        ])
+        XCTAssertEqual(
+            WebUIServerManager.runtimeOwner(statusCode: 200, data: macAppPayload),
+            "mac_app"
+        )
+
+        // Not an ARES health response at all — a genuinely foreign process
+        // must never be reported as any kind of owner.
+        let foreignPayload = try JSONSerialization.data(withJSONObject: ["status": "ok"])
+        XCTAssertNil(WebUIServerManager.runtimeOwner(statusCode: 200, data: foreignPayload))
+    }
+
     private func makeExecutable(_ relativePath: String) throws -> URL {
         let url = temporaryDirectory.appendingPathComponent(relativePath)
         try FileManager.default.createDirectory(

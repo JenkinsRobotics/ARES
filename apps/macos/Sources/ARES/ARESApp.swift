@@ -713,6 +713,18 @@ struct MenuBarPopoverView: View {
                         Task { await serverManager.stop() }
                     }
                     .buttonStyle(.bordered)
+                } else if serverManager.conflictingStandaloneInstance {
+                    // A controller is already running on this port and proved
+                    // itself to be ARES's own (started outside this app, e.g.
+                    // via `ares start`) — offer to take it over instead of
+                    // leaving the user with no start/stop/restart control.
+                    Button("Take Control & Restart") {
+                        Task {
+                            await serverManager.stopConflictingStandaloneInstance()
+                            await serverManager.start()
+                        }
+                    }
+                    .buttonStyle(.bordered)
                 } else {
                     Button("Start Server") {
                         Task { await serverManager.start() }

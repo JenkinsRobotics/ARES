@@ -12,6 +12,13 @@ def _with_config(monkeypatch, tmp_path, cfg):
     config._cfg_mtime = 0.0
     config.invalidate_models_cache()
     monkeypatch.setattr(profiles, "get_active_ares_home", lambda: tmp_path)
+    # get_available_models()/get_config() resolve the config path via
+    # ARES_CONFIG_PATH first, before ever consulting get_active_ares_home().
+    # The shared integration-test server's ARES_CONFIG_PATH is set for the
+    # whole pytest session (conftest.py), so without this override a stale
+    # mtime check can reload config.cfg from that shared file mid-test and
+    # silently discard the override above.
+    monkeypatch.setattr(config, "_get_config_path", lambda: tmp_path / "config.yaml")
 
     def restore():
         config.cfg.clear()

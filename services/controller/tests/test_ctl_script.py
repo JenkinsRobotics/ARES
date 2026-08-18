@@ -49,6 +49,14 @@ def run_ctl(
             "ARES_HOME": str(home / ".ares"),
             "PATH": os.environ.get("PATH", ""),
             "ARES_WEBUI_NO_DOTENV": "0" if load_dotenv else "1",
+            # ctl.sh's start_cmd auto-launches the real ARES.app menu bar icon
+            # on a successful start when one isn't already running (so the
+            # server and the icon can never come apart, however the
+            # controller gets started). HOME is faked above, but repo_root
+            # commonly stays the real checkout, whose apps/macos/ARES.app is
+            # a real, buildable bundle — without this, the test suite would
+            # pop the real app on every `start` it exercises.
+            "ARES_CTL_NO_MENU_BAR": "1",
         }
     )
     if env:

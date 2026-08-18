@@ -199,6 +199,35 @@ def assert_process_exits(pid: int, timeout: float = 3.0) -> None:
     raise AssertionError(f"process {pid} did not exit")
 
 
+def test_start_prefers_repository_virtualenv_python(tmp_path):
+    repo_root = tmp_path / "controller"
+    repo_root.mkdir()
+    _seed_ctl_repo(repo_root)
+    fake_python = repo_root / ".venv" / "bin" / "python"
+    fake_python.parent.mkdir(parents=True)
+    fake_log = tmp_path / "fake-python.log"
+    write_fake_python(fake_python)
+
+    result = run_ctl(
+        tmp_path,
+        "start",
+        repo_root=repo_root,
+        env={
+            "FAKE_PYTHON_LOG": str(fake_log),
+            "ARES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT": "1",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    pid = wait_for_pid_file(tmp_path / ".ares" / "webui.pid")
+    try:
+        fake_output = wait_for_file_text(fake_log, contains="bootstrap.py")
+        assert "bootstrap.py --no-browser --foreground" in fake_output
+    finally:
+        run_ctl(tmp_path, "stop", repo_root=repo_root)
+        assert_process_exits(pid)
+
+
 def test_start_writes_pid_under_ares_home_runs_foreground_no_browser_and_logs(tmp_path):
     fake_python = tmp_path / "fake-python"
     fake_log = tmp_path / "fake-python.log"

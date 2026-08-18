@@ -11,14 +11,17 @@ def _with_config(monkeypatch, tmp_path, cfg):
     config.cfg.update(copy.deepcopy(cfg))
     config._cfg_mtime = 0.0
     config.invalidate_models_cache()
+    # Deliberately does NOT override config._get_config_path(). The in-memory
+    # config.cfg override above is what this test exercises, and
+    # get_available_models() only preserves it while the resolved config path
+    # still matches the one config.cfg was last loaded from: its staleness
+    # check reloads unconditionally on `path_changed`, without consulting
+    # _cfg_has_in_memory_overrides(). Pointing _get_config_path() at a fresh
+    # tmp_path therefore makes path_changed true and reloads the override
+    # away — the empty-catalog StopIteration this test was failing with.
+    # ARES_CONFIG_PATH (set process-wide by conftest) already resolves to a
+    # stable path, so leaving it alone keeps path_changed false.
     monkeypatch.setattr(profiles, "get_active_ares_home", lambda: tmp_path)
-    # get_available_models()/get_config() resolve the config path via
-    # ARES_CONFIG_PATH first, before ever consulting get_active_ares_home().
-    # The shared integration-test server's ARES_CONFIG_PATH is set for the
-    # whole pytest session (conftest.py), so without this override a stale
-    # mtime check can reload config.cfg from that shared file mid-test and
-    # silently discard the override above.
-    monkeypatch.setattr(config, "_get_config_path", lambda: tmp_path / "config.yaml")
 
     def restore():
         config.cfg.clear()

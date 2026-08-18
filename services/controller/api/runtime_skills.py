@@ -126,12 +126,43 @@ def toggle_runtime_skill(name: str, enabled: bool) -> dict[str, Any]:
 
 
 def runtime_skill_usage() -> dict[str, Any]:
+    """Real skill usage from the runtime that owns it.
+
+    This used to return hardcoded zeros with ``usage_available: False`` — so
+    whenever Jaeger was the runtime (the normal case) the skills panel showed
+    "0 invocations" no matter how much a skill had actually been used. The
+    counts were never missing: Jaeger's ``usage_stats`` has been recording
+    every skill view to ``<instance>/logs/usage.json`` all along, it simply
+    had no bridge query to reach. Ask for it instead of reporting a zero we
+    never measured.
+
+    Still degrades to the old empty shape when the runtime cannot answer, so
+    a bridge that is down reports "unavailable" rather than a confident zero.
+    """
     skills = list_runtime_skills().get("skills", [])
+    names = sorted(str(row.get("name")) for row in skills if isinstance(row, dict))
+    try:
+        payload = _query("skill_usage")
+    except Exception:
+        payload = None
+    if not isinstance(payload, dict) or not payload.get("usage_available"):
+        return {
+            "usage": {},
+            "skill_names": names,
+            "total_invocations": 0,
+            "unique_skills_used": 0,
+            "owner": "jaeger",
+            "usage_available": False,
+        }
+    usage = payload.get("skills") if isinstance(payload.get("skills"), dict) else {}
     return {
-        "usage": {},
-        "skill_names": sorted(str(row.get("name")) for row in skills if isinstance(row, dict)),
-        "total_invocations": 0,
-        "unique_skills_used": 0,
+        "usage": usage,
+        "skill_names": names,
+        "total_invocations": int(payload.get("total_skill_views") or 0),
+        "unique_skills_used": int(payload.get("unique_skills_used") or len(usage)),
+        "top_skills": payload.get("top_skills") or [],
+        "top_tools": payload.get("top_tools") or [],
+        "tool_usage": payload.get("tools") or {},
         "owner": "jaeger",
-        "usage_available": False,
+        "usage_available": True,
     }

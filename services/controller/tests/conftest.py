@@ -840,12 +840,6 @@ def test_server():
         _rmtree_retry(TEST_STATE_DIR)
     TEST_STATE_DIR.mkdir(parents=True, exist_ok=True)
     TEST_WORKSPACE.mkdir(parents=True, exist_ok=True)
-    # Never let a developer's sibling JaegerAI checkout silently change the
-    # integration-test runtime. Capability tests opt into Jaeger explicitly;
-    # the shared HTTP server uses a deterministic non-bridge backend.
-    (TEST_STATE_DIR / "config.yaml").write_text(
-        "ares_backend: openai_cloud\n", encoding="utf-8"
-    )
 
     # Symlink real skills into test home so skill-related tests work,
     # but all write-heavy state stays isolated.

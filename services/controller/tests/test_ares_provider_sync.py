@@ -15,6 +15,15 @@ def _write_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def _pinned_context_window(monkeypatch):
+    """Keep bridge payloads independent of the operator's model catalog."""
+    monkeypatch.setattr(
+        "api.model_context.resolve_context_length_for_session_model",
+        lambda *args, **kwargs: 128_000,
+    )
+
+
 def test_sync_updates_ares_and_routes_jaeger_through_bridge(tmp_path, monkeypatch):
     ares_config = tmp_path / "ares" / "config.yaml"
     _write_yaml(ares_config, {"model": {"provider": "openai", "default": "gpt-4o"}, "ui": {"theme": "dark"}})

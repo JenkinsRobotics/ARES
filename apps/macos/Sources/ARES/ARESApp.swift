@@ -144,8 +144,9 @@ struct ARESWebView: View {
     @ObservedObject var config = ARESConfiguration.shared
 
     var body: some View {
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         if serverManager.isRunning {
-            if let url = URL(string: "http://\(config.webuiHost):\(config.webuiPort)") {
+            if let url = URL(string: "http://\(host):\(config.webuiPort)") {
                 WebViewRepresentable(url: url, serverManager: serverManager)
             } else {
                 Text("Invalid Server URL").foregroundColor(.red)
@@ -285,6 +286,11 @@ final class ARESAppDelegate: NSObject, NSApplicationDelegate {
         ARESWindowCoordinator.shared.onWindowClosed = { [weak self] in
             self?.mainWindowDidClose()
         }
+
+        // Reflect a controller that is already running (started by `ares
+        // start`, ctl.sh/launchd, or a previous run of this app) before
+        // anything can mistake it for a foreign process holding the port.
+        Task { await WebUIServerManager.shared.adoptRunningControllerIfPresent() }
 
         NativeSystemBridge.shared.start(
             serverManager: WebUIServerManager.shared,
@@ -482,6 +488,8 @@ final class ARESMenuBarController: NSObject, NSMenuDelegate {
         if server.isRunning {
             menu.addItem(item("Stop Server", #selector(stopServer)))
             menu.addItem(item("Restart Server", #selector(restartServer)))
+        } else if server.conflictingStandaloneInstance {
+            menu.addItem(item("Take Control & Restart", #selector(takeControlAndRestart)))
         } else {
             menu.addItem(item("Start Server", #selector(startServer)))
         }
@@ -535,7 +543,8 @@ final class ARESMenuBarController: NSObject, NSMenuDelegate {
 
     private func webUIURL() -> URL? {
         let config = ARESConfiguration.shared
-        return URL(string: "http://\(config.webuiHost):\(config.webuiPort)")
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
+        return URL(string: "http://\(host):\(config.webuiPort)")
     }
 
     @objc private func startServer() {
@@ -551,6 +560,15 @@ final class ARESMenuBarController: NSObject, NSMenuDelegate {
     @objc private func restartServer() {
         Task {
             await WebUIServerManager.shared.restart()
+        }
+    }
+
+    @objc private func takeControlAndRestart() {
+        Task {
+            await WebUIServerManager.shared.stopConflictingStandaloneInstance()
+            if !WebUIServerManager.shared.portConflict {
+                await WebUIServerManager.shared.start()
+            }
         }
     }
 
@@ -721,7 +739,9 @@ struct MenuBarPopoverView: View {
                     Button("Take Control & Restart") {
                         Task {
                             await serverManager.stopConflictingStandaloneInstance()
-                            await serverManager.start()
+                            if !serverManager.portConflict {
+                                await serverManager.start()
+                            }
                         }
                     }
                     .buttonStyle(.bordered)

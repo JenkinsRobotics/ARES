@@ -35,6 +35,12 @@ public final class WebUIServerManager: ObservableObject {
     // here with no way to start/stop/restart anything (the user's own
     // controller effectively became invisible to the app).
     @Published public var conflictingStandaloneInstance = false
+    /// True when the controller answering on the port was started by
+    /// something else (`ares start`, ctl.sh, launchd, or a previous instance
+    /// of this app) and this app adopted it instead of refusing to run.
+    /// Stop/Restart still work in this state — they drive ctl.sh rather than
+    /// an owned `Process` handle.
+    @Published public var adoptedExternalController = false
     @Published public var serverHealth = "Stopped" // "Stopped", "Starting...", "Running (Healthy)", "Running (Degraded)", "Running (Unreachable)", "Failed"
     @Published public var recentLogs = ""
 
@@ -66,21 +72,51 @@ public final class WebUIServerManager: ObservableObject {
         
         serverHealth = "Checking port..."
 
-        // The native app is the sole owner of this controller lifecycle. Never
-        // adopt an unrelated or orphaned process merely because it answers an
-        // ARES health check on the configured port.
-        let inUse = await isPortInUse(port, host: host)
+        // Ownership is decided by what is provably running, not by which
+        // process happened to spawn it.
+        //
+        // This used to reason from private in-memory state ("did *this* app
+        // instance launch it?"), which is lost on every app restart, rebuild,
+        // or crash. The app would then meet its own still-healthy controller,
+        // fail to recognize it, and report "Port 8788 is owned by another
+        // process" — offering no way to start, stop, or restart a server that
+        // was working the whole time. There are three legitimate ways to
+        // start the controller (this app, `ares start`, ctl.sh/launchd), so
+        // "I didn't personally spawn it" was never a sound basis for calling
+        // something foreign.
+        //
+        // A live /health answer identifying itself as ares-webui IS the proof
+        // of ownership, and it survives app restarts because it lives in the
+        // running system rather than in this object. So:
+        //   • answers as ARES  → adopt it: report Running (External); Stop and
+        //     Restart drive it through ctl.sh, the same lifecycle every other
+        //     start path already uses.
+        //   • answers as something else, or not at all → a genuinely foreign
+        //     process. That is the only real conflict, and it keeps the error.
+        // Killing and respawning a healthy ARES controller to satisfy a
+        // bookkeeping preference would drop the user's in-flight turns for no
+        // benefit, so adoption is the default rather than a recovery action.
+        let probeHost = Self.loopbackIfNetworkBind(host)
+        let inUse = await isPortInUse(port, host: probeHost)
         if inUse {
+            if let owner = await Self.runtimeOwner(host: probeHost, port: port) {
+                portConflict = false
+                conflictingStandaloneInstance = false
+                adoptedExternalController = true
+                isRunning = true
+                serverHealth = "Running (External)"
+                print("[ARES] Adopted existing ARES controller on \(probeHost):\(port) (runtime_owner=\(owner))")
+                return
+            }
             portConflict = true
-            let owner = await Self.runtimeOwner(host: host, port: port)
-            conflictingStandaloneInstance = (owner == "standalone")
-            serverHealth = conflictingStandaloneInstance
-                ? "Port \(port) is running your own controller, started outside this app"
-                : "Port \(port) is owned by another process"
+            conflictingStandaloneInstance = false
+            adoptedExternalController = false
+            serverHealth = "Port \(port) is owned by another process"
             return
         }
         portConflict = false
         conflictingStandaloneInstance = false
+        adoptedExternalController = false
         serverHealth = "Starting..."
 
         let webuiDir = findWebUIDir()
@@ -275,6 +311,15 @@ public final class WebUIServerManager: ObservableObject {
     /// run means the grandchild bridge process exits cleanly through its own
     /// lock-release path instead of being orphaned by an early SIGKILL here.
     public func stop() async {
+        // An adopted controller has no `Process` handle here — this app did
+        // not spawn it — so stopping it goes through ctl.sh, which owns the
+        // PID file and the same graceful-shutdown path every other start
+        // route uses. Without this, Stop silently did nothing for exactly the
+        // controllers the user could see running.
+        if process == nil && adoptedExternalController {
+            await stopExternalController()
+            return
+        }
         guard let p = process else { return }
         process = nil
         serverHealth = "Stopping..."
@@ -318,7 +363,18 @@ public final class WebUIServerManager: ObservableObject {
     /// action instead of leaving them with no start/stop/restart control at
     /// all over a controller that is, in fact, theirs.
     public func stopConflictingStandaloneInstance() async {
-        guard conflictingStandaloneInstance else { return }
+        guard conflictingStandaloneInstance || adoptedExternalController else { return }
+        await stopExternalController()
+    }
+
+    /// Stop a controller this app did not spawn, via ctl.sh.
+    ///
+    /// Reached both by Stop on an adopted controller and by the older
+    /// conflict-recovery path. ctl.sh owns the PID file and the graceful
+    /// shutdown sequence, so routing through it keeps every start/stop route
+    /// agreeing about what is running instead of each tracking its own idea
+    /// of ownership.
+    private func stopExternalController() async {
         guard let dir = findWebUIDir() else {
             serverHealth = "WebUI directory not found"
             return
@@ -355,12 +411,40 @@ public final class WebUIServerManager: ObservableObject {
         // Give the port a moment to actually release before the caller
         // retries start() — ctl.sh's own stop_cmd already polls/escalates
         // internally, but the OS can lag a beat behind the process exiting.
-        let deadline = Date().addingTimeInterval(5.0)
-        while await isPortInUse(config.webuiPort, host: config.webuiHost), Date() < deadline {
+        let probeHost = Self.loopbackIfNetworkBind(config.webuiHost)
+        let deadline = Date().addingTimeInterval(3.0)
+        while await isPortInUse(config.webuiPort, host: probeHost), Date() < deadline {
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
+
+        var stillInUse = await isPortInUse(config.webuiPort, host: probeHost)
+        if stillInUse {
+            // If ctl.sh stop didn't release the port (e.g. process started by a prior app instance),
+            // terminate the occupying process directly.
+            let killProc = Process()
+            killProc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            killProc.arguments = ["-c", "pids=$(lsof -ti :\(config.webuiPort)); if [ -n \"$pids\" ]; then kill -15 $pids 2>/dev/null; sleep 0.5; kill -9 $pids 2>/dev/null; fi"]
+            try? killProc.run()
+            killProc.waitUntilExit()
+
+            let killDeadline = Date().addingTimeInterval(3.0)
+            while await isPortInUse(config.webuiPort, host: probeHost), Date() < killDeadline {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            stillInUse = await isPortInUse(config.webuiPort, host: probeHost)
+        }
+
+        if stillInUse {
+            portConflict = true
+            conflictingStandaloneInstance = true
+            serverHealth = "Failed to stop other instance on port \(config.webuiPort)"
+            return
+        }
+
         portConflict = false
         conflictingStandaloneInstance = false
+        adoptedExternalController = false
+        isRunning = false
         serverHealth = "Stopped"
     }
 
@@ -381,7 +465,8 @@ public final class WebUIServerManager: ObservableObject {
         }
 
         let config = ARESConfiguration.shared
-        let urlString = "http://\(config.webuiHost):\(config.webuiPort)/health"
+        let probeHost = Self.loopbackIfNetworkBind(config.webuiHost)
+        let urlString = "http://\(probeHost):\(config.webuiPort)/health"
         guard let url = URL(string: urlString) else { return }
         
         var request = URLRequest(url: url)
@@ -392,13 +477,36 @@ public final class WebUIServerManager: ObservableObject {
             if let httpResp = response as? HTTPURLResponse,
                Self.isAresHealthResponse(statusCode: httpResp.statusCode, data: data) {
                 isRunning = true
-                serverHealth = "Running (Healthy)"
+                // Keep an adopted controller labelled as external so the UI
+                // (and the user) can tell "healthy, and this app supervises
+                // it" from "healthy, started elsewhere" — both are fine, and
+                // neither is an error.
+                serverHealth = adoptedExternalController ? "Running (External)" : "Running (Healthy)"
             } else {
                 recordHealthFailure(exitedProcess: exitedProcess, fallback: "Running (Degraded)")
             }
         } catch {
             recordHealthFailure(exitedProcess: exitedProcess, fallback: "Running (Unreachable)")
         }
+    }
+
+    /// Adopt an already-running ARES controller at app launch.
+    ///
+    /// The health poller only re-labels a server it already believes is
+    /// running; on a cold start (`isRunning == false`, no owned process) it
+    /// returns immediately, so an app relaunched next to a live controller
+    /// would sit at "Stopped" until someone pressed Start. Probing once at
+    /// startup means the menu bar reflects reality from the first tick.
+    public func adoptRunningControllerIfPresent() async {
+        guard process == nil, !isRunning else { return }
+        let config = ARESConfiguration.shared
+        let probeHost = Self.loopbackIfNetworkBind(config.webuiHost)
+        guard await Self.runtimeOwner(host: probeHost, port: config.webuiPort) != nil else { return }
+        portConflict = false
+        conflictingStandaloneInstance = false
+        adoptedExternalController = true
+        isRunning = true
+        serverHealth = "Running (External)"
     }
 
     private func recordHealthFailure(exitedProcess: Process?, fallback: String) {
@@ -428,6 +536,10 @@ public final class WebUIServerManager: ObservableObject {
             return true
         }
         return false
+    }
+
+    nonisolated static func loopbackIfNetworkBind(_ host: String) -> String {
+        (host == "0.0.0.0" || host == "::") ? "127.0.0.1" : host
     }
 
     /// The occupying process's self-reported ``runtime_owner`` ("standalone"
@@ -538,6 +650,37 @@ public final class WebUIServerManager: ObservableObject {
         }
         candidates.append(homeDirectory.appendingPathComponent(".ares/services/controller"))
         candidates.append(homeDirectory.appendingPathComponent(".ares/webui")) // legacy path
+
+        // Read REPO_ROOT from webui.ctl.env if written by ctl.sh or a previous controller run
+        let aresHomeURL = environment["ARES_HOME"].flatMap { !$0.isEmpty ? URL(fileURLWithPath: $0) : nil }
+            ?? homeDirectory.appendingPathComponent(".ares", isDirectory: true)
+        let ctlEnvFile = aresHomeURL.appendingPathComponent("webui.ctl.env")
+        if let content = try? String(contentsOf: ctlEnvFile, encoding: .utf8) {
+            for line in content.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("REPO_ROOT=") {
+                    let path = trimmed.dropFirst("REPO_ROOT=".count)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'\n\r\t "))
+                    if !path.isEmpty {
+                        candidates.append(URL(fileURLWithPath: path))
+                    }
+                }
+            }
+        }
+
+        // Check common developer repository checkout locations in home directory
+        let commonRepoSubpaths = [
+            "GitHub/ARES/services/controller",
+            "Developer/ARES/services/controller",
+            "Projects/ARES/services/controller",
+            "src/ARES/services/controller",
+            "ARES/services/controller",
+            "ares/services/controller",
+        ]
+        for subpath in commonRepoSubpaths {
+            candidates.append(homeDirectory.appendingPathComponent(subpath))
+        }
+
         return candidates
     }
 

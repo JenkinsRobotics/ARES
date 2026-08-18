@@ -166,6 +166,10 @@ _load_ares_dotenv() {
 _find_python() {
   if [[ -n "${ARES_WEBUI_PYTHON:-}" ]]; then
     printf '%s\n' "${ARES_WEBUI_PYTHON}"
+  elif [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+    printf '%s\n' "${REPO_ROOT}/.venv/bin/python"
+  elif [[ -x "${REPO_ROOT}/.venv/Scripts/python.exe" ]]; then
+    printf '%s\n' "${REPO_ROOT}/.venv/Scripts/python.exe"
   elif command -v python3 >/dev/null 2>&1; then
     command -v python3
   elif command -v python >/dev/null 2>&1; then

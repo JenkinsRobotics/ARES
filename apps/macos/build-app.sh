@@ -113,6 +113,8 @@ cat >> "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
 PLIST
 echo "    <string>${VERSION}</string>" >> "$APP_BUNDLE/Contents/Info.plist"
 cat >> "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
+    <key>LSUIElement</key>
+    <true/>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>

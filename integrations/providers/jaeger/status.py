@@ -5,7 +5,13 @@ import logging
 import os
 import time
 
-from api.providers.status_contract import ProviderStatus, connected, not_installed, offline
+from api.providers.status_contract import (
+    ProviderStatus,
+    connected,
+    needs_attention,
+    not_installed,
+    offline,
+)
 
 logger = logging.getLogger(__name__)
 _CACHE_TTL = 5.0
@@ -39,15 +45,33 @@ def _uncached_status() -> ProviderStatus:
             reason=f"{launcher} is missing or not executable.",
             fix=f"Complete the JaegerAI install and make {launcher} executable.",
         )
+    # Everything above is a filesystem check: it proves JaegerAI is INSTALLED,
+    # never that the bridge answers. Reporting "connected" on that alone is how
+    # the health panel showed green while every turn failed. The bridge query is
+    # therefore the probe, and its failure is the status — not a swallowed
+    # detail that degrades the message to a shorter sentence.
     try:
         from api.providers.jaeger.active_model import active_model
 
         selection = active_model()
-    except Exception:
-        selection = {}
+    except Exception as exc:
+        logger.debug("JaegerAI bridge probe failed", exc_info=True)
+        return needs_attention(
+            f"JaegerAI is installed at {root} but its bridge is not answering.",
+            mode="bridge", root=str(root), instance=jaeger_instance_name(),
+            reason=f"The bridge did not respond to a serving_model query: {exc}",
+            fix=f"Run `{launcher} bridge` to see why it exits.",
+        )
     model = selection.get("model")
+    if not model:
+        return needs_attention(
+            f"JaegerAI is installed at {root} but reports no serving model.",
+            mode="bridge", root=str(root), instance=jaeger_instance_name(),
+            reason="The bridge answered without naming a model, so no runtime is serving turns.",
+            fix="Check the selected instance's model configuration.",
+        )
     return connected(
-        f"JaegerAI is available through the local bridge{f', running {model}' if model else ''}.",
+        f"JaegerAI is available through the local bridge, running {model}.",
         mode="bridge", root=str(root), instance=jaeger_instance_name(), model=model,
         provider=selection.get("provider"), model_location=selection.get("location"),
         model_source=selection.get("source"),

@@ -32,8 +32,9 @@ def test_visible_runtime_labels_do_not_send_users_back_to_hermes() -> None:
     assert "Hermes agent is not responding" not in ui
 
 
-def test_inherited_dashboard_handler_keeps_compatibility_alias() -> None:
+def test_dashboard_handler_exposes_only_the_ares_name() -> None:
     ui = _read("ui.js")
 
     assert "function openExternalDashboard(event)" in ui
-    assert "const openHermesDashboard=openExternalDashboard" in ui
+    assert "const openARESDashboard=openExternalDashboard" in ui
+    assert "openHermesDashboard" not in ui

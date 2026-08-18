@@ -35,10 +35,16 @@ from api.providers.jaeger.paths import (
 from api.providers.jaeger.paths import (
     jaeger_instance_name as resolve_jaeger_instance_name,
 )
-from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launcher
-
-PROTOCOL_VERSION = "1"
-INTEGRATION_CONTRACT_VERSION = 6
+from api.providers.jaeger.paths import (
+    jaeger_launcher as resolve_jaeger_launcher,
+)
+from api.contracts import (
+    CURRENT_INTEGRATION_CONTRACT_VERSION as INTEGRATION_CONTRACT_VERSION,
+    MIN_SUPPORTED_INTEGRATION_CONTRACT_VERSION,
+    PROTOCOL_VERSION,
+    has_capability,
+    validate_contract_compatibility,
+)
 
 _BRIDGE_ENVIRONMENT_NAMES = {
     "HOME", "LANG", "LC_ALL", "LOGNAME", "PATH", "SHELL",
@@ -313,18 +319,9 @@ class JaegerClient:
     def integration_contract(self) -> dict[str, Any]:
         """Return and validate Jaeger's self-described product capabilities."""
         contract = self.query("contract")
-        if not isinstance(contract, dict) or contract.get("contract") != "ares-jaeger":
-            raise JaegerError("Jaeger bridge returned an invalid integration contract")
-        version = contract.get("contract_version")
-        if version != INTEGRATION_CONTRACT_VERSION:
-            raise JaegerError(
-                "incompatible ARES-Jaeger contract: "
-                f"expected {INTEGRATION_CONTRACT_VERSION}, received {version!r}"
-            )
-        if str(contract.get("protocol_version") or "") != PROTOCOL_VERSION:
-            raise JaegerError("Jaeger integration contract disagrees with the bridge protocol")
-        if not isinstance(contract.get("features"), dict):
-            raise JaegerError("Jaeger integration contract is missing its feature map")
+        valid, err_msg = validate_contract_compatibility(contract)
+        if not valid:
+            raise JaegerError(err_msg)
         return contract
 
     def _request(self, frame: dict[str, Any]) -> Any:

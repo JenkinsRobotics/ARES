@@ -371,9 +371,9 @@
         ${(node.tags || []).map(t => `<span class="inspector-tag">#${_esc(t)}</span>`).join('')}
       </div>
       <div class="inspector-actions">
-        <button class="inspector-btn primary" onclick="window.AresKnowledgeGraph.askJarvisAbout('${_esc(node.title)}')">
+        <button class="inspector-btn primary" onclick="window.AresKnowledgeGraph.askAssistantAbout('${_esc(node.title)}')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          Ask Jarvis
+          Ask ${_esc(_assistantName())}
         </button>
         <button class="inspector-btn" onclick="window.AresKnowledgeGraph.openInEditor('${_esc(node.full_path)}')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -402,6 +402,13 @@
     const drawer = document.getElementById('knowledgeInspectorDrawer');
     if (drawer) drawer.classList.remove('open');
     _selectedNode = null;
+  }
+
+  // The assistant's name is owned by the runtime and surfaced by ui.js.
+  // Hardcoding it here drifts the moment a user renames their companion.
+  function _assistantName() {
+    if (typeof assistantDisplayName === 'function') return assistantDisplayName();
+    return window._botName || 'ARES';
   }
 
   function _esc(str) {
@@ -558,7 +565,7 @@
       _closeInspector();
     },
 
-    askJarvisAbout(title) {
+    askAssistantAbout(title) {
       _closeInspector();
       if (typeof switchPanel === 'function') switchPanel('chat');
       const msgInput = document.getElementById('msg');

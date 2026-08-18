@@ -262,7 +262,7 @@ public struct ARESSettingsView: View {
                     .disabled(serverManager.isRunning)
                     
                     Button("Stop Server") {
-                        serverManager.stop()
+                        Task { await serverManager.stop() }
                     }
                     .disabled(!serverManager.isRunning)
                     

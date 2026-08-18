@@ -159,7 +159,9 @@ def test_delete_messaging_session_preserves_foreign_state_and_blocks_mutation(
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert not (session_dir / f"{sid}.json").exists()
-    assert sid not in models._load_webui_deleted_session_tombstone()
+    # ARES hides its deleted projection permanently while leaving the
+    # messaging runtime's authoritative record untouched.
+    assert sid in models._load_webui_deleted_session_tombstone()
     assert delete_calls == []
 
 

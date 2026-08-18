@@ -136,8 +136,38 @@ def _stamp_ollama_context_lengths(models: list[dict], api_key: str | None = None
     return models
 
 
-def _ollama_cloud_models() -> list[dict]:
-    """Curated catalog; ARES never receives Jaeger's raw provider secret."""
+def _ollama_cloud_models(discovered: dict | None = None) -> list[dict]:
+    """Ollama Cloud's real catalog when JaegerAI already fetched it, else a small fallback.
+
+    ARES never receives Jaeger's raw provider secret, so it cannot query
+    Ollama Cloud's model list itself. But JaegerAI's own ``model_catalog``
+    bridge query already performs that live discovery internally (with the
+    key it holds) and returns the full result — ARES was discarding
+    everything from that response except its ``default`` field, which is
+    the same bug B4 fixed for local models: a live, richer catalog sitting
+    one hop away, ignored in favor of a small hardcoded list. Prefer the
+    live rows; fall back to the curated list only when JaegerAI has nothing
+    (bridge unreachable, no cloud key configured yet) so the picker is never
+    left with zero cloud options.
+    """
+    if isinstance(discovered, dict):
+        live = [
+            {
+                "id": str(row.get("id") or "").strip(),
+                "label": str(row.get("label") or row.get("id") or "").strip(),
+                "provider": "ollama-cloud",
+                "provider_id": "ollama-cloud",
+                "location": "cloud",
+                "context_length": row.get("context_length"),
+            }
+            for row in (discovered.get("models") or [])
+            if isinstance(row, dict)
+            and str(row.get("location") or "").strip().lower() == "cloud"
+            and str(row.get("provider") or "").strip().lower() == "ollama-cloud"
+            and str(row.get("id") or "").strip()
+        ]
+        if live:
+            return live
     return [
         {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
         {"id": "glm-5.1", "label": "glm-5.1", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
@@ -173,7 +203,20 @@ def _xai_models() -> list[dict]:
 
 
 def _get_jaeger_local_models() -> list[dict]:
-    """Discover installed local MLX / GGUF models for Jaeger."""
+    """Discover installed local MLX / GGUF models for Jaeger.
+
+    JaegerAI's ``location: "local"`` bucket mixes two different kinds of row:
+    raw GGUF/MLX files its own filesystem registry resolves directly, and
+    models reachable through the local Ollama daemon (JaegerAI tags those
+    ``provider: "ollama"``, since it configures them the same way it
+    configures Ollama Cloud — just pointed at localhost). Collapsing both to
+    a single hardcoded ``"local"`` provider sent every Ollama-served local
+    model through JaegerAI's raw-file resolver, which can't find it (it was
+    never a bare file on disk) and rejects the pick outright — even though
+    the model is fully installed and JaegerAI already knows how to reach it.
+    Preserve the row's real provider so the pick routes the same way JaegerAI
+    itself would serve it.
+    """
     try:
         from api.backends.model_discovery import list_jaeger_installed_gguf
         installed = list_jaeger_installed_gguf()
@@ -186,11 +229,13 @@ def _get_jaeger_local_models() -> list[dict]:
         if not mid or mid in seen:
             continue
         seen.add(mid)
+        row_provider = str(m.get("provider") or "").strip().lower()
+        provider = row_provider if row_provider == "ollama" else "local"
         models.append({
             "id": mid,
             "label": m.get("label") or mid,
-            "provider": "local",
-            "provider_id": "local",
+            "provider": provider,
+            "provider_id": provider,
             "location": "local",
         })
     return models
@@ -246,17 +291,25 @@ def active_profile_config_path() -> Path:
         return _get_config_path()
 
 
-def sync_main_model_to_jaeger(result: dict) -> None:
+def sync_main_model_to_jaeger(result: dict) -> dict[str, Any]:
+    """Push a model pick into JaegerAI's own config, reporting whether it took.
+
+    A caller that only checks "did this raise?" can't tell a real sync from
+    one JaegerAI silently rejected (e.g. an unresolvable local model name) —
+    both looked identical from the outside, which is how a picked model could
+    appear to be selected in ARES while JaegerAI kept serving the old one.
+    The return value makes that distinction visible instead of swallowing it.
+    """
     provider = str((result or {}).get("provider") or "").strip().lower()
     model = str((result or {}).get("model") or "").strip()
     if not provider or not model:
-        return
+        return {"ok": True}
     try:
         from api.ares_provider_sync import JaegerAI_FALLBACK_PROVIDER_MAP, sync_provider
 
         mapped = JaegerAI_FALLBACK_PROVIDER_MAP.get(provider)
         if not mapped:
-            return
+            return {"ok": True}
         sync_provider(
             provider=mapped,
             model=model,
@@ -266,8 +319,10 @@ def sync_main_model_to_jaeger(result: dict) -> None:
         from api.providers.jaeger.streaming import reset_jaeger_runtime
 
         reset_jaeger_runtime()
-    except Exception:
+        return {"ok": True}
+    except Exception as exc:
         logger.warning("Failed to synchronize the main model with JaegerAI", exc_info=True)
+        return {"ok": False, "error": str(exc)}
 
 
 def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> dict:
@@ -356,7 +411,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
 
     # Append Ollama Cloud if configured
     if "ollama_cloud_api_key" in credential_names and "ollama-cloud" not in existing_pids:
-        cloud_models = _ollama_cloud_models()
+        cloud_models = _ollama_cloud_models(discovered)
         if cloud_models:
             groups.append({
                 "provider": "Ollama Cloud",
@@ -367,9 +422,11 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             existing_pids.add("ollama-cloud")
 
     # Append local Ollama daemon if running
+    ollama_local_ids: set[str] = set()
     if "ollama" not in existing_pids:
         ollama_local = _fetch_ollama_local_models()
         if ollama_local:
+            ollama_local_ids = {str(m.get("id") or "").strip() for m in ollama_local}
             groups.append({
                 "provider": "Ollama (Local)",
                 "provider_id": "ollama",
@@ -378,9 +435,16 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             })
             existing_pids.add("ollama")
 
-    # Append local MLX / GGUF models
+    # Append local MLX / GGUF models. JaegerAI's own catalog discovers the
+    # same local Ollama daemon internally (to know what it can reach), so its
+    # feed can repeat models the "Ollama (Local)" group above already listed
+    # — drop those here rather than showing the same model twice under two
+    # different provider labels.
     if "local" not in existing_pids:
-        local_models = _get_jaeger_local_models()
+        local_models = [
+            m for m in _get_jaeger_local_models()
+            if str(m.get("id") or "").strip() not in ollama_local_ids
+        ]
         if local_models:
             groups.append({
                 "provider": "Local (Jaeger AI / MLX / GGUF)",

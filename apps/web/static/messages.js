@@ -1139,9 +1139,10 @@ function _clearStaleBusyStateBeforeSend({compressionRunning=false}={}){
   if(!S||!S.busy||compressionRunning) return false;
   const session=S.session||{};
   const sid=session.session_id||'';
+  const inflightEntry=typeof INFLIGHT==='object'&&INFLIGHT&&sid?INFLIGHT[sid]:null;
+  const hasLiveInflight=Boolean(inflightEntry&&(inflightEntry.ws||inflightEntry.es||inflightEntry.fetchActive));
   const hasRuntimeConfirmation=Boolean(
-    S.activeStreamId||
-    session.active_stream_id||
+    (hasLiveInflight&&S.activeStreamId)||
     session.pending_user_message||
     session.pending_started_at
   );

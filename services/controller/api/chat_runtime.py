@@ -554,6 +554,7 @@ def start_session_turn(
     workspace: str | None = None,
     model: str | None = None,
     model_provider: str | None = None,
+    explicit_model_pick: bool | None = None,
     attachments: list[dict[str, Any]] | None = None,
     _skip_wakeup_policy: bool = False,
 ) -> dict[str, Any]:
@@ -596,7 +597,13 @@ def start_session_turn(
         session,
         requested_model or None,
         requested_provider,
-        explicit_model_pick=bool(model),
+        # ``model`` is set on almost every webui send (it's the session's
+        # current model, not just deliberate picks), so deriving explicitness
+        # from bool(model) would treat every send as explicit. Callers that
+        # know the operator's real intent (the webui request body) pass it;
+        # everyone else keeps the bool(model) fallback used before this had a
+        # dedicated signal.
+        explicit_model_pick=bool(model) if explicit_model_pick is None else explicit_model_pick,
         prefer_cached_catalog=source != "webui",
     )
     try:

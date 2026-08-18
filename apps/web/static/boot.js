@@ -2242,6 +2242,12 @@ $('modelSelect').onchange=async()=>{
   // re-reverts a cross-family pick (the #3737 bug, Codex catch). send() clears it
   // after reading a matching pending pick. (#3739/#3737)
   _applySessionContextMetadataUpdate(data);
+  // JaegerAI can reject a pick the session nonetheless recorded (e.g. an
+  // unresolvable local model name) — say so now rather than let the chat
+  // silently answer from the previous model with no visible sign of it.
+  if(data&&data.model_sync_warning&&typeof showToast==='function'){
+    showToast(data.model_sync_warning,6000);
+  }
   // Warn if selected model belongs to a different provider than what ARES is configured for
   if(typeof _checkProviderMismatch==='function'){
     const warn=_checkProviderMismatch(selectedModel);

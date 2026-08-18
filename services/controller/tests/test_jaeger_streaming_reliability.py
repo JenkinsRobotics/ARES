@@ -139,3 +139,75 @@ def test_same_instance_turns_are_serialized(monkeypatch):
     assert all(not worker.is_alive() for worker in workers)
     assert peak == 1
     assert {row[0] for row in results} == {"one", "two"}
+
+
+def test_stale_instance_lock_is_cleared_and_retried_once(monkeypatch):
+    """A dead orphan's lock recovers automatically instead of needing `jaeger kill` by hand."""
+    from api.providers.jaeger import streaming
+
+    starts = []
+
+    class FakeClient:
+        def __init__(self, *, jaeger_home, instance):
+            self._attempt = len(starts) + 1
+            starts.append(self._attempt)
+
+        def start(self):
+            if self._attempt == 1:
+                raise streaming.JaegerError(
+                    "instance 'jarvis' is locked by pid 20822 (still running)."
+                )
+            return {"ok": True}
+
+        def close(self):
+            return None
+
+        def is_alive(self):
+            return True
+
+    clear_calls = []
+
+    monkeypatch.setattr(streaming, "local_jaeger_root", lambda: __import__("pathlib").Path("/tmp"))
+    monkeypatch.setattr(streaming, "JaegerClient", FakeClient)
+    monkeypatch.setattr(
+        streaming,
+        "_force_clear_stale_instance_lock",
+        lambda instance: clear_calls.append(instance) or True,
+    )
+    streaming._BRIDGE_CLIENTS.clear()
+    streaming._BRIDGE_TURN_LOCKS.clear()
+
+    client = streaming._get_or_start_bridge_client("jarvis")
+
+    assert isinstance(client, FakeClient)
+    assert starts == [1, 2]
+    assert clear_calls == ["jarvis"]
+
+
+def test_lock_error_surfaces_when_auto_recovery_cannot_clear_it(monkeypatch):
+    """A genuinely-live second instance still gets a clear error, not a silent hang."""
+    from api.providers.jaeger import streaming
+
+    class AlwaysLockedClient:
+        def __init__(self, *, jaeger_home, instance):
+            pass
+
+        def start(self):
+            raise streaming.JaegerError(
+                "instance 'jarvis' is locked by pid 999 (still running)."
+            )
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(streaming, "local_jaeger_root", lambda: __import__("pathlib").Path("/tmp"))
+    monkeypatch.setattr(streaming, "JaegerClient", AlwaysLockedClient)
+    monkeypatch.setattr(streaming, "_force_clear_stale_instance_lock", lambda instance: False)
+    streaming._BRIDGE_CLIENTS.clear()
+    streaming._BRIDGE_TURN_LOCKS.clear()
+
+    try:
+        streaming._get_or_start_bridge_client("jarvis")
+        assert False, "expected JaegerError"
+    except streaming.JaegerError as exc:
+        assert "locked" in str(exc).lower()

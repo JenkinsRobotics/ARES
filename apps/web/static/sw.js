@@ -5,8 +5,9 @@
  * Caches only static shell assets so the app shell loads fast on repeat visits.
  */
 
-// Cache version is injected by the server at request time (routes.py /sw.js handler).
-// Bumps automatically whenever the git commit changes — no manual edits needed.
+// Cache version is injected by the server at request time -- see the /sw.js
+// handler in fastapi_app/frontend.py. Bumps automatically whenever the git
+// commit changes, so a new release always builds a new cache.
 const CACHE_NAME = 'ares-shell-__WEBUI_VERSION__';
 
 // Static assets that form the app shell.
@@ -23,7 +24,6 @@ const CACHE_NAME = 'ares-shell-__WEBUI_VERSION__';
 const VQ = '?v=__WEBUI_VERSION__';
 const SHELL_ASSETS = [
   './static/style.css' + VQ,
-  './static/legacy_browser_migration.js' + VQ,
   './static/pwa-startup.js' + VQ,
   './static/boot.js' + VQ,
   './static/assistant_turn_anchors.js' + VQ,
@@ -40,9 +40,14 @@ const SHELL_ASSETS = [
   './static/vendor/smd.min.js' + VQ,
   './static/vendor/katex/0.16.22/katex.min.css' + VQ,
   './static/vendor/katex/0.16.22/katex.min.js' + VQ,
+  // manifest.json lists these icons without a version query while index.html
+  // links favicon-32 with one, so both request forms must be listed or the
+  // lookup misses. Unversioned entries are safe now that CACHE_NAME carries
+  // the version: a new release builds a new cache and drops the old one.
   './static/favicon.svg',
+  './static/favicon-32.png' + VQ,
   './static/favicon-32.png',
-  './manifest.json',
+  './manifest.json' + VQ,
 ];
 
 function deleteOldShellCaches() {

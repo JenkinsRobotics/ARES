@@ -6,6 +6,10 @@ from typing import Any
 
 from api.backend_catalog import JAEGER_BACKEND_ID
 from api.backend_selector import get_active_backend, get_session_backend
+from api.contracts import (
+    MIN_SUPPORTED_SESSION_CONTRACT_VERSION,
+    SESSION_CONTRACT_VERSION,
+)
 
 
 class SessionCapabilityError(RuntimeError):
@@ -13,10 +17,8 @@ class SessionCapabilityError(RuntimeError):
 
 
 def shared_session_id(value: object) -> str:
-    """Return the opaque cross-runtime identifier, accepting one legacy alias."""
+    """Return the opaque cross-runtime identifier without namespacing it."""
     session_id = str(value or "").strip()
-    if session_id.startswith("webui:"):
-        session_id = session_id[len("webui:"):]
     if not session_id or len(session_id) > 256:
         raise ValueError("invalid session id")
     return session_id

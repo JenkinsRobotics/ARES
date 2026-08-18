@@ -3476,6 +3476,14 @@ async function populateModelDropdown(opts={}){
         const opt=document.createElement('option');
         opt.value=m.id;
         opt.textContent=m.label;
+        // A catalog group can legitimately mix providers (e.g. JaegerAI's
+        // "local" bucket holds both raw GGUF/MLX files and models actually
+        // served through the local Ollama daemon) — an option's own
+        // provider, when the catalog states one, must win over the group
+        // default so a pick routes to where the model can actually be
+        // reached, not wherever the rest of the group happens to point.
+        const mProvider=(m&&(m.provider_id||m.provider))?String(m.provider_id||m.provider).trim():'';
+        if(mProvider && mProvider!==g.provider_id) opt.dataset.provider=mProvider;
         if(m && (m.supports_fast_tier === true || String(m.supports_fast_tier).toLowerCase()==='true')){
           opt.dataset.fast='1';
         }else if(m && (m.supports_fast_tier === false || String(m.supports_fast_tier).toLowerCase()==='false')){
@@ -3821,7 +3829,7 @@ function syncModelChip(){
   const opt=_selectedModelOption();
   const text=opt?opt.textContent:getModelLabel(sel.value||'');
   const compactText=_compactComposerModelChipLabel(sel.value||'', text);
-  const gatewayRouting=_latestGatewayRoutingForSession(S.session);
+  const gatewayRouting=_latestGatewayRoutingForSession(S.session,sel.value||'');
   const displayText=_formatGatewayModelLabel(sel.value||'',compactText,gatewayRouting)||compactText;
   label.textContent=displayText;
   if(mobileLabel) mobileLabel.textContent=displayText;
@@ -4158,7 +4166,12 @@ function renderModelDropdown(){
         const displayName=rawValue.startsWith('@custom:')
           ? getModelLabel(rawValue)
           : (opt.textContent||getModelLabel(rawValue));
-        const entry={value:opt.value,name:esc(displayName),id:esc(opt.value),group:child.label||'',groupKey,providerId,modelsEndpointError,badge:_getConfiguredModelBadge(opt.value,_badgeMap,providerId),hiddenByDefault:false};
+        // A group can mix providers (e.g. JaegerAI's "local" bucket holds
+        // both raw GGUF/MLX files and models served through the local
+        // Ollama daemon) — prefer the option's own provider, when the
+        // catalog set one, over the group default.
+        const optProviderId=(opt.dataset&&opt.dataset.provider)?opt.dataset.provider:providerId;
+        const entry={value:opt.value,name:esc(displayName),id:esc(opt.value),group:child.label||'',groupKey,providerId:optProviderId,modelsEndpointError,badge:_getConfiguredModelBadge(opt.value,_badgeMap,optProviderId),hiddenByDefault:false};
         _modelData.push(entry);
         groupMeta.modelCount++;
       }
@@ -5838,20 +5851,17 @@ function _recordNonMessageScrollIntent(e){
     const bottomDistance=el.scrollHeight-el.scrollTop-el.clientHeight;
     if(bottomDistance>120) _lastMessageScrollIntentMs=performance.now();
   }
-  if(typeof e.deltaY==='number'&&e.deltaY<0) _lastMessageWheelIntentMs=performance.now();
-  if(e.type==='touchmove'||(typeof e.deltaY==='number'&&e.deltaY< -30)){
+  if(typeof e.deltaY==='number'&&e.deltaY<0){
+    _lastMessageWheelIntentMs=performance.now();
     _cancelBottomSettle();
-    if(e.type==='touchmove') _markMessageTouchScrollIntent(true);
-    if(typeof e.deltaY==='number'&&e.deltaY< -30){
-      _messageUserUnpinned=true;
-      _nearBottomCount=0;
-      _scrollPinned=false;
-    } else if(e.type==='touchmove'&&_touchStartY!==null&&e.touches&&e.touches[0]){
-      // Detect upward-scroll intent on touch: dragging the finger DOWN the
-      // screen scrolls the content up into earlier history (scrollTop
-      // decreases) — the same "user scrolled away" signal the wheel deltaY<0
-      // branch and the scroll listener's movedUp branch use. dy>0 = finger
-      // moved down = reveal earlier content = unpin.
+    _messageUserUnpinned=true;
+    _nearBottomCount=0;
+    _scrollPinned=false;
+  }
+  if(e.type==='touchmove'){
+    _cancelBottomSettle();
+    _markMessageTouchScrollIntent(true);
+    if(_touchStartY!==null&&e.touches&&e.touches[0]){
       const dy=e.touches[0].clientY-_touchStartY;
       if(dy>8){
         _messageUserUnpinned=true;
@@ -7158,11 +7168,23 @@ function _gatewayModelWarningText(routing){
   const used=getModelLabel(routing.used_model||'served model');
   return`Model switched: ${requested} → ${used}`;
 }
-function _latestGatewayRoutingForSession(session){
+function _latestGatewayRoutingForSession(session, currentModelId){
   if(!session)return null;
-  if(session.gateway_routing)return session.gateway_routing;
-  const history=Array.isArray(session.gateway_routing_history)?session.gateway_routing_history:[];
-  return history.length?history[history.length-1]:null;
+  const routing=session.gateway_routing
+    ||(Array.isArray(session.gateway_routing_history)&&session.gateway_routing_history.length
+        ?session.gateway_routing_history[session.gateway_routing_history.length-1]
+        :null);
+  if(!routing)return null;
+  // A routing record only describes the turn it came from. Once the operator
+  // picks a different model, that record is stale — showing it anyway is how
+  // the composer chip ended up pairing a freshly-picked local model name with
+  // the previous turn's cloud fallback provider ("qwen3.6:35b-mlx via Ollama
+  // Cloud"). Only surface it while it still describes the current pick.
+  if(currentModelId===undefined)return routing; // caller didn't opt into the guard
+  const current=_modelPickerOptionIdentity(currentModelId,'');
+  const candidates=[routing.used_model,routing.requested_model].filter(Boolean);
+  const matches=candidates.some(id=>_modelPickerOptionIdentity(id,'')===current);
+  return matches?routing:null;
 }
 
 function _stripXmlToolCallsDisplay(s){
@@ -9552,6 +9574,149 @@ function _syncSystemHealthMonitorVisibility(){
 document.addEventListener('visibilitychange',_syncSystemHealthMonitorVisibility);
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startSystemHealthMonitor);
 else startSystemHealthMonitor();
+
+// ── Live System & AI Model Telemetry Pill & Popover ──
+let _lastSystemStats = null;
+let _systemStatsTimer = null;
+const SYSTEM_STATS_INTERVAL_MS = 3000;
+
+async function pollSystemStats() {
+  if (document.visibilityState !== 'visible') return;
+  try {
+    const stats = await api('/api/system/stats', { timeoutToast: false });
+    if (!stats || !stats.ok) return;
+    _lastSystemStats = stats;
+    _updateTitlebarStatsPill(stats);
+    _updateSystemTelemetryPopover(stats);
+  } catch (_) {}
+}
+
+function _updateTitlebarStatsPill(stats) {
+  const label = $('titlebarStatsLabel');
+  const badge = $('titlebarModelBadge');
+  const dot = $('titlebarStatsDot');
+  if (!label || !badge || !dot) return;
+
+  const cpu = stats.host?.cpu_percent ?? 0;
+  const mem = stats.host?.memory?.used_gb ?? 0;
+  label.textContent = `⚡ ${cpu}% · 💾 ${mem} GB`;
+
+  const ai = stats.ai_runtimes || {};
+  if (ai.is_local_model_loaded && ai.active_model_in_vram) {
+    const shortName = ai.active_model_in_vram.split(':')[0];
+    badge.textContent = `🧠 ${shortName} (VRAM)`;
+    badge.style.background = 'rgba(59,130,246,0.2)';
+    badge.style.color = '#60a5fa';
+    dot.classList.add('model-active');
+  } else if (ai.ollama?.available || ai.jaeger?.available) {
+    badge.textContent = 'AI Ready';
+    badge.style.background = 'rgba(16,185,129,0.15)';
+    badge.style.color = '#34d399';
+    dot.classList.remove('model-active');
+  } else {
+    badge.textContent = 'AI Cloud';
+    badge.style.background = 'rgba(156,163,175,0.15)';
+    badge.style.color = 'var(--muted)';
+    dot.classList.remove('model-active');
+  }
+}
+
+function toggleSystemTelemetryModal(event) {
+  if (event) event.stopPropagation();
+  let pop = $('systemTelemetryPopover');
+  if (pop) {
+    pop.remove();
+    return;
+  }
+
+  const btn = $('titlebarSystemStatsBtn');
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+
+  pop = document.createElement('div');
+  pop.id = 'systemTelemetryPopover';
+  pop.className = 'system-telemetry-popover';
+  pop.style.top = `${rect.bottom + 8}px`;
+  pop.style.left = `${Math.max(12, rect.left)}px`;
+
+  document.body.appendChild(pop);
+  _updateSystemTelemetryPopover(_lastSystemStats);
+
+  function _closeOnClickOutside(e) {
+    if (pop && !pop.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+      pop.remove();
+      document.removeEventListener('click', _closeOnClickOutside);
+    }
+  }
+  setTimeout(() => document.addEventListener('click', _closeOnClickOutside), 10);
+  void pollSystemStats();
+}
+
+function _updateSystemTelemetryPopover(stats) {
+  const pop = $('systemTelemetryPopover');
+  if (!pop || !stats) return;
+
+  const host = stats.host || {};
+  const mem = host.memory || {};
+  const ai = stats.ai_runtimes || {};
+  const ollama = ai.ollama || {};
+  const jaeger = ai.jaeger || {};
+
+  let modelsHtml = '<div style="color:var(--muted);font-size:11px">No local models currently loaded in VRAM</div>';
+  if (ollama.models && ollama.models.length > 0) {
+    modelsHtml = ollama.models.map(m => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+        <span style="font-weight:600;color:var(--text)">${m.name}</span>
+        <span style="font-size:10px;background:rgba(59,130,246,0.15);color:#60a5fa;padding:1px 5px;border-radius:4px">${m.size_vram_formatted} VRAM</span>
+      </div>
+    `).join('');
+  }
+
+  pop.innerHTML = `
+    <div class="system-telemetry-head">
+      <span class="system-telemetry-title">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+        System & AI Health (${stats.profile || assistantDisplayName()})
+      </span>
+      <span style="font-size:10px;color:var(--muted)">Live</span>
+    </div>
+    <div class="system-telemetry-grid">
+      <div class="system-telemetry-card">
+        <span class="system-telemetry-card-title">CPU Load</span>
+        <span class="system-telemetry-card-value">${host.cpu_percent ?? 0}%</span>
+      </div>
+      <div class="system-telemetry-card">
+        <span class="system-telemetry-card-title">RAM (Unified)</span>
+        <span class="system-telemetry-card-value">${mem.formatted || '0 GB'}</span>
+      </div>
+    </div>
+    <div class="system-telemetry-runtime">
+      <div class="system-telemetry-runtime-header">
+        <span>Ollama VRAM Runtime</span>
+        <span style="color:${ollama.available ? '#34d399' : 'var(--muted)'}">${ollama.status || 'offline'}</span>
+      </div>
+      ${modelsHtml}
+    </div>
+    <div class="system-telemetry-runtime">
+      <div class="system-telemetry-runtime-header">
+        <span>Jaeger AI Bridge</span>
+        <span style="color:${jaeger.available ? '#34d399' : 'var(--muted)'}">${jaeger.status || 'disconnected'}</span>
+      </div>
+      <div style="font-size:10.5px;color:var(--muted)">${jaeger.message || 'STDIO / Versioned Contract v7'}</div>
+    </div>
+  `;
+}
+
+function startSystemStatsMonitor() {
+  if (_systemStatsTimer) return;
+  void pollSystemStats();
+  _systemStatsTimer = setInterval(pollSystemStats, SYSTEM_STATS_INTERVAL_MS);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') void pollSystemStats();
+});
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startSystemStatsMonitor);
+else startSystemStatsMonitor();
 
 // ── Optional ARES messaging gateway heartbeat alert (#716) ──
 const AGENT_HEALTH_INTERVAL_MS=30000;

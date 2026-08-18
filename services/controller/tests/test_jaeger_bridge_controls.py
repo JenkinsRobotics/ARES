@@ -67,7 +67,7 @@ def test_bridge_client_validates_integration_contract(monkeypatch):
     client = JaegerClient(command=["jaeger", "bridge"])
     monkeypatch.setattr(client, "query", lambda _what: {
         "contract": "ares-jaeger",
-        "contract_version": 6,
+        "contract_version": 7,
         "protocol_version": "1",
         "features": {"chat": {"available": True}},
     })

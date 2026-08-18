@@ -25,6 +25,9 @@ def _character_summary(value: Any) -> dict[str, Any]:
         "role": str(row.get("role") or ""),
         "voice_tone": str(row.get("voice_tone") or ""),
         "voice_id": str(row.get("voice_id") or ""),
+        "soul": str(row.get("soul") or ""),
+        "backstory": str(row.get("backstory") or ""),
+        "custom_instructions": str(row.get("custom_instructions") or ""),
         "active": bool(row.get("active")),
         "bound": bool(row.get("bound")),
     }
@@ -63,6 +66,8 @@ def companion_snapshot() -> dict[str, Any]:
                 "active": bool(active_summary.get("active", True)),
                 "bound": bool(active_summary.get("bound", False)),
                 "custom_instructions": str(character.get("custom_instructions") or ""),
+                "soul": str(character.get("soul") or ""),
+                "backstory": str(character.get("backstory") or ""),
             },
             "characters": characters,
         }
@@ -70,11 +75,23 @@ def companion_snapshot() -> dict[str, Any]:
         raise CompanionControlError(str(exc)) from exc
 
 
-def update_companion(*, name: str | None = None, character_id: str | None = None) -> dict[str, Any]:
+def update_companion(
+    *,
+    name: str | None = None,
+    character_id: str | None = None,
+    custom_instructions: str | None = None,
+    role: str | None = None,
+    voice_tone: str | None = None,
+    soul: str | None = None,
+    backstory: str | None = None,
+) -> dict[str, Any]:
     """Apply supported Companion edits through JaegerAI and read back truth."""
-    clean_name = str(name or "").strip()
-    clean_character = str(character_id or "").strip()
-    if not clean_name and not clean_character:
+    clean_name = str(name or "").strip() if name is not None else None
+    clean_character = str(character_id or "").strip() if character_id is not None else None
+    if not any(
+        v is not None
+        for v in (clean_name, clean_character, custom_instructions, role, voice_tone, soul, backstory)
+    ):
         raise CompanionControlError("No Companion changes were supplied.")
     try:
         from api.providers.jaeger.streaming import command_local_companion
@@ -86,6 +103,22 @@ def update_companion(*, name: str | None = None, character_id: str | None = None
             # choice survive the next JaegerAI launch.
             command_local_companion("select_character", {"id": clean_character})
             command_local_companion("make_default", {"id": clean_character})
+
+        profile_patch: dict[str, Any] = {}
+        if custom_instructions is not None:
+            profile_patch["custom_instructions"] = custom_instructions
+        if role is not None:
+            profile_patch["role"] = role
+        if voice_tone is not None:
+            profile_patch["voice_tone"] = voice_tone
+        if soul is not None:
+            profile_patch["soul"] = soul
+        if backstory is not None:
+            profile_patch["backstory"] = backstory
+
+        if profile_patch:
+            command_local_companion("save_profile", profile_patch)
+
         return companion_snapshot()
     except Exception as exc:
         raise CompanionControlError(str(exc)) from exc

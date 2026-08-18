@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -32,7 +34,11 @@ from api.config import (
 )
 from api.helpers import _redact_text, _redact_value, redact_session_data
 from api.models import get_session, merge_session_messages_append_only
-from api.providers.jaeger.bridge_client import JaegerClient, JaegerError
+from api.providers.jaeger.bridge_client import (
+    JaegerClient,
+    JaegerError,
+    minimal_bridge_environment,
+)
 from api.providers.jaeger.paths import jaeger_home, jaeger_instance_name
 from api.run_journal import RunJournalWriter
 
@@ -63,10 +69,9 @@ def local_jaeger_root() -> Path | None:
     on a normal user machine, and what ``ARES_JAEGER_HOME`` / ``JAEGER_HOME``
     override for nonstandard installs.
     """
-    from api.providers.jaeger.legacy_compat import environment_value
     from api.providers.jaeger.paths import is_jaeger_ai_root
 
-    raw = environment_value(_JAEGER_SOURCE_DIR_ENV)
+    raw = str(os.environ.get(_JAEGER_SOURCE_DIR_ENV) or "").strip()
     if raw:
         root = Path(raw).expanduser().resolve()
         # Explicit dependency selection is fail-closed. Never hide a stale or
@@ -81,15 +86,20 @@ def local_jaeger_root() -> Path | None:
 
 
 def _jaeger_instance_name() -> str | None:
-    from api.providers.jaeger.legacy_compat import environment_value
-
-    return environment_value(_JAEGER_INSTANCE_ENV) or jaeger_instance_name()
+    return str(os.environ.get(_JAEGER_INSTANCE_ENV) or "").strip() or jaeger_instance_name()
 
 
-def _bridge_error_message(exc: Exception) -> str:
+def _bridge_error_message(exc: Exception, *, auto_recovery_attempted: bool = False) -> str:
     message = _redact_text(str(exc).strip(), _enabled=True)
     lower = message.lower()
     if "lock" in lower:
+        if auto_recovery_attempted:
+            return (
+                "JaegerAI's instance lock is held by another process, and ARES's "
+                "automatic recovery (`jaeger kill`) could not clear it — a "
+                "JaegerAI app/TUI is likely genuinely running elsewhere. Close it, "
+                f"or use a different instance name. (Original error: {message})"
+            )
         return (
             "JaegerAI is already running on this machine, so ARES can't start a "
             "second copy (JaegerAI allows one process per instance). Close the "
@@ -106,6 +116,55 @@ def _bridge_error_message(exc: Exception) -> str:
     if "no instance" in lower or "instance" in lower and ("not found" in lower or "does not exist" in lower):
         return f"{message} — run `jaeger setup` on the machine where JaegerAI is installed first."
     return message
+
+
+def _is_lock_error(exc: Exception) -> bool:
+    return "lock" in str(exc).lower()
+
+
+def _force_clear_stale_instance_lock(instance: str | None) -> bool:
+    """Best-effort ``jaeger kill --instance <name>`` to clear an orphaned lock.
+
+    JaegerAI's own stale-lock detection correctly refuses to break a lock
+    held by a genuinely-alive process — by design, since a live JaegerAI
+    process could be doing real work. But ARES can leave its *own* grandchild
+    bridge subprocess orphaned (e.g. a controller restart that outraced the
+    bridge's graceful shutdown), and then has no way back in except a human
+    running ``jaeger kill`` by hand. This scopes that exact recovery to the
+    one instance ARES is trying to reach — never the no-arg/all-instances
+    form, so it can't touch a JaegerAI the operator is genuinely running
+    under a different instance name.
+
+    Never raises: this is a best-effort recovery step, not the primary path.
+    A failure here just means the caller's retry will fail with the original
+    error, which is the same outcome as not attempting recovery at all.
+    """
+    if not instance:
+        return False
+    root = local_jaeger_root()
+    if root is None:
+        return False
+    launcher = root / "jaeger"
+    if not launcher.exists():
+        return False
+    try:
+        result = subprocess.run(
+            [str(launcher), "kill", "--instance", instance],
+            env=minimal_bridge_environment(),
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except Exception:
+        logger.warning("jaeger kill --instance %s failed to run", instance, exc_info=True)
+        return False
+    if result.returncode != 0:
+        logger.warning(
+            "jaeger kill --instance %s exited %s: %s",
+            instance, result.returncode, result.stderr.decode("utf-8", "replace")[:500],
+        )
+        return False
+    return True
 
 
 def _is_dead_bridge_error(exc: Exception) -> bool:
@@ -153,7 +212,8 @@ def _get_or_start_bridge_client(instance: str | None = None) -> JaegerClient:
     The bridge launcher uses JaegerAI's own venv interpreter, so ARES never imports
     native JaegerAI ML packages into the WebUI venv.
     """
-    key = instance or "__default__"
+    resolved_instance = instance or _jaeger_instance_name() or None
+    key = resolved_instance or "__default__"
     with _BOOT_LOCK:
         existing = _BRIDGE_CLIENTS.get(key)
         if existing is not None:
@@ -173,13 +233,28 @@ def _get_or_start_bridge_client(instance: str | None = None) -> JaegerClient:
                 "legacy ARES_JaegerAI_DIR override to a validated JaegerAI source "
                 "checkout."
             )
-        client = JaegerClient(jaeger_home=str(root), instance=instance)
+        client = JaegerClient(jaeger_home=str(root), instance=resolved_instance)
         try:
             client.start()
         except Exception as exc:
             client.close()
-            if isinstance(exc, JaegerError):
-                raise JaegerError(_bridge_error_message(exc)) from exc
+            if _is_lock_error(exc) and _force_clear_stale_instance_lock(resolved_instance):
+                # The lock was held by a dead/orphaned process (jaeger kill
+                # exited 0 — it either killed something or found nothing to
+                # kill, and either way swept the stale lock file). Retry once
+                # against a fresh client rather than surfacing an error a
+                # human would otherwise have to clear by hand.
+                retry_client = JaegerClient(jaeger_home=str(root), instance=resolved_instance)
+                try:
+                    retry_client.start()
+                except Exception as retry_exc:
+                    retry_client.close()
+                    raise JaegerError(
+                        _bridge_error_message(retry_exc, auto_recovery_attempted=True)
+                    ) from retry_exc
+                _BRIDGE_CLIENTS[key] = retry_client
+                _BRIDGE_TURN_LOCKS.setdefault(key, threading.RLock())
+                return retry_client
             raise JaegerError(_bridge_error_message(exc)) from exc
         _BRIDGE_CLIENTS[key] = client
         _BRIDGE_TURN_LOCKS.setdefault(key, threading.RLock())

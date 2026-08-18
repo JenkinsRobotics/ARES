@@ -8,8 +8,11 @@ Read the repository [`AGENTS.md`](../../AGENTS.md) first.
 
 ## Rules
 
-- Keep the menu-bar lifecycle (`LSUIElement`) and activation-policy behavior
-  intact unless the task explicitly changes it.
+- ARES is a menu-bar-only app. The bundle sets `LSUIElement`, the delegate
+  runs `.accessory` and never promotes to `.regular`, no scene declares a
+  `WindowGroup`, and the status item is mandatory: `menu_bar_enabled` reports
+  effective `true` because hiding it would leave no entry point. The ARES
+  window is created on demand by `ARESWindowCoordinator`.
 - Route runtime behavior through ARESCore protocols; do not hardcode worker
   implementation logic in views.
 - The native app and Web UI are clients of the same ARES contracts. Product

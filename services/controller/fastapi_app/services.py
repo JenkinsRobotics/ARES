@@ -250,6 +250,7 @@ class AresCoreService:
             try:
                 from api.backend_catalog import JAEGER_BACKEND_ID
                 from api.session_contract import (
+                    SESSION_CONTRACT_VERSION,
                     backend_for_session,
                     require_operation,
                     runtime_owns_transcript,
@@ -273,11 +274,13 @@ class AresCoreService:
                     for row in jaeger_rows:
                         runtime = runtime_by_id.get(str(row.get("session_id") or ""))
                         if runtime is None:
-                            row["transcript_owner"] = "ares_legacy"
-                            row["session_contract_version"] = 2
+                            row["transcript_owner"] = "jaeger"
+                            row["session_contract_version"] = SESSION_CONTRACT_VERSION
+                            row["message_count"] = 0
+                            row["runtime_missing"] = True
                             continue
                         row["transcript_owner"] = "jaeger"
-                        row["session_contract_version"] = 2
+                        row["session_contract_version"] = SESSION_CONTRACT_VERSION
                         row["message_count"] = int(runtime.get("messages") or 0)
                         row["last_message_at"] = runtime.get("last_active")
                         row["runtime_execution_state"] = runtime.get("execution_state") or "idle"

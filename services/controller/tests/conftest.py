@@ -122,7 +122,9 @@ def _auto_state_dir_name(repo_root, port=None) -> str:
     """
     import hashlib
     h = hashlib.md5(str(repo_root).encode()).hexdigest()[:8]
-    return f"webui-test-{h}-{port}" if port else f"webui-test-{h}"
+    worker = os.getenv("PYTEST_XDIST_WORKER", "")
+    suffix = f"{port}-{worker}" if (port and worker) else f"{worker}" if worker else f"{port}" if port else ""
+    return f"webui-test-{h}-{suffix}" if suffix else f"webui-test-{h}"
 
 # Whether the test port was explicitly pinned (vs auto-allocated). An auto port
 # is a fresh free OS port unique to this process, so it never needs the
@@ -599,10 +601,11 @@ def _strip_skip_onboarding_env():
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _post(base, path, body=None):
+def _post(base, path, body=None, headers=None):
     data = json.dumps(body or {}).encode()
+    request_headers = {"Content-Type": "application/json", **(headers or {})}
     req = urllib.request.Request(
-        base + path, data=data, headers={"Content-Type": "application/json"}
+        base + path, data=data, headers=request_headers
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -835,8 +838,14 @@ def test_server():
     # Clean slate
     if TEST_STATE_DIR.exists():
         _rmtree_retry(TEST_STATE_DIR)
-    TEST_STATE_DIR.mkdir(parents=True)
-    TEST_WORKSPACE.mkdir(parents=True)
+    TEST_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    TEST_WORKSPACE.mkdir(parents=True, exist_ok=True)
+    # Never let a developer's sibling JaegerAI checkout silently change the
+    # integration-test runtime. Capability tests opt into Jaeger explicitly;
+    # the shared HTTP server uses a deterministic non-bridge backend.
+    (TEST_STATE_DIR / "config.yaml").write_text(
+        "ares_backend: openai_cloud\n", encoding="utf-8"
+    )
 
     # Symlink real skills into test home so skill-related tests work,
     # but all write-heavy state stays isolated.

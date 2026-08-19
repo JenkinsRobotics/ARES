@@ -211,6 +211,29 @@ final class WebUIServerManagerTests: XCTestCase {
         )
     }
 
+    func testInstalledAppBundleDiscoversRepositoryControllerViaCtlEnvAndCommonPaths() throws {
+        let root = temporaryDirectory.appendingPathComponent("installed-app-test")
+        let aresHome = root.appendingPathComponent(".ares")
+        let repoRoot = root.appendingPathComponent("GitHub/ARES/services/controller")
+        try FileManager.default.createDirectory(at: aresHome, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repoRoot, withIntermediateDirectories: true)
+
+        let ctlEnv = aresHome.appendingPathComponent("webui.ctl.env")
+        try "REPO_ROOT=\(repoRoot.path)\n".write(to: ctlEnv, atomically: true, encoding: .utf8)
+
+        let candidates = WebUIServerManager.webUICandidates(
+            resourceURL: URL(fileURLWithPath: "/Users/tester/Applications/ARES.app/Contents/Resources"),
+            executableURL: URL(fileURLWithPath: "/Users/tester/Applications/ARES.app/Contents/MacOS/ARES"),
+            homeDirectory: root,
+            environment: [:],
+            currentDirectory: "/"
+        )
+
+        XCTAssertTrue(
+            candidates.contains(where: { $0.standardizedFileURL.path == repoRoot.standardizedFileURL.path })
+        )
+    }
+
     func testAresHealthResponseRequiresHealthyAresPayload() throws {
         let currentPayload = try JSONSerialization.data(withJSONObject: [
             "service": "ares-webui",

@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import ARESCore
 
 @MainActor
 final class OnboardingManager: ObservableObject {
@@ -85,7 +86,16 @@ final class OnboardingManager: ObservableObject {
     }
     
     func saveOnboardingState(characterId: String, awakeModel: String, asleepModel: String) async throws {
-        guard let url = URL(string: "http://localhost:8788/api/onboarding/companion/create") else { return }
+        if networkMode == "network" || enableTailscale {
+            ARESConfiguration.shared.webuiHost = "0.0.0.0"
+        } else {
+            ARESConfiguration.shared.webuiHost = "127.0.0.1"
+        }
+        ARESConfiguration.shared.autoLaunchOnStart = autoLaunchWebUI
+        UserDefaults.standard.set(networkMode, forKey: "ares.onboarding.networkMode")
+        UserDefaults.standard.set(enableTailscale, forKey: "ares.onboarding.enableTailscale")
+
+        guard let url = URL(string: "http://127.0.0.1:8788/api/onboarding/companion/create") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

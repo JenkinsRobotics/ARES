@@ -6813,10 +6813,10 @@ def _load_cli_sessions_uncached(
     visible_session_limit: int | None = None,
     cron_project_limit: int | None | bool = CRON_PROJECT_CHIP_LIMIT,
     webhook_project_limit: int | None | bool = WEBHOOK_PROJECT_CHIP_LIMIT,
-    include_claude_code: bool = True,
+    include_claude_code: bool = False,
 ) -> list:
     cli_sessions = []
-    if source_filter in (None, CLAUDE_CODE_SOURCE) and include_claude_code:
+    if source_filter == CLAUDE_CODE_SOURCE and include_claude_code:
         try:
             cli_sessions.extend(get_claude_code_sessions())
         except Exception:

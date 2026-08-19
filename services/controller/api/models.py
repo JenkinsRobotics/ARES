@@ -6234,76 +6234,12 @@ def _claude_code_title(messages: list[dict], summary_title: str | None) -> str:
 
 
 def get_claude_code_sessions(projects_dir: Path | str | None = None, *, max_files: int = CLAUDE_CODE_MAX_FILES, max_file_bytes: int = CLAUDE_CODE_MAX_FILE_BYTES) -> list:
-    """Read Claude Code JSONL sessions as read-only external-agent rows.
-
-    The bridge is additive and defensive: it skips symlinks, oversized files,
-    malformed lines, and per-file errors rather than crashing WebUI session
-    listing. Tests pass ``projects_dir`` fixtures so Michael's real ~/.claude is
-    never read during test runs.
-    """
-    sessions = []
-    # ``get_last_workspace()`` is loop-invariant (the same active workspace for
-    # every Claude Code row) but internally stats config.yaml + probes terminal
-    # cwd, so calling it once per row was ~200 redundant stat()s on the cold
-    # sidebar build (#4718). Resolve it a single time.
-    cc_workspace = str(get_last_workspace())
-    for path in _iter_claude_code_jsonl_files(projects_dir, max_files=max_files, max_file_bytes=max_file_bytes) or []:
-        messages, summary_title, first_ts, last_ts, cc_meta = _parse_claude_code_jsonl_cached(path)
-        if not messages:
-            continue
-        sid = _claude_code_session_id(path)
-        # Match the truthiness fallback used in the assignments below: the old
-        # inline code was ``first_ts or last_ts or path.stat().st_mtime``, which
-        # also fell back to mtime for a falsy-but-not-None ``0.0`` timestamp
-        # (epoch-0 / 1970 transcripts). An identity (``is None``) guard would
-        # leave those rows with ``None`` instead of the file mtime, so use the
-        # same ``not`` test the assignments use to stay bug-for-bug compatible.
-        if not first_ts and not last_ts:
-            try:
-                _mtime = path.stat().st_mtime
-            except OSError:
-                _mtime = 0.0
-        else:
-            _mtime = None
-        created_at = first_ts or last_ts or _mtime
-        updated_at = last_ts or first_ts or _mtime
-        sessions.append({
-            'session_id': sid,
-            'title': _claude_code_title(messages, summary_title),
-            # Real per-session cwd when the transcript recorded one; the shared
-            # active workspace is only a fallback.
-            'workspace': cc_meta.get('cwd') or cc_workspace,
-            'git_branch': cc_meta.get('git_branch'),
-            'model': 'claude-code',
-            'message_count': len(messages),
-            'created_at': created_at,
-            'updated_at': updated_at,
-            'last_message_at': updated_at,
-            'pinned': False,
-            'archived': False,
-            'project_id': None,
-            'profile': None,
-            'source_tag': CLAUDE_CODE_SOURCE,
-            'raw_source': CLAUDE_CODE_SOURCE,
-            'session_source': 'external_agent',
-            'source_label': CLAUDE_CODE_SOURCE_LABEL,
-            'is_cli_session': True,
-            'read_only': True,
-        })
-    sessions.sort(key=lambda s: s.get('last_message_at') or s.get('updated_at') or 0, reverse=True)
-    return sessions
+    """External Claude Code scanning is retired. Returns an empty list."""
+    return []
 
 
 def get_claude_code_session_messages(sid, projects_dir: Path | str | None = None) -> list:
-    """Return messages for one read-only Claude Code JSONL session."""
-    sid = str(sid or '')
-    if not sid.startswith(f'{CLAUDE_CODE_SOURCE}_'):
-        return []
-    for path in _iter_claude_code_jsonl_files(projects_dir) or []:
-        if _claude_code_session_id(path) != sid:
-            continue
-        messages, _summary_title, _first_ts, _last_ts, _meta = _parse_claude_code_jsonl_cached(path)
-        return messages
+    """External Claude Code session message reading is retired."""
     return []
 
 

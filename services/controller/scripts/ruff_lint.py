@@ -44,6 +44,23 @@ from collections import defaultdict
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# `git diff --name-only` reports paths relative to the GIT root, not to
+# this script's package. Resolving them against REPO_ROOT (services/
+# controller/) made every existence check fail, so the changed-file list
+# came back empty and the gate reported "no changed .py files. OK." on
+# every branch — a green light that had never linted a line. Fall back to
+# REPO_ROOT only when git cannot answer (tarball checkout, no .git).
+def _git_root() -> str:
+    probe = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    root = probe.stdout.strip()
+    return root if probe.returncode == 0 and root else REPO_ROOT
+
+
+GIT_ROOT = _git_root()
+
 
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -77,7 +94,7 @@ def _changed_py_files(base: str) -> tuple[str, list[str]]:
     files = [
         f
         for f in diff.stdout.splitlines()
-        if f.endswith(".py") and os.path.exists(os.path.join(REPO_ROOT, f))
+        if f.endswith(".py") and os.path.exists(os.path.join(GIT_ROOT, f))
     ]
     return merge_base, files
 

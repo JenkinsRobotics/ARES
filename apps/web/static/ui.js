@@ -3829,10 +3829,9 @@ function syncModelChip(){
   const opt=_selectedModelOption();
   const text=opt?opt.textContent:getModelLabel(sel.value||'');
   const compactText=_compactComposerModelChipLabel(sel.value||'', text);
+  label.textContent=compactText;
+  if(mobileLabel) mobileLabel.textContent=compactText;
   const gatewayRouting=_latestGatewayRoutingForSession(S.session,sel.value||'');
-  const displayText=_formatGatewayModelLabel(sel.value||'',compactText,gatewayRouting)||compactText;
-  label.textContent=displayText;
-  if(mobileLabel) mobileLabel.textContent=displayText;
   chip.title=gatewayRouting?`${sel.value||'Conversation model'} ${_gatewayRoutingLabel(gatewayRouting)}`:(sel.value||'Conversation model');
   chip.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
   if(mobileAction) mobileAction.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
@@ -7137,6 +7136,7 @@ function _formatGatewayModelLabel(modelId,labelText,routing){
   const base=usedModel
     ?_compactComposerModelChipLabel(usedModel,getModelLabel(usedModel))
     :_compactComposerModelChipLabel(modelId,labelText||getModelLabel(modelId));
+  if(!routing.provider_changed && !routing.has_failover && !routing.serving_fallback) return base;
   const via=_gatewayRoutingLabel(routing);
   return via?`${base} ${via}`:base;
 }

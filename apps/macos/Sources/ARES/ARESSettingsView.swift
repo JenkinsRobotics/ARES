@@ -290,17 +290,42 @@ public struct ARESSettingsView: View {
                 .padding(.bottom, 8)
             }
             
-            Section(header: Text("Configuration Settings").font(.headline)) {
-                TextField("WebUI Host", text: $config.webuiHost)
-                    .textFieldStyle(.roundedBorder)
-                
-                TextField("WebUI Port", value: $config.webuiPort, formatter: NumberFormatter())
-                    .textFieldStyle(.roundedBorder)
-                    
-                Text("The ARES Mac app owns and starts this controller. Background behavior is configured in Web Settings → System.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Toggle("Enable Live Reload / Dev Mode", isOn: $config.reloadDevMode)
+            Section(header: Text("Network & Server Binding").font(.headline)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("WebUI Host Address")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    HStack(spacing: 8) {
+                        TextField("WebUI Host", text: $config.webuiHost)
+                            .textFieldStyle(.roundedBorder)
+
+                        Button("Local Only (127.0.0.1)") {
+                            config.webuiHost = "127.0.0.1"
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(config.webuiHost == "127.0.0.1" ? .accentColor : .secondary)
+
+                        Button("Tailscale & LAN (0.0.0.0)") {
+                            config.webuiHost = "0.0.0.0"
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(config.webuiHost == "0.0.0.0" ? .accentColor : .secondary)
+                    }
+
+                    TextField("WebUI Port", value: $config.webuiPort, formatter: NumberFormatter())
+                        .textFieldStyle(.roundedBorder)
+
+                    Toggle("Allow Unauthenticated Network Access (Tailscale / LAN)", isOn: $config.allowUnauthenticatedNetwork)
+                        .padding(.top, 4)
+
+                    Text("When enabled, devices connecting via Tailscale or local network do not require password authentication.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Toggle("Enable Live Reload / Dev Mode", isOn: $config.reloadDevMode)
+                        .padding(.top, 2)
+                }
             }
 
             Section(header: Text("ARES Device Mesh").font(.headline)) {
@@ -450,6 +475,40 @@ public struct ARESSettingsView: View {
                     }
                 }
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Quick Network Setup")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+
+                HStack(spacing: 12) {
+                    Button(action: {
+                        config.webuiHost = "0.0.0.0"
+                        config.allowUnauthenticatedNetwork = true
+                        Task { await serverManager.restart() }
+                    }) {
+                        Label("Enable Tailscale & LAN (0.0.0.0)", systemImage: "network")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(config.webuiHost == "0.0.0.0" ? .green : .accentColor)
+
+                    Button(action: {
+                        config.webuiHost = "127.0.0.1"
+                        Task { await serverManager.restart() }
+                    }) {
+                        Label("Local Only (127.0.0.1)", systemImage: "lock.laptopcomputer")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(config.webuiHost == "127.0.0.1" ? .green : .secondary)
+                }
+
+                Toggle("Allow Unauthenticated Network Access (Tailscale / LAN)", isOn: $config.allowUnauthenticatedNetwork)
+                    .font(.footnote)
+                    .padding(.top, 4)
+            }
+            .padding(10)
+            .background(Color.secondary.opacity(0.06))
+            .cornerRadius(8)
             
             Divider()
             

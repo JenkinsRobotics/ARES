@@ -62,6 +62,10 @@ public final class ARESConfiguration: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(webuiPort, forKey: "ares.config.webuiPort") }
     }
 
+    @Published public var allowUnauthenticatedNetwork: Bool = UserDefaults.standard.object(forKey: "ares.config.allowUnauthenticatedNetwork") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(allowUnauthenticatedNetwork, forKey: "ares.config.allowUnauthenticatedNetwork") }
+    }
+
     @Published public var aresRole: String = UserDefaults.standard.string(forKey: "ares.config.role") ?? "primary" {
         didSet { UserDefaults.standard.set(aresRole, forKey: "ares.config.role") }
     }

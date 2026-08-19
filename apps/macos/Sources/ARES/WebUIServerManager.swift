@@ -143,6 +143,7 @@ public final class WebUIServerManager: ObservableObject {
             host: host,
             port: port,
             reloadDevMode: config.reloadDevMode,
+            allowUnauthenticatedNetwork: config.allowUnauthenticatedNetwork,
             instanceID: NativeSystemBridge.shared.instanceID,
             stateDirectory: config.configDirectory
         )
@@ -194,6 +195,7 @@ public final class WebUIServerManager: ObservableObject {
         host: String,
         port: Int,
         reloadDevMode: Bool,
+        allowUnauthenticatedNetwork: Bool = true,
         instanceID: String,
         stateDirectory: URL
     ) -> [String: String] {
@@ -201,6 +203,7 @@ public final class WebUIServerManager: ObservableObject {
         environment["ARES_WEBUI_HOST"] = host
         environment["ARES_WEBUI_PORT"] = String(port)
         environment["ARES_WEBUI_RELOAD"] = reloadDevMode ? "1" : "0"
+        environment["ARES_WEBUI_ALLOW_UNAUTHENTICATED_NETWORK"] = allowUnauthenticatedNetwork ? "1" : "0"
         environment["ARES_RUNTIME_OWNER"] = "mac_app"
         environment["ARES_RUNTIME_INSTANCE_ID"] = instanceID
         environment["ARES_NATIVE_STATE_DIR"] = stateDirectory.path

@@ -280,7 +280,9 @@ public struct ARESSettingsView: View {
                         Button("Take Control & Restart") {
                             Task {
                                 await serverManager.stopConflictingStandaloneInstance()
-                                await serverManager.start()
+                                if !serverManager.portConflict {
+                                    await serverManager.start()
+                                }
                             }
                         }
                     }
@@ -425,7 +427,8 @@ public struct ARESSettingsView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                     
-                    Text("Local: http://\(config.webuiHost):\(config.webuiPort)")
+                    let localHost = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
+                    Text("Local: http://\(localHost):\(config.webuiPort)")
                         .font(.system(.body, design: .monospaced))
                     
                     if let lan = lanIP {
@@ -679,7 +682,7 @@ public struct ARESSettingsView: View {
             return
         }
         
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         
         // Fetch Approvals
@@ -704,7 +707,7 @@ public struct ARESSettingsView: View {
     }
     
     private func respondToApproval(_ app: PendingApproval, choice: String) {
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         
         guard let url = URL(string: "http://\(host):\(port)/api/approval/respond") else { return }
@@ -728,7 +731,7 @@ public struct ARESSettingsView: View {
     }
     
     private func writeBackendSelection(_ val: String) {
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         let previous = activeBackend
         activeBackend = val
@@ -771,7 +774,7 @@ public struct ARESSettingsView: View {
 
     private func refreshBackendSelection() {
         guard serverManager.isRunning else { return }
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         guard let url = URL(string: "http://\(host):\(port)/api/connections") else { return }
 

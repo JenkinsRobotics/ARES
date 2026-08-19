@@ -59,7 +59,8 @@ public actor ARESControllerClient {
             let config = ARESConfiguration.shared
             var components = URLComponents()
             components.scheme = "http"
-            components.host = config.webuiHost
+            let host = config.webuiHost
+            components.host = (host == "0.0.0.0" || host == "::") ? "127.0.0.1" : host
             components.port = config.webuiPort
             return components.url ?? URL(string: "http://127.0.0.1:8788")!
         }

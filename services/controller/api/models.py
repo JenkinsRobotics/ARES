@@ -2916,16 +2916,44 @@ def _apply_core_sync_or_error_marker(
     # clearing runtime stream state.
     if len(session.messages) != 0:
         _pending_text = " ".join(str(session.pending_user_message or "").split())
+        _recovered_ts = int(time.time())
+        _pending_turn_ts = None
+        if isinstance(session.pending_started_at, (int, float)) and session.pending_started_at > 0:
+            _recovered_ts = int(session.pending_started_at)
+            _pending_turn_ts = _recovered_ts
         _already_checkpointed = False
         if _pending_text and session.messages:
             for _last_msg in reversed(session.messages):
                 if isinstance(_last_msg, dict) and _last_msg.get('role') == 'user':
                     _last_text = " ".join(str(_last_msg.get('content') or "").split())
-                    _already_checkpointed = _last_text == _pending_text
+                    if _last_text != _pending_text:
+                        break
+                    # Matching text is NOT proof this turn is already stored.
+                    # When a turn hangs, the near-universal user response is to
+                    # send the same words again — so the newest user row very
+                    # often has identical text and belongs to the PREVIOUS
+                    # turn. Treating that as an existing checkpoint skipped the
+                    # append below and then cleared pending_user_message,
+                    # destroying the resent turn: it reached neither the
+                    # transcript nor the model, and the user saw their message
+                    # simply vanish.
+                    #
+                    # The turn's timestamp is what identifies it. A row this
+                    # turn's own checkpoint wrote stamps exactly
+                    # ``_pending_turn_ts`` (chat_runtime's eager checkpoint or
+                    # an earlier run of this repair), but legacy rows and rows
+                    # written before timestamp-stamping existed carry none at
+                    # all. Only a row PROVABLY STAMPED BEFORE this turn
+                    # started is evidence of a genuinely distinct, earlier
+                    # turn being resent — anything else (an equal stamp, or no
+                    # stamp to compare) is safer read as this turn's own
+                    # checkpoint than risked as a duplicate.
+                    _existing_ts = _last_msg.get('timestamp')
+                    if _pending_turn_ts is None or not isinstance(_existing_ts, (int, float)):
+                        _already_checkpointed = True
+                    else:
+                        _already_checkpointed = int(_existing_ts) >= _pending_turn_ts
                     break
-        _recovered_ts = int(time.time())
-        if isinstance(session.pending_started_at, (int, float)) and session.pending_started_at > 0:
-            _recovered_ts = int(session.pending_started_at)
         _stream_id = stream_id_for_recheck or session.active_stream_id
         _pending_started_at = session.pending_started_at
         if _run_journal_terminal_state(session, _stream_id) == 'completed':

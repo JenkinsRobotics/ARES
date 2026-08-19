@@ -170,9 +170,6 @@ def _jaeger_source() -> dict[str, Any]:
 
 
 _SOURCES = (
-    ("claude_code", "Claude Code", _claude_source),
-    ("codex", "Codex", _codex_source),
-    ("gemini", "Gemini / Antigravity", _gemini_source),
     ("jaeger", "JaegerAI", _jaeger_source),
 )
 

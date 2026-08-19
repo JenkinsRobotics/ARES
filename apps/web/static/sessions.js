@@ -2533,7 +2533,7 @@ function _isCliSession(session) {
 
 function _sessionSourceLabel(filter, count) {
   const n = Number(count) || 0;
-  return filter === 'cli' ? `CLI sessions (${n})` : `WebUI sessions (${n})`;
+  return filter === 'cli' ? `Jaeger (${n})` : `WebUI (${n})`;
 }
 
 function _clearSessionSourceTabCounts() {
@@ -7821,7 +7821,7 @@ function renderSessionListFromCache(){
   if(_sessionSourceFilter==='cli'&&sessions.length===0){
     const empty=document.createElement('div');
     empty.className='session-empty-note';
-    empty.textContent=window._showCliSessions?'No CLI sessions found.':'Enable Show agent sessions in Settings to list CLI sessions here.';
+    empty.textContent=window._showCliSessions?'No Jaeger sessions found.':'Enable Show agent sessions in Settings to list Jaeger sessions here.';
     list.appendChild(empty);
   } else if(_activeProject&&sessions.length===0){
     const empty=document.createElement('div');

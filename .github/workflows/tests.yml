@@ -55,6 +55,13 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # Without an explicit cap a hung step inherits GitHub's 6-hour default. A
+    # stalled "Install Playwright browsers" download did exactly that: the job
+    # sat in that step for 5h37m and was killed before running a single test,
+    # reporting as a plain red X indistinguishable from a real failure. A full
+    # shard normally finishes in 3-5 minutes, so 25 minutes leaves ample room
+    # for a cold cache while surfacing a stall in minutes instead of hours.
+    timeout-minutes: 25
     strategy:
       # Don't cancel the other shards/versions when one fails — we want the full
       # failure picture across the matrix in a single run.
@@ -116,6 +123,11 @@ jobs:
             ${{ runner.os }}-playwright-
 
       - name: Install Playwright browsers
+        # The browser download is the one network-bound step with no retry of its
+        # own, and it is where the 5h37m stall happened. Cap it separately so a
+        # stalled download is attributed to this step rather than eating the
+        # whole job budget and masking which step actually hung.
+        timeout-minutes: 8
         run: python -m playwright install --with-deps chromium
 
       - name: Run tests (shard ${{ matrix.shard }} of 5)

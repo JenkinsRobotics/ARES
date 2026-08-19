@@ -124,8 +124,20 @@ def test_parse_cache_handles_missing_file(tmp_path):
     assert models._parse_claude_code_jsonl_cached(missing) == ([], None, None, None, {})
 
 
-def test_get_claude_code_sessions_warm_uses_cache(tmp_path, monkeypatch):
-    """End-to-end: a 2nd get_claude_code_sessions() does not re-parse files."""
+def test_get_claude_code_sessions_is_retired_and_never_scans(tmp_path, monkeypatch):
+    """External Claude Code scanning is retired; Jaeger is the sole runtime.
+
+    This test used to assert the end-to-end warm-cache path (cold build parses
+    each transcript once, warm build re-parses none). ``get_claude_code_sessions``
+    now returns ``[]`` without touching the filesystem, so that assertion pinned
+    behavior the product deliberately removed and failed with ``0 == 3``.
+
+    The retirement is the contract worth pinning: present-but-ignored transcripts
+    must yield no sessions AND no parse calls, so an accidental re-introduction of
+    external scanning is caught here rather than surfacing as foreign sessions in
+    the sidebar. The low-level ``_parse_claude_code_jsonl_cached`` memoization is
+    still live and is covered by the other tests in this file.
+    """
     import api.models as models
 
     models.clear_claude_code_parse_cache()
@@ -142,45 +154,21 @@ def test_get_claude_code_sessions_warm_uses_cache(tmp_path, monkeypatch):
 
     monkeypatch.setattr(models, "_parse_claude_code_jsonl", _counting)
 
-    cold = models.get_claude_code_sessions(projects_dir=projects_dir)
-    cold_calls = calls["n"]
-    warm = models.get_claude_code_sessions(projects_dir=projects_dir)
-
-    assert cold_calls == 3            # parsed each file once on the cold build
-    assert calls["n"] == cold_calls   # warm build added zero re-parses
-    assert [s["title"] for s in cold] == [s["title"] for s in warm]
+    assert models.get_claude_code_sessions(projects_dir=projects_dir) == []
+    assert calls["n"] == 0, "retired scanner must not parse transcripts at all"
+    # Message reading is retired on the same contract.
+    assert models.get_claude_code_session_messages("any-sid", projects_dir=projects_dir) == []
+    assert calls["n"] == 0
 
 
-def test_epoch_zero_timestamps_fall_back_to_mtime(tmp_path):
-    """A transcript whose timestamps parse to 0.0 still gets a real mtime fallback.
-
-    The cached row-builder guards the mtime fallback with ``not first_ts and not
-    last_ts`` so a falsy-but-not-None ``0.0`` timestamp (epoch-0 / 1970
-    transcript) falls back to the file mtime, matching the pre-cache inline
-    ``first_ts or last_ts or path.stat().st_mtime``. An identity (``is None``)
-    guard would have left these rows with ``None``.
-    """
-    import api.models as models
-
-    models.clear_claude_code_parse_cache()
-    projects_dir = tmp_path / "claude" / "projects"
-    fixture = projects_dir / "p" / "s.jsonl"
-    # All message timestamps are epoch 0 -> _parse_claude_code_timestamp -> 0.0.
-    rows = [
-        {"summary": "Epoch QA"},
-        {"timestamp": "1970-01-01T00:00:00Z", "message": {"role": "user", "content": "hi"}},
-        {"timestamp": "1970-01-01T00:00:00Z", "message": {"role": "assistant", "content": "ok"}},
-    ]
-    _write_jsonl(fixture, rows)
-
-    sessions = models.get_claude_code_sessions(projects_dir=projects_dir)
-    assert len(sessions) == 1
-    s = sessions[0]
-    # Must NOT be None — falls back to the file mtime (a real positive float).
-    assert s["created_at"] is not None
-    assert s["updated_at"] is not None
-    assert s["last_message_at"] is not None
-    assert s["created_at"] > 0
+# ``test_epoch_zero_timestamps_fall_back_to_mtime`` was removed here. It pinned
+# the session-row builder's ``not first_ts and not last_ts`` mtime fallback for
+# epoch-0 transcripts, but that builder lived inside ``get_claude_code_sessions``
+# and was deleted when external Claude Code scanning was retired. The guard no
+# longer exists anywhere in ``api/models.py``, so the test asserted a behavior the
+# product intentionally removed (it failed with ``0 == 1``). It is dropped rather
+# than relocated: there is no surviving code path that builds these rows, and
+# re-adding one purely to satisfy a test would resurrect the retired scanner.
 
 
 def test_parse_cache_dicts_are_read_only_contract(tmp_path):

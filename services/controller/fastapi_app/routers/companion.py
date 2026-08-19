@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..errors import CoreApiError
@@ -68,6 +68,56 @@ def get_companion(
 ) -> dict[str, Any]:
     with profile_scope(identity.profile):
         return _with_relationship(_snapshot())
+
+
+@router.get("/card")
+def get_companion_card(
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    character_id: Annotated[str | None, Query(max_length=128)] = None,
+) -> Response:
+    """The active (or named) character's card art, as image bytes.
+
+    JaegerAI owns the asset and serves it over the bridge; this route is
+    the browser-facing projection of that frame. 404 when the runtime has
+    no art or does not offer the query — the Avatar view falls back to a
+    drawn placeholder, which is a normal state, not a failure.
+    """
+    from api.providers.jaeger.companion_control import (
+        CompanionControlError,
+        companion_card,
+    )
+
+    with profile_scope(identity.profile):
+        try:
+            art = companion_card(character_id)
+        except CompanionControlError as exc:
+            raise CoreApiError(
+                503,
+                f"JaegerAI Companion is unavailable: {exc}",
+                code="companion_unavailable",
+            ) from exc
+    if not art:
+        raise CoreApiError(404, "No card art for this character.",
+                           code="companion_card_missing")
+    from base64 import b64decode
+    from binascii import Error as BinasciiError
+
+    try:
+        payload = b64decode(art["data"], validate=True)
+    except (BinasciiError, ValueError) as exc:
+        raise CoreApiError(502, "JaegerAI returned unreadable card art.",
+                           code="companion_card_invalid") from exc
+    return Response(
+        content=payload,
+        media_type=art["mime"],
+        headers={
+            # The card changes only when the operator edits the character,
+            # and the Avatar view re-requests it on every switch. A short
+            # private cache keeps a re-render from re-crossing the bridge.
+            "Cache-Control": "private, max-age=60",
+            "Content-Disposition": f'inline; filename="{art["filename"]}"',
+        },
+    )
 
 
 @router.patch("")

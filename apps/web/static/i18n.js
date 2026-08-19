@@ -143,6 +143,7 @@ const LOCALES = {
     html_open_full: 'Open full page',
     html_sandbox_label: 'HTML Preview (sandboxed)',
     thinking: 'Thinking',
+    thought_process: 'Thought process',
     expand_all: 'Expand all',
     collapse_all: 'Collapse all',
     show_earlier_step_one: 'Show 1 earlier step',
@@ -941,6 +942,7 @@ const LOCALES = {
     project_name_prompt: 'Project name:',
     // Sidebar & Tabs
     tab_chat: 'Chat',
+    tab_avatar: 'Avatar',
     tab_tasks: 'Tasks',
     tab_skills: 'Skills',
     tab_memory: 'Memory',

@@ -5754,7 +5754,7 @@ let _programmaticScroll=false;
 let _programmaticScrollSetAt=0;
 let _programmaticScrollResetTimer=0;
 function _deferClearProgrammaticScroll(ms){clearTimeout(_programmaticScrollResetTimer);_programmaticScrollResetTimer=setTimeout(()=>{_programmaticScroll=false;},ms||80);}
-// Ported from hermes-webui (bug #6621): a "jump to question" smooth-scroll
+// Bug #6621: a "jump to question" smooth-scroll
 // has no defense against a live stream token landing mid-animation. Without
 // an explicit owner, scrollIfPinned() sees the reader as still pinned and
 // reclaims the bottom on the very next token, snapping the viewport off the

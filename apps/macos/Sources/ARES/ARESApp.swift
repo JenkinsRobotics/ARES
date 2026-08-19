@@ -57,6 +57,36 @@ final class ARESWindowCoordinator: NSObject, NSWindowDelegate {
     }
 }
 
+@MainActor
+final class ARESSettingsWindowCoordinator: NSObject, NSWindowDelegate {
+    static let shared = ARESSettingsWindowCoordinator()
+
+    private var window: NSWindow?
+
+    func openSettingsWindow() {
+        if let window {
+            window.deminiaturize(nil)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let created = NSWindow(contentViewController: NSHostingController(rootView: ARESSettingsView()))
+        created.title = "ARES Settings"
+        created.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        created.tabbingMode = .disallowed
+        created.isReleasedWhenClosed = false
+        created.setContentSize(NSSize(width: 720, height: 600))
+        created.contentMinSize = NSSize(width: 640, height: 500)
+        created.delegate = self
+        created.center()
+        window = created
+
+        created.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
 private struct ARESMainScene: View {
     var body: some View {
         ARESMainView()
@@ -347,9 +377,7 @@ final class ARESAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Re-launching from `ares`, Spotlight, or Finder while the app is
-        // already in the menu bar is a request to see the window.
-        openMainWindow()
+        // Re-launching keeps the app silently in the menu bar unless explicitly requested
         return true
     }
 
@@ -585,12 +613,7 @@ final class ARESMenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        if #available(macOS 13.0, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
-        NSApp.activate(ignoringOtherApps: true)
+        ARESSettingsWindowCoordinator.shared.openSettingsWindow()
     }
 
     @objc private func showAbout() {

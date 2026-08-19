@@ -11391,7 +11391,7 @@ function _thinkingCardHtml(text, open){
   const copyBtn=`<button class="thinking-copy-btn" onclick="event.stopPropagation();_copyThinkingText(this)" title="${t('copy')}" aria-label="${t('copy')}">${li('copy',12)}</button>`;
   const shouldOpen=!!open||_worklogDetailsExpandedDefault();
   const classes=`thinking-card${shouldOpen?' open':''}`;
-  return `<div class="${classes}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thinking')}</span><span class="thinking-card-btn-row">${copyBtn}<span class="thinking-card-toggle">${li('chevron-right',12)}</span></span></div><div class="thinking-card-body"><pre>${esc(clean)}</pre></div></div>`;
+  return `<div class="${classes}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thought_process')}</span><span class="thinking-card-btn-row">${copyBtn}<span class="thinking-card-toggle">${li('chevron-right',12)}</span></span></div><div class="thinking-card-body"><pre>${esc(clean)}</pre></div></div>`;
 }
 function isSimplifiedToolCalling(){
   return window._simplifiedToolCalling!==false;
@@ -12013,7 +12013,7 @@ function _decorateTransparentEventRow(row, opts){
       if(btnRow&&btnRow.parentNode===header&&!btnRow.children.length) btnRow.remove();
       header.style.flexDirection='row';
       const label=header.querySelector('.thinking-card-label');
-      if(label) label.textContent='Thinking';
+      if(label) label.textContent=(typeof t==='function'?t('thought_process'):'Thought process');
       let preview=header.querySelector('.transparent-event-preview,.transparent-event-thinking-preview');
       const previewText=_transparentEventPreview(opts.preview||opts.text||row.textContent||'');
       if(previewText){
@@ -17995,6 +17995,21 @@ function _toolWorklogSummary(toolCalls, opts){
     }
     return out;
   };
+  // A batch that mixes tool kinds collapses to ONE generic count —
+  // "Ran 16 commands" — instead of "Ran 4 commands, Read 9 files,
+  // Searched workspace 3 times". The per-kind detail is still there on
+  // every row inside the group; the summary is a disclosure label, and
+  // three clauses of it stops being one. A single-kind batch keeps its
+  // specific line ("Read 9 files"): there is nothing to merge, and the
+  // specific wording says more for the same width.
+  const kinds=new Set([...Object.keys(runningCounts),...Object.keys(doneCounts)]
+    .filter(k=>(runningCounts[k]||0)+(doneCounts[k]||0)>0));
+  if(kinds.size>1){
+    const running=Object.values(runningCounts).reduce((a,b)=>a+b,0);
+    const line=_toolWorklogSummaryLine(
+      'shell', running?'running':'done', cards.length);
+    return failed?`${line}, ${failed} failed`:line;
+  }
   const lines=[...emit(runningCounts,'running'),...emit(doneCounts,'done')];
   if(failed) lines.push(`${failed} failed`);
   return lines.length?_toolWorklogJoin(lines):_toolActionLabel(cards[0]);
@@ -18679,7 +18694,7 @@ function _setLiveWorklogThinkingPlaceholder(group){
     group.querySelector('.tool-worklog-label') || group.querySelector('.tool-call-group-label')
   );
   if(label){
-    const text=typeof t==='function'?t('worklog_thinking'):'Thinking';
+    const text=typeof t==='function'?t('thought_process'):'Thought process';
     label.textContent=text;
     label.setAttribute('data-sweep-label', text);
   }
@@ -19580,7 +19595,7 @@ function _thinkingMarkup(text=''){
   const clean=_sanitizeThinkingDisplayText(text);
   const openClass=_worklogDetailsExpandedDefault()?' open':'';
   return (clean&&String(clean).trim())
-    ? `<div class="thinking-card${openClass}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thinking')}</span><span class="thinking-card-toggle">${li('chevron-right',12)}</span></div><div class="thinking-card-body"><pre>${esc(String(clean).trim())}</pre></div></div>`
+    ? `<div class="thinking-card${openClass}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thought_process')}</span><span class="thinking-card-toggle">${li('chevron-right',12)}</span></div><div class="thinking-card-body"><pre>${esc(String(clean).trim())}</pre></div></div>`
     : `<div class="thinking"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
 }
 function _renderThinkingInto(row,text=''){

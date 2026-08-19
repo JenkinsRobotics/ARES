@@ -268,9 +268,11 @@ class JaegerClient:
              on_request: Callable[[dict], str] | None = None) -> dict[str, Any]:
         """Run one turn; return ``{"text": ..., "error": ...}``.
 
-        ``on_event(frame)`` fires for each tool/state frame; ``on_request``
-        is called for a mid-turn prompt (approval/clarify/secret) and must
-        return the answer (default "deny")."""
+        ``on_event(frame)`` fires for each tool/state/delta frame;
+        ``on_request`` is called for a mid-turn prompt
+        (approval/clarify/secret) and must return the answer (default
+        "deny"). The returned ``text`` is always the complete answer —
+        deltas are a live preview of it, not a replacement for it."""
         with self._io_lock:
             if self._proc is None:
                 raise JaegerError("not started")
@@ -287,7 +289,12 @@ class JaegerClient:
                     answer = on_request(frame) if on_request else "deny"
                     self._write(respond_op(
                         str(frame.get("id", "")), answer or "deny"))
-                elif kind in ("tool", "state"):
+                elif kind in ("tool", "state", "delta"):
+                    # ``delta`` is the turn's text as it generates
+                    # (contract v9). An older runtime never sends one and
+                    # the whole answer still arrives in ``reply``, so
+                    # this branch needs no version check — the frame is
+                    # either there or it isn't.
                     if on_event is not None:
                         on_event(frame)
                 elif kind == "fatal":

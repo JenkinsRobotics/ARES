@@ -342,6 +342,37 @@ def command_local_companion(cmd: str, args: dict[str, Any] | None = None) -> Any
     return client.command(cmd, args or {})
 
 
+# Text already delivered to the client as ``delta`` frames, per stream.
+# The final ``reply`` is still the authoritative answer — this only says
+# how much of it the user has already seen, so the end of the turn can
+# send the remainder instead of the whole thing again.
+STREAM_DELTA_TEXT: dict[str, str] = {}
+
+
+def _delta_remainder(stream_id: str, final_text: str) -> str:
+    """What still needs sending once the authoritative reply arrives.
+
+    Three cases, and only the first is the happy path:
+
+      * the final text CONTINUES what was streamed → send the tail;
+      * nothing was streamed (older runtime, or a turn that produced no
+        deltas) → send everything, exactly as before this existed;
+      * the final text DIVERGES from the stream → send nothing. The
+        persona output filter re-voices the finished answer, and the
+        agent loop streams intermediate narration between tool calls, so
+        divergence is normal rather than exceptional. Appending the final
+        text on top of a diverged stream would show the answer twice;
+        the ``done`` event settles the transcript from the saved session
+        moments later, which is the correct text either way.
+    """
+    streamed = STREAM_DELTA_TEXT.get(stream_id, "")
+    if not streamed:
+        return final_text
+    if final_text.startswith(streamed):
+        return final_text[len(streamed):]
+    return ""
+
+
 def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: str) -> None:
     frame = _redact_value(frame, _enabled=True)
     kind = str(frame.get("type") or "").strip().lower()
@@ -396,6 +427,18 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: 
                     "done": done,
                 })
         put_jaeger_event("tool", payload)
+        return
+    if kind == "delta":
+        # The turn's text, live. The WebUI's ``token`` handler APPENDS
+        # (``assistantText += d.text``), which is exactly the shape a
+        # delta has — so the frame maps straight onto the event the
+        # front-end has always understood. What is streamed is tracked so
+        # the final reply can be reconciled against it instead of
+        # rendering the same prose twice.
+        piece = str(frame.get("text") or "")
+        if piece:
+            STREAM_DELTA_TEXT[stream_id] = STREAM_DELTA_TEXT.get(stream_id, "") + piece
+            put_jaeger_event("token", {"text": piece})
         return
     if kind == "state":
         message = str(frame.get("message") or frame.get("text") or frame.get("state") or "").strip()
@@ -978,7 +1021,9 @@ def run_jaeger_streaming(
             return
         STREAM_PARTIAL_TEXT[stream_id] = assistant_text
         usage["output_tokens"] = max(1, len(assistant_text.split()))
-        put_event("token", {"text": assistant_text})
+        remainder = _delta_remainder(stream_id, assistant_text)
+        if remainder:
+            put_event("token", {"text": remainder})
         saved_session = _merge_and_save_jaeger_turn(
             session_id=session_id, stream_id=stream_id, msg_text=str(msg_text or ""),
             assistant_text=assistant_text, workspace=str(workspace), model=model or "",
@@ -1015,6 +1060,7 @@ def run_jaeger_streaming(
             AGENT_INSTANCES.pop(stream_id, None)
             STREAM_GOAL_RELATED.pop(stream_id, None)
             STREAM_PARTIAL_TEXT.pop(stream_id, None)
+            STREAM_DELTA_TEXT.pop(stream_id, None)
             STREAM_REASONING_TEXT.pop(stream_id, None)
             STREAM_LIVE_TOOL_CALLS.pop(stream_id, None)
             STREAM_LAST_EVENT_ID.pop(stream_id, None)

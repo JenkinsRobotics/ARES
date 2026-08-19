@@ -75,6 +75,46 @@ def companion_snapshot() -> dict[str, Any]:
         raise CompanionControlError(str(exc)) from exc
 
 
+def companion_card(character_id: str | None = None) -> dict[str, Any] | None:
+    """The card art for a character, as served by JaegerAI itself.
+
+    Returns ``{"mime", "data" (base64), "bytes", "filename", "id"}`` or
+    ``None`` when the peer has no art for that character.
+
+    ARES does not read the image off disk: the path JaegerAI reports
+    points inside its own install, and the ownership contract puts that
+    directory out of bounds. The peer serves the bytes over the bridge
+    instead, so this stays a normal cross-product query.
+
+    Capability-negotiated, never version-sniffed: a runtime that does not
+    declare the ``character_card`` query returns ``None`` here and the UI
+    draws its own placeholder.
+    """
+    try:
+        from api.providers.jaeger.streaming import (
+            local_integration_contract,
+            query_local_companion,
+        )
+
+        contract = local_integration_contract() or {}
+        queries = ((contract.get("operations") or {}).get("queries") or [])
+        if "character_card" not in queries:
+            return None
+        args = {"id": character_id.strip()} if character_id else {}
+        art = query_local_companion("character_card", args)
+    except Exception as exc:
+        raise CompanionControlError(str(exc)) from exc
+    if not isinstance(art, dict) or not art.get("data"):
+        return None
+    return {
+        "id": str(art.get("id") or ""),
+        "mime": str(art.get("mime") or "application/octet-stream"),
+        "bytes": int(art.get("bytes") or 0),
+        "filename": str(art.get("filename") or "card"),
+        "data": str(art.get("data") or ""),
+    }
+
+
 def update_companion(
     *,
     name: str | None = None,

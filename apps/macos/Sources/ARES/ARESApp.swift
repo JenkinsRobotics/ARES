@@ -76,8 +76,8 @@ final class ARESSettingsWindowCoordinator: NSObject, NSWindowDelegate {
         created.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         created.tabbingMode = .disallowed
         created.isReleasedWhenClosed = false
-        created.setContentSize(NSSize(width: 720, height: 600))
-        created.contentMinSize = NSSize(width: 640, height: 500)
+        created.setContentSize(NSSize(width: 740, height: 620))
+        created.contentMinSize = NSSize(width: 680, height: 520)
         created.delegate = self
         created.center()
         window = created

@@ -1333,6 +1333,46 @@ const _DEFAULT_MESSAGE_MODES=['queue','interrupt','steer'];
 // existing user's persisted busy-input-mode preference survives the rename.
 const _LEGACY_DEFAULT_MESSAGE_MODE_KEY='ares-busy-input-mode';
 const _DEFAULT_MESSAGE_MODE_KEY='ares-default-message-mode';
+// ── Auto-follow eager mirror (#6819) ────────────────────────────────────────
+// PERSISTENCE CONTRACT (client-side mirror of the Auto-follow new content
+// setting, `auto_scroll_follow`):
+//
+// * Why: the boot settings-fetch-failure path used to hardcode
+//   `window._autoScrollFollow=true`, silently clobbering an explicit OFF for
+//   the whole session (post-turn scroll yanks until the next refresh).
+// * Storage: ONE global localStorage value (`'1'`/`'0'`) under
+//   `_AUTO_SCROLL_FOLLOW_KEY` — NOT profile-keyed. The backend authority is
+//   global: `SETTINGS_FILE = STATE_DIR / "settings.json"` (api/config.py)
+//   and `/api/settings` calls `load_settings()` with no profile-specific
+//   file, so the mirror must match that single global contract. A
+//   profile-keyed map would leave a freshly-opened profile with no entry and
+//   wrongly fall back to ON despite the global OFF.
+// * Write semantics: written ONLY when a settings response (or the boot
+//   settings path) actually resolves the setting; the fallback path never
+//   writes.
+// * Read semantics: `_readPersistedAutoScrollFollow()` returns the stored
+//   value if present, else `true` (the config.py default). The boot-failure
+//   path reads it directly (no profile resolution needed — the mirror is
+//   global, so it can be read synchronously in the fallback). Fresh users
+//   (no mirror) get ON.
+// * Upgrade: there is no legacy key; the mirror is created on first settings
+//   resolve, so older sessions simply default to ON until the next settings
+//   round-trip writes it.
+const _AUTO_SCROLL_FOLLOW_KEY='ares-auto-scroll-follow';
+function _persistAutoScrollFollow(enabled){
+  try{localStorage.setItem(_AUTO_SCROLL_FOLLOW_KEY,enabled?'1':'0');}catch(_){}
+  return enabled;
+}
+function _readPersistedAutoScrollFollow(){
+  try{
+    const raw=localStorage.getItem(_AUTO_SCROLL_FOLLOW_KEY);
+    if(raw==='1') return true;
+    if(raw==='0') return false;
+  }catch(_){}
+  return true;  // default: follow ON (matches config.py default)
+}
+window._persistAutoScrollFollow=_persistAutoScrollFollow;
+window._readPersistedAutoScrollFollow=_readPersistedAutoScrollFollow;
 function _normalizeDefaultMessageMode(mode){
   return _DEFAULT_MESSAGE_MODES.includes(mode)?mode:'steer';
 }
@@ -3300,7 +3340,7 @@ window._mirrorSpeechSettingsFromServer=_mirrorSpeechSettingsFromServer;
     window._showBusyPlaceholderHint=!!s.show_busy_placeholder_hint;
     window._newChatOnWorkspaceSwitch=!!s.new_chat_on_workspace_switch;  // #5473 opt-in
     window._sessionEndlessScrollEnabled=!!s.session_endless_scroll;
-    window._autoScrollFollow=s.auto_scroll_follow!==false;
+    window._autoScrollFollow=_persistAutoScrollFollow(s.auto_scroll_follow!==false);
     window._largeTextPasteAsAttachment=s.large_text_paste_as_attachment!==false;
     window._projectQuickCreate=!!s.project_quick_create_buttons;
     window._composerControlVisibility=_composerControlVisibilityFromSettings(s);
@@ -3442,7 +3482,12 @@ window._mirrorSpeechSettingsFromServer=_mirrorSpeechSettingsFromServer;
     window._defaultMessageMode=_readPersistedDefaultMessageMode();
     window._showBusyPlaceholderHint=false;
     window._sessionEndlessScrollEnabled=false;
-    window._autoScrollFollow=true;
+    // Settings load failed: read the persisted mirror instead of hardcoding
+    // ON, or an explicit OFF gets silently clobbered for the whole session
+    // (#6819) — post-turn scroll yanks until the next successful refresh.
+    // Most likely to bite exactly when the network is unreliable (Tailscale,
+    // high latency), which is also when a settings fetch is most likely to fail.
+    window._autoScrollFollow=_readPersistedAutoScrollFollow();
     window._composerControlVisibility=_composerControlVisibilityFromSettings(null);
     window._composerControlOrder=[];
     _applyComposerControlOrder(window._composerControlOrder);

@@ -91,12 +91,28 @@ def test_skill_save_delete_roundtrip(cleanup_test_sessions):
     content = "---\nname: test-sprint7-skill\ndescription: Sprint 7 test.\ntags: [test]\n---\n\n# Test\n\nSprint 7 test skill."
     data, status = post("/api/skills/save", {"name": skill_name, "content": content})
     assert status == 200 and data.get("ok") is True
-    # Jaeger owns skills now: the response names the owner and the skill
-    # rather than a local path, because Ares no longer writes the file. A
-    # `path` here would mean the ownership boundary had been crossed.
-    assert data.get("owner") == "jaeger"
+    # Which branch /api/skills/save takes is a property of the RUNNING server:
+    # `selected_runtime_owns_skills()` routes to Jaeger only when the active
+    # backend is Jaeger AND that runtime negotiates a Skills-capable contract;
+    # otherwise the local skills store answers. This test drives a real
+    # out-of-process server over HTTP, so it cannot monkeypatch that decision —
+    # asserting either branch unconditionally makes the result depend on who
+    # runs it (hardcoding `owner == "jaeger"` failed on CI, which has no Jaeger
+    # runtime, with `assert None == 'jaeger'`; hardcoding the old local `path`
+    # failed on a developer box that has one).
+    #
+    # Assert the ownership INVARIANT instead, which is true in both
+    # environments: exactly one owner answers, and the two response shapes are
+    # mutually exclusive. A `path` alongside `owner == "jaeger"` is the real
+    # defect — it would mean Ares wrote the file while claiming Jaeger owns it.
+    # The Jaeger-owned branch is pinned deterministically, with the runtime
+    # stubbed, in tests/test_skills_ownership_contract.py.
     assert data.get("name") == skill_name
-    assert "path" not in data
+    if data.get("owner") == "jaeger":
+        assert "path" not in data, "Ares wrote a skill file while Jaeger owned skills"
+    else:
+        skill_path = pathlib.Path(data["path"])
+        assert skill_path.exists() and skill_path.read_text() == content
     del_data, del_status = post("/api/skills/delete", {"name": skill_name})
     assert del_status == 200 and del_data.get("ok") is True
     # Deleting it again is a clean 404, not a gateway error.

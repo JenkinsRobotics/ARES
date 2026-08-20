@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import copy
 import logging
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -13,6 +14,12 @@ from pathlib import Path
 from api.config import LOCK, SESSION_DIR, SESSIONS, SETTINGS_FILE
 from api.models import _active_state_db_path, _active_stream_ids
 from api.profiles import _profiles_match
+
+# Cron session ids are ``cron_{job_id}_{run_timestamp}`` where the run
+# timestamp is ``YYYYMMDD_HHMMSS``. Used to validate that the text after a
+# matched ``cron_{jid}_`` prefix is EXACTLY a run timestamp, so a shorter
+# job id (backup) cannot claim a longer job id's session (backup_full).
+_CRON_RUN_TS_RE = re.compile(r"\d{8}_\d{6}")
 
 
 logger = logging.getLogger(__name__)
@@ -28,7 +35,16 @@ _SESSIONS_CACHE_TTL_SECONDS = 2.5
 # runtime state (active stream, sort order, pending flags) is overlaid on every
 # response regardless of cache, and structural/settings changes still evict
 # immediately via the source stamp.
-_SESSIONS_CACHE_STREAMING_TTL_SECONDS = 10.0
+#
+# Keep this strictly greater than `_streamingPollMs`/1000, and comfortably longer
+# than one full rebuild: a TTL only slightly above the poll interval still leaves
+# the entry stale for a large fraction of every streaming turn, and each rebuild
+# runs a full all_sessions() under the global store LOCK. On a large store a
+# rebuild can take seconds, so a 10s hold-down degenerates into near-continuous
+# lock contention that stalls /api/sessions (sidebar "taking longer than
+# expected") and starves token rendering mid-turn. See
+# tests/test_streaming_cache_ttl_vs_poll.py.
+_SESSIONS_CACHE_STREAMING_TTL_SECONDS = 45.0
 _SESSIONS_CACHE_MAX_ENTRIES = 64
 _SESSIONS_CACHE_WAIT_SECONDS = 0.25
 _SESSIONS_CACHE_STALE_WAIT_SECONDS = 0.10
@@ -371,6 +387,54 @@ def _session_list_cache_settings_write_version() -> int:
         return 0
 
 
+def _session_list_cache_running_cron_jobs() -> dict[str, float]:
+    """Return {job_id: start_epoch} for cron jobs currently tracked as running.
+
+    Merge ARES's in-memory schedule runner with JaegerAI's live cron
+    query so a still-running job's session row cannot look completed
+    the moment it appends a message. Fail closed to an empty dict.
+    """
+    jobs: dict[str, float] = {}
+    try:
+        from api.schedules_store import _RUNNING, _RUNNING_LOCK
+
+        with _RUNNING_LOCK:
+            jobs.update(_RUNNING)
+    except Exception:
+        pass
+    try:
+        from api.providers.jaeger.streaming import query_local_companion
+
+        data = query_local_companion("cron", {})
+        running = (data or {}).get("running") if isinstance(data, dict) else None
+        if isinstance(running, dict):
+            for job_id, started in running.items():
+                try:
+                    jobs[str(job_id)] = float(started)
+                except (TypeError, ValueError):
+                    continue
+    except Exception:
+        pass
+    return jobs
+
+
+def _session_list_row_cron_running(
+    sid: str, row: dict, cron_job_prefixes: list[tuple[str, str, float]]
+) -> bool:
+    if not cron_job_prefixes or not sid:
+        return False
+    if sid.startswith("cron:"):
+        name = sid[5:]
+        return any(jid == name for jid, _prefix, _started in cron_job_prefixes)
+    created_at = _session_list_row_numeric_value(row.get("created_at"))
+    for _jid, prefix, started_at in sorted(
+        cron_job_prefixes, key=lambda item: len(item[1]), reverse=True
+    ):
+        if sid.startswith(prefix) and _CRON_RUN_TS_RE.fullmatch(sid[len(prefix):]):
+            return created_at >= started_at
+    return False
+
+
 def _session_list_cache_overlay_runtime_rows(rows: list[dict]) -> list[dict]:
     if not rows:
         return []
@@ -378,6 +442,11 @@ def _session_list_cache_overlay_runtime_rows(rows: list[dict]) -> list[dict]:
         active_stream_ids = _session_list_cache_active_stream_ids()
     except Exception:
         active_stream_ids = set()
+    try:
+        running_cron_jobs = _session_list_cache_running_cron_jobs()
+    except Exception:
+        running_cron_jobs = {}
+    cron_job_prefixes = [(jid, f"cron_{jid}_", started_at) for jid, started_at in running_cron_jobs.items()]
     session_ids = [
         str(row.get("session_id") or "").strip()
         for row in rows
@@ -409,6 +478,9 @@ def _session_list_cache_overlay_runtime_rows(rows: list[dict]) -> list[dict]:
                     item[key] = raw_live_value
         stream_id = item.get("active_stream_id")
         item["is_streaming"] = bool(stream_id and stream_id in active_stream_ids)
+        item["cron_running"] = _session_list_row_cron_running(
+            sid, item, cron_job_prefixes
+        )
         overlaid.append(item)
     overlaid.sort(key=_session_list_runtime_sort_key, reverse=True)
     return overlaid

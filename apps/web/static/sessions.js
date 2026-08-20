@@ -814,6 +814,7 @@ function _isSessionLocallyStreaming(s) {
 function _isSessionEffectivelyStreaming(s) {
   return Boolean(s && (
     s.is_streaming ||
+    s.cron_running ||
     _hasPendingUserMessageSignal(s) ||
     _isSessionLocallyStreaming(s)
   ));
@@ -1038,6 +1039,7 @@ function _serverLiveSnapshotInflight(snapshot, uploaded){
       role:'assistant',
       content:lastAssistantText,
       reasoning:lastReasoningText||undefined,
+      _ts:snapshot.last_message_ts??snapshot.lastMessageTs??undefined,
       _live:true,
       _journal_snapshot:true,
     });
@@ -1213,8 +1215,12 @@ function _markPollingCompletionUnreadTransitions(sessions) {
     const lastMessageAt = Number(s.last_message_at || 0);
     const hasServerRunSignal=Boolean(s.is_streaming||_hasPendingUserMessageSignal(s));
     const canMarkCompletedStream=Boolean(hasServerRunSignal||previousSnapshot||observedStreaming);
-    const completedObservedStream = canMarkCompletedStream&&wasStreaming === true && !isStreaming;
-    const completedWithNewMessages = Boolean(
+    // Cron liveness is server-side (only /api/crons/status and the
+    // session-list overlay expose it); defer completion/unread while the
+    // job is still running or a mid-run message makes the row look done.
+    const cronRunning = Boolean(s.cron_running);
+    const completedObservedStream = !cronRunning && canMarkCompletedStream && wasStreaming === true && !isStreaming;
+    const completedWithNewMessages = !cronRunning && Boolean(
       (previousSnapshot || observedStreaming)
       && !isStreaming
       && (
@@ -1222,7 +1228,7 @@ function _markPollingCompletionUnreadTransitions(sessions) {
         || lastMessageAt > Number((previousSnapshot || observedStreaming).last_message_at || 0)
       )
     );
-    const completedPersistedObservedStream = Boolean(observedStreaming && !isStreaming);
+    const completedPersistedObservedStream = !cronRunning && Boolean(observedStreaming && !isStreaming);
     if (completedObservedStream || completedPersistedObservedStream || completedWithNewMessages) {
       if (!_isSessionActivelyViewedForList(sid)) {
         // Tag cron session-list markers with source+profile so profile-switch
@@ -1728,6 +1734,13 @@ async function loadSession(sid){
   _yoloEnabled=false;_updateYoloPill();
   if(typeof stopClarifyPolling==='function') stopClarifyPolling();
   if(typeof hideClarifyCard==='function') hideClarifyCard(forceReload, forceReload?'external-refresh':'dismissed');
+  // #6572: clear stale compression state when switching sessions.
+  // The compression UI state is per-session and must not leak across loads.
+  // Without this, a compression card from a prior session can appear as a
+  // phantom "Compressing context" barrier on a fresh session that never
+  // triggered compression.
+  if(typeof clearCompressionUi==='function') clearCompressionUi();
+  else window._compressionUi=null;
   // Show loading indicator immediately for responsiveness.
   // Cleared by renderMessages() once full session data arrives.
   // Persist the current composer draft before switching away so it can be
@@ -2033,17 +2046,8 @@ async function loadSession(sid){
   if(typeof startSessionStream==='function') startSessionStream(S.session.session_id);
 
 
-  function _mergePendingSessionMessage(session,messages){
-    if(!Array.isArray(messages)) return false;
-    const pendingMsg=typeof getPendingSessionMessage==='function'?getPendingSessionMessage(session,messages):null;
-    if(!pendingMsg) return false;
-    const liveAssistantIdx=messages.findIndex(m=>m&&m.role==='assistant'&&m._live);
-    const currentTurnMessages=liveAssistantIdx>=0?messages.slice(0,liveAssistantIdx):messages;
-    if(_hasCurrentTailUserDuplicate(currentTurnMessages,pendingMsg)) return false;
-    if(liveAssistantIdx>=0) messages.splice(liveAssistantIdx,0,pendingMsg);
-    else messages.push(pendingMsg);
-    return true;
-  }
+  // _mergePendingSessionMessage is the global identity-aware helper shared by
+  // loadSession and refreshSession; see its definition below.
 
   // Phase 2a: If session is streaming, restore the persisted transcript first,
   // then merge the local INFLIGHT live tail. INFLIGHT is a recovery tail, not a
@@ -3186,7 +3190,20 @@ async function _ensureMessagesLoaded(sid, opts) {
   // Expand render window to cover all loaded messages so the next
   // renderMessages() doesn't hide most of them behind a tiny window.
   if(typeof _messageRenderableMessageCount==='function'&&typeof _currentMessageRenderWindowSize==='function'){
-    _messageRenderWindowSize=Math.max(_currentMessageRenderWindowSize(), _messageRenderableMessageCount());
+    // #6999: bound the auto-expansion. This number gates
+    // _messageHiddenBeforeCount() (load-older / jump-to-start affordances)
+    // and the non-virtualized fallback render width; the virtualized DOM tail
+    // is independently capped at MESSAGE_RENDER_WINDOW_DEFAULT via
+    // _messageVirtualKeepTailCount(). Growing the window to the FULL loaded
+    // transcript on every force reload (tab focus, SSE catch-up) zeroes the
+    // hidden-before count for long sessions and widens the effective render
+    // window for non-virtualized paths. Keep the #3686 intent (don't collapse
+    // back to the 50-row default after a load) but cap the growth to a small
+    // multiple of the default window.
+    _messageRenderWindowSize=Math.max(
+      _currentMessageRenderWindowSize(),
+      Math.min(_messageRenderableMessageCount(), (typeof MESSAGE_RENDER_WINDOW_DEFAULT==='number'?MESSAGE_RENDER_WINDOW_DEFAULT:50)*4)
+    );
   }
   if(S.session&&S.session.session_id===sid){
     S.session.message_count=Number(data.session.message_count || msgs.length);
@@ -3785,6 +3802,7 @@ async function _loadOlderMessages() {
           ? virtualAddedHeight
           : Math.max(0, newScrollH - prevScrollH);
         _programmaticScroll = true;
+        _programmaticScrollSetAt = performance.now();
         container.scrollTop = oldTop + addedHeight;
         requestAnimationFrame(()=>{ _programmaticScroll = false; });
       }
@@ -3884,6 +3902,32 @@ let _allProjects = [];  // cached project list
 // double-underscore prefixes provide.
 const NO_PROJECT_FILTER = '__none__';
 let _activeProject = null;  // project_id filter (null = show all, NO_PROJECT_FILTER = unassigned only)
+// Keep pending-user recovery ordering identical across load, reconnect, and
+// explicit refresh paths. The pending prompt owns the live assistant tail and
+// must be projected before it, regardless of which recovery response arrived.
+function _mergePendingSessionMessage(session,messages){
+  if(!Array.isArray(messages)) return false;
+  const liveAssistantIdx=messages.findIndex(m=>m&&m.role==='assistant'&&m._live);
+  const currentTurnMessages=liveAssistantIdx>=0?messages.slice(0,liveAssistantIdx):messages;
+  const pendingMsg=typeof getPendingSessionMessage==='function'?getPendingSessionMessage(session,currentTurnMessages):null;
+  if(!pendingMsg) return false;
+  if(_hasCurrentTailUserDuplicate(currentTurnMessages,pendingMsg)) return false;
+  if(liveAssistantIdx>=0){
+    const misplacedIdx=messages.findIndex((m,idx)=>
+      idx>liveAssistantIdx&&m&&m.role==='user'&&_sameTranscriptMessage(m,pendingMsg)
+    );
+    if(misplacedIdx>=0){
+      const [misplacedUser]=messages.splice(misplacedIdx,1);
+      messages.splice(liveAssistantIdx,0,misplacedUser);
+    }else{
+      messages.splice(liveAssistantIdx,0,pendingMsg);
+    }
+  }else{
+    messages.push(pendingMsg);
+  }
+  return true;
+}
+
 const SHOW_ALL_PROFILES_STORAGE_KEY = 'ares-show-all-profiles';
 let _showAllProfiles = false;  // false = filter to active profile only
 let _profileSwitchOpeningExistingSession = false;  // true while cross-profile sidebar click switches profile before loadSession()
@@ -5859,6 +5903,10 @@ async function refreshActiveSessionIfExternallyUpdated(reason){
   if(_activeSessionExternalRefreshInFlight) return 'skipped';
   if(!S.session || !S.session.session_id) return 'skipped';
   if(S.busy || S.activeStreamId) return 'skipped';
+  // #6999: if a load for this exact session is already in flight, it owns the
+  // refresh — probing now would duplicate the fetch and the O(N) render work
+  // that exhausts the tab's JS heap when the tab comes back into focus.
+  if(_loadingSessionId === S.session.session_id) return 'skipped';
   if(typeof _isMessageReaderUnpinned==='function'&&_isMessageReaderUnpinned()){
     _deferActiveSessionExternalRefresh(reason||'poll');
     return 'skipped';

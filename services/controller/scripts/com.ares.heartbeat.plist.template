@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARES autonomous heartbeat.
+
+  Install:
+    sed -e 's|__PYTHON__|/path/to/ARES/services/controller/.venv/bin/python|' \
+        -e 's|__SCRIPT__|/path/to/ARES/services/controller/scripts/heartbeat.py|' \
+        -e 's|__SESSION__|<your anchor session_id>|' \
+        com.ares.heartbeat.plist.template > ~/Library/LaunchAgents/com.ares.heartbeat.plist
+    launchctl load ~/Library/LaunchAgents/com.ares.heartbeat.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.ares.heartbeat.plist
+
+  StartInterval is seconds. 900 = every 15 minutes. The tick is a no-op unless
+  the Kanban board has a 'ready' or 'todo' task, so a short interval does not
+  clutter the anchor session.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ares.heartbeat</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>__SCRIPT__</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ARES_ANCHOR_SESSION</key>
+    <string>__SESSION__</string>
+    <!-- Uncomment if ARES is not on the default port / host.
+    <key>ARES_BASE_URL</key>
+    <string>http://127.0.0.1:8788</string>
+    -->
+    <!-- Only needed when WebUI auth is enabled.
+    <key>ARES_AUTH_TOKEN</key>
+    <string></string>
+    <key>ARES_CSRF_TOKEN</key>
+    <string></string>
+    -->
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <!-- Do not fire a burst of catch-up ticks after the Mac wakes or the agent loads. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ares-heartbeat.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ares-heartbeat.err</string>
+</dict>
+</plist>

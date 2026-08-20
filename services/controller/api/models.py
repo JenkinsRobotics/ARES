@@ -45,11 +45,15 @@ CRON_PROJECT_CHIP_LIMIT = 200
 WEBHOOK_PROJECT_CHIP_LIMIT = 200
 _CLI_SESSIONS_CACHE_TTL_SECONDS = 5.0
 # While a turn is actively streaming, hold the CLI/cron projection longer than
-# one poll interval (mirrors the route-level #4808 hold-down). The frontend
-# polls /api/sessions every ~5s during a stream; without a wider window the
-# CLI cache key advances on every streamed message row (see below) and the
-# expensive state.db CLI/cron projection is re-run on every poll. (#4842)
-_CLI_SESSIONS_CACHE_STREAMING_TTL_SECONDS = 30.0
+# one poll interval (mirrors the route-level #4808 hold-down). Without a wider
+# window the CLI cache key advances on every streamed message row (see below)
+# and the expensive state.db CLI/cron projection is re-run on every poll (#4842).
+#
+# This MUST be strictly greater than `_streamingPollMs`/1000 in
+# static/sessions.js. At exactly the poll interval the entry expires as the next
+# poll arrives, so the hold-down collapses back into per-poll rebuilds — the very
+# regression it exists to prevent. See tests/test_streaming_cache_ttl_vs_poll.py.
+_CLI_SESSIONS_CACHE_STREAMING_TTL_SECONDS = 45.0
 _CLI_SESSIONS_CACHE_LOCK = threading.Lock()
 _CLI_SESSIONS_CACHE_INFLIGHT: "dict[tuple, threading.Event]" = {}
 _CLI_SESSIONS_CACHE_INVALIDATION_VERSION = 0

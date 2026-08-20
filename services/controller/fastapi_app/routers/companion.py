@@ -182,5 +182,10 @@ def patch_companion(
         # Saving this relationship is the explicit user action that elects
         # JaegerAI as ARES's primary local runtime. Controller runtime choices
         # live in config.yaml, separate from profile settings.json.
-        save_config_values({"ares_backend": "jaeger_local"})
+        config_patch: dict[str, Any] = {"ares_backend": "jaeger_local"}
+        if clean_character:
+            # Keep ARES's persona id in lock-step with the Jaeger sheet so
+            # identity fallbacks cannot snap the header back to Jarvis.
+            config_patch["ares_persona"] = clean_character
+        save_config_values(config_patch)
         return _with_relationship(snapshot)

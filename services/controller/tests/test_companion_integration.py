@@ -65,6 +65,69 @@ def test_companion_snapshot_uses_only_bridge_contract(monkeypatch: pytest.Monkey
     assert [row["id"] for row in result["characters"]] == ["jarvis", "tars"]
 
 
+def _snapshot_with(monkeypatch: pytest.MonkeyPatch, replies: dict) -> dict:
+    monkeypatch.setattr(
+        "api.providers.jaeger.streaming.query_local_companion",
+        lambda what, args=None: replies[what],
+    )
+    monkeypatch.setattr("api.providers.jaeger.paths.jaeger_home", lambda: Path("/opt/JaegerAI"))
+    monkeypatch.setattr("api.providers.jaeger.paths.jaeger_instance_name", lambda: "ted")
+    return companion_control.companion_snapshot()
+
+
+def test_snapshot_carries_the_one_name_the_agent_answers_to(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """JaegerAI contract v10: a selected character IS the agent, so its
+    name is what every surface shows. ``agent.name`` stays the instance's
+    own name (the Companion settings form edits that); ``display_name``
+    is what to render. The Avatar stage used to print both, as "Ted
+    playing Clanker"."""
+    result = _snapshot_with(monkeypatch, {
+        "identity": {"agent_name": "Ted", "character": "Clanker",
+                     "display_name": "Clanker", "model": None, "avatar": None},
+        "character": {"id": "clanker", "name": "Clanker", "neutral": False},
+        "characters": [{"id": "clanker", "name": "Clanker", "active": True,
+                        "neutral": False}],
+    })
+
+    assert result["agent"]["name"] == "Ted"
+    assert result["agent"]["display_name"] == "Clanker"
+    assert result["character"]["neutral"] is False
+
+
+def test_the_neutral_sheet_keeps_the_instance_name(monkeypatch: pytest.MonkeyPatch):
+    """The plain assistant is nobody in particular, so the agent stays
+    Ted — and the ``neutral`` flag tells the picker which row means
+    "no character"."""
+    result = _snapshot_with(monkeypatch, {
+        "identity": {"agent_name": "Ted", "character": "Assistant",
+                     "display_name": "Ted", "model": None, "avatar": None},
+        "character": {"id": "assistant", "name": "Assistant", "neutral": True},
+        "characters": [{"id": "assistant", "name": "Assistant", "active": True,
+                        "neutral": True}],
+    })
+
+    assert result["agent"]["display_name"] == "Ted"
+    assert result["character"]["neutral"] is True
+    assert result["characters"][0]["neutral"] is True
+
+
+def test_an_older_runtime_still_yields_one_name(monkeypatch: pytest.MonkeyPatch):
+    """Contract < 10 sends no ``display_name`` and no ``neutral``. ARES
+    reproduces the rule from what it does send rather than falling back to
+    printing two names."""
+    result = _snapshot_with(monkeypatch, {
+        "identity": {"agent_name": "Ted", "character": "Clanker",
+                     "model": None, "avatar": None},
+        "character": {"id": "clanker", "name": "Clanker"},
+        "characters": [{"id": "clanker", "name": "Clanker", "active": True}],
+    })
+
+    assert result["agent"]["display_name"] == "Clanker"
+    assert result["character"]["neutral"] is False
+
+
 def test_companion_update_delegates_writes_to_jaeger(monkeypatch: pytest.MonkeyPatch):
     commands: list[tuple[str, dict]] = []
     monkeypatch.setattr(

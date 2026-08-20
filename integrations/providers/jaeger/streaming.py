@@ -441,9 +441,11 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: 
             put_jaeger_event("token", {"text": piece})
         return
     if kind == "state":
-        message = str(frame.get("message") or frame.get("text") or frame.get("state") or "").strip()
-        if message:
-            put_jaeger_event("reasoning", {"text": message})
+        # Busy/idle/thinking are transport lifecycle, not model reasoning.
+        # Mapping them onto runtime `reasoning` events made the original
+        # chat thinking-card flicker every turn. Drop them; the WebUI
+        # already has busy/stream state from send() / SSE.
+        return
 
 
 class _JaegerBridgeTurnControl:

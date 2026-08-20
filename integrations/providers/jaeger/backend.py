@@ -42,7 +42,13 @@ class JaegerBackend(AgenticBackend):
         except Exception:
             identity = {}
         identity = identity if isinstance(identity, dict) else {}
-        name = str(identity.get("agent_name") or identity.get("instance") or "Jaeger AI")
+        name = str(
+            identity.get("display_name")
+            or identity.get("character")
+            or identity.get("agent_name")
+            or identity.get("instance")
+            or "Jaeger AI"
+        )
         return {"name": name, "description": "Jaeger AI runtime", "avatar_state": "idle"}
 
     def capabilities(self) -> dict[str, Any]:

@@ -2,7 +2,11 @@ async function api(path,opts={}){
   // Strip leading slash so URL resolves relative to location.href (supports subpath mounts)
   const rel = path.startsWith('/') ? path.slice(1) : path;
   const url=new URL(rel,document.baseURI||location.href);
-  const timeoutMs=Object.prototype.hasOwnProperty.call(opts,'timeoutMs')?opts.timeoutMs:30000;
+  let defaultTimeout = 120000;
+  if (path.includes('/api/chat/') || path.includes('/api/dispatch') || path.includes('/api/companion') || path.includes('/api/kanban')) {
+    defaultTimeout = 300000;
+  }
+  const timeoutMs=Object.prototype.hasOwnProperty.call(opts,'timeoutMs')?opts.timeoutMs:defaultTimeout;
   const timeoutToast=opts.timeoutToast!==false;
   const redirect401=opts.redirect401!==false;
   const maxAttempts=Object.prototype.hasOwnProperty.call(opts,'retries')?Math.max(0,Number(opts.retries)||0)+1:3;

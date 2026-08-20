@@ -65,6 +65,12 @@ def _query(what: str, args: dict[str, Any] | None = None) -> Any:
         raise RuntimeSkillError(f"Jaeger Skills query failed: {exc}", 502) from exc
 
 
+def _is_not_found(exc: Exception) -> bool:
+    """True when a bridge command failed only because the target is absent."""
+    text = str(exc).lower()
+    return "not found" in text or "no such skill" in text or "unknown skill" in text
+
+
 def _command(cmd: str, args: dict[str, Any] | None = None) -> Any:
     _require_jaeger_skills()
     try:
@@ -74,7 +80,15 @@ def _command(cmd: str, args: dict[str, Any] | None = None) -> Any:
     except RuntimeSkillError:
         raise
     except Exception as exc:
-        raise RuntimeSkillError(f"Jaeger Skills command failed: {exc}", 502) from exc
+        # A skill the operator named but Jaeger does not have is a CLIENT
+        # error, not a bad gateway: the bridge answered correctly, the
+        # request was simply wrong. Blanket-502 here made "delete a skill
+        # that isn't there" indistinguishable from "the runtime is down",
+        # so callers could not tell a typo from an outage.
+        raise RuntimeSkillError(
+            f"Jaeger Skills command failed: {exc}",
+            404 if _is_not_found(exc) else 502,
+        ) from exc
 
 
 def list_runtime_skills(category: str | None = None) -> dict[str, Any]:

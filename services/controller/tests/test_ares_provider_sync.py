@@ -93,7 +93,37 @@ def test_provider_sync_post_route_calls_sync_provider(monkeypatch, tmp_path):
     assert captured["targets"] == ["ares"]
 
 
-def test_fallback_chain_is_not_written_into_jaeger(tmp_path):
+def _stub_contract(monkeypatch, *, commands: list[str], capabilities=None):
+    """Pin the Jaeger fallback-chain negotiation.
+
+    Without this the result depends on whether a JaegerAI bridge happens to
+    be installed and reachable on the machine running the tests: the sync
+    spawns a local companion, and a developer box answers the contract query
+    while CI does not. Same test, opposite outcome — so stub the negotiation
+    and assert each branch explicitly.
+    """
+    contract = {"contract_version": 12,
+                "capabilities": capabilities or {},
+                "operations": {"commands": commands}}
+    monkeypatch.setattr(
+        "api.providers.jaeger.streaming.query_local_companion",
+        lambda what, args=None, **kw: contract if what == "contract" else {})
+    sent: list[tuple] = []
+
+    def _command(name, args=None, **kw):
+        sent.append((name, args))
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        "api.providers.jaeger.streaming.command_local_companion", _command)
+    monkeypatch.setattr(
+        "api.providers.jaeger.streaming.reset_jaeger_runtime", lambda *a, **k: None)
+    return sent
+
+
+def test_fallback_chain_skipped_when_jaeger_lacks_the_capability(tmp_path, monkeypatch):
+    """No capability, no sync — and never a direct write into Jaeger's config."""
+    _stub_contract(monkeypatch, commands=["save_config"])
     ares_config = tmp_path / "ares" / "config.yaml"
     _write_yaml(ares_config, {"fallback_providers": [{"provider": "ollama-cloud", "model": "glm-4.7"}]})
     result = sync_fallback_chain(ares_config_path=ares_config)
@@ -101,6 +131,23 @@ def test_fallback_chain_is_not_written_into_jaeger(tmp_path):
     assert result["targets"]["jaeger"]["owner"] == "jaeger"
     assert result["targets"]["jaeger"]["supported"] is False
     assert result["changed_targets"] == []
+
+
+def test_fallback_chain_goes_through_jaeger_command_not_a_file_write(tmp_path, monkeypatch):
+    """Jaeger owns its configuration.
+
+    When Jaeger DOES declare `configure_fallback_chain` (contract 12), Ares
+    still must not touch Jaeger's config file — it sends the command and lets
+    Jaeger perform its own write. The ownership boundary is the point of this
+    test, not whether the sync happened.
+    """
+    sent = _stub_contract(monkeypatch, commands=["configure_fallback_chain"])
+    ares_config = tmp_path / "ares" / "config.yaml"
+    _write_yaml(ares_config, {"fallback_providers": [{"provider": "ollama-cloud", "model": "glm-4.7"}]})
+    result = sync_fallback_chain(ares_config_path=ares_config)
+    assert result["targets"]["jaeger"]["owner"] == "jaeger"
+    assert result["targets"]["jaeger"]["supported"] is True
+    assert [name for name, _args in sent] == ["configure_fallback_chain"]
 
 
 def test_fallback_chain_sync_no_fallback_chain(tmp_path):

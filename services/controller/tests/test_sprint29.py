@@ -243,7 +243,14 @@ class TestCSRF:
         monkeypatch.setenv('ARES_WEBUI_ALLOWED_ORIGINS', 'myapp.example.com:8000')
         from api.http_security import allowed_public_origins as _allowed_public_origins
         result = _allowed_public_origins()
-        assert len(result) == 0, 'entry without scheme must be ignored'
+        # Assert the schemeless entry is ABSENT rather than that the set is
+        # empty: allowed_public_origins() also derives the host's own LAN /
+        # Tailscale origins, so on a developer machine the set is legitimately
+        # non-empty and an emptiness check turned this into a pass-on-CI,
+        # fail-on-laptop test. What the test is really about is that a
+        # schemeless allowlist entry never becomes an allowed origin.
+        assert not any('myapp.example.com' in origin for origin in result), \
+            'entry without scheme must be ignored'
         captured = capsys.readouterr()
         assert 'WARNING' in captured.err and 'scheme' in captured.err.lower()
 

@@ -91,11 +91,17 @@ def test_skill_save_delete_roundtrip(cleanup_test_sessions):
     content = "---\nname: test-sprint7-skill\ndescription: Sprint 7 test.\ntags: [test]\n---\n\n# Test\n\nSprint 7 test skill."
     data, status = post("/api/skills/save", {"name": skill_name, "content": content})
     assert status == 200 and data.get("ok") is True
-    skill_path = pathlib.Path(data["path"])
-    assert skill_path.exists() and skill_path.read_text() == content
+    # Jaeger owns skills now: the response names the owner and the skill
+    # rather than a local path, because Ares no longer writes the file. A
+    # `path` here would mean the ownership boundary had been crossed.
+    assert data.get("owner") == "jaeger"
+    assert data.get("name") == skill_name
+    assert "path" not in data
     del_data, del_status = post("/api/skills/delete", {"name": skill_name})
     assert del_status == 200 and del_data.get("ok") is True
-    assert not skill_path.exists()
+    # Deleting it again is a clean 404, not a gateway error.
+    _again, again_status = post("/api/skills/delete", {"name": skill_name})
+    assert again_status == 404
 
 def test_skill_delete_requires_name(cleanup_test_sessions):
     data, status = post("/api/skills/delete", {})

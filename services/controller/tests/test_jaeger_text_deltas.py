@@ -54,6 +54,16 @@ def test_deltas_are_tracked_per_stream():
     assert streaming.STREAM_DELTA_TEXT == {"s1": "a", "s2": "b"}
 
 
+def test_lifecycle_state_frames_are_not_reasoning():
+    """Jaeger busy/idle must not become Hermes thinking-card events."""
+    seen, put = _events()
+    streaming._translate_bridge_frame(
+        {"type": "state", "state": "thinking", "message": "thinking"}, put, "s1")
+    streaming._translate_bridge_frame(
+        {"type": "state", "busy": True}, put, "s1")
+    assert seen == []
+
+
 def test_tool_frames_still_translate_alongside_deltas():
     """The delta branch returns early — it must not shadow the frames
     that were already being forwarded."""
@@ -108,7 +118,7 @@ def test_bridge_client_forwards_delta_frames():
     ]
 
     client = JaegerClient.__new__(JaegerClient)
-    client._proc = type("P", (), {"stdout": iter(frames), "stdin": io.StringIO()})()
+    client._rx = iter(frames)
     client._io_lock = __import__("threading").RLock()
     client._write = lambda payload: None
 
@@ -131,7 +141,7 @@ def test_an_unknown_frame_type_is_still_ignored():
         '{"type": "reply", "text": "done"}\n',
     ]
     client = JaegerClient.__new__(JaegerClient)
-    client._proc = type("P", (), {"stdout": iter(frames), "stdin": io.StringIO()})()
+    client._rx = iter(frames)
     client._io_lock = __import__("threading").RLock()
     client._write = lambda payload: None
 

@@ -378,13 +378,57 @@ def sync_fallback_chain(
     if jaeger_config_path is not None:
         raise ValueError(
             "jaeger_config_path is no longer supported; Jaeger owns its configuration")
-    _translated, skipped_entries = _jaeger_supported_fallback_chain(fallback_chain, {})
+    translated, skipped_entries = _jaeger_supported_fallback_chain(fallback_chain, {})
+    try:
+        from api.providers.jaeger.streaming import (
+            command_local_companion, query_local_companion, reset_jaeger_runtime,
+        )
+        from api.contracts import has_capability
+
+        contract = query_local_companion("contract", {})
+        supported = has_capability(contract, "fallback_chain") or (
+            "configure_fallback_chain"
+            in ((contract.get("operations") or {}).get("commands") or [])
+        )
+    except Exception as exc:
+        results["targets"]["jaeger"] = {
+            "owner": "jaeger",
+            "changed": False,
+            "supported": False,
+            "note": f"could not negotiate fallback-chain contract: {exc}",
+            "skipped_entries": skipped_entries,
+        }
+        return results
+
+    if not supported:
+        results["targets"]["jaeger"] = {
+            "owner": "jaeger",
+            "changed": False,
+            "supported": False,
+            "note": "Jaeger does not advertise a fallback-chain configuration contract",
+            "skipped_entries": skipped_entries,
+        }
+        return results
+
+    runtime_result = command_local_companion("configure_fallback_chain", {
+        "fallback": translated,
+        "dry_run": bool(dry_run),
+    })
+    if not isinstance(runtime_result, dict):
+        raise RuntimeError("Jaeger returned an invalid fallback-chain result")
+    changed = bool(runtime_result.get("changed"))
+    results["fallback_chain_synced"] = True
+    results["fallback_entries_synced"] = len(translated)
     results["targets"]["jaeger"] = {
         "owner": "jaeger",
-        "changed": False,
-        "supported": False,
-        "note": "Jaeger does not advertise a fallback-chain configuration contract",
+        "changed": changed,
+        "supported": True,
+        "restart_required": bool(runtime_result.get("restart_required")),
         "skipped_entries": skipped_entries,
+        "fallback": runtime_result.get("fallback") or translated,
     }
-
+    if changed:
+        results["changed_targets"].append("jaeger")
+        if not dry_run:
+            reset_jaeger_runtime()
     return results

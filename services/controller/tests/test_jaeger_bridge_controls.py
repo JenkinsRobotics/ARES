@@ -14,6 +14,11 @@ def test_bridge_client_writes_cancel_and_steer_without_waiting_for_reply():
     stdin = io.StringIO()
     client = JaegerClient(command=["jaeger", "bridge"])
     client._proc = SimpleNamespace(stdin=stdin)
+    # cancel/steer refuse to write when the bridge has no reader attached
+    # (`_rx is None` -> "not started"), which is the right guard: a control
+    # frame nobody is listening for is a silent no-op. Stand the receiver up
+    # so this test exercises the write path it is actually about.
+    client._rx = io.StringIO()
 
     client.cancel("webui:session-1")
     client.steer("use metric units", "webui:session-1")

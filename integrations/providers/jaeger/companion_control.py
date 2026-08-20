@@ -30,6 +30,11 @@ def _character_summary(value: Any) -> dict[str, Any]:
         "custom_instructions": str(row.get("custom_instructions") or ""),
         "active": bool(row.get("active")),
         "bound": bool(row.get("bound")),
+        # ``neutral`` (JaegerAI contract v10) marks the one sheet that is
+        # nobody in particular — the plain assistant. It is the sheet whose
+        # name yields to the instance's own, so a surface showing "who am I
+        # talking to" needs it to decide which name to print.
+        "neutral": bool(row.get("neutral")),
     }
 
 
@@ -57,7 +62,18 @@ def companion_snapshot() -> dict[str, Any]:
             },
             "agent": {
                 "id": str(identity.get("instance") or jaeger_instance_name() or ""),
+                # ``name`` is the INSTANCE's own name; ``display_name`` is the
+                # one name it answers to right now — the selected character's,
+                # unless that character is the neutral sheet. Surfaces show
+                # display_name. Older runtimes (contract < 10) do not send it;
+                # the fall-back chain reproduces the rule from what they do.
                 "name": str(identity.get("agent_name") or ""),
+                "display_name": str(
+                    identity.get("display_name")
+                    or (identity.get("agent_name")
+                        if character.get("neutral") else identity.get("character"))
+                    or identity.get("agent_name") or ""
+                ),
                 "model": identity.get("model"),
                 "avatar": identity.get("avatar"),
             },

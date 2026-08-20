@@ -3049,6 +3049,7 @@ function applyBotName(){
   const msg=$('msg');
   if(msg) msg.placeholder='Message '+name+'\u2026';
   if(typeof _applyBusyComposerPlaceholder==='function') _applyBusyComposerPlaceholder();
+  if(typeof _stampAssistantIdentityInDom==='function') _stampAssistantIdentityInDom(name);
 }
 
 const _COMPOSER_CONTROL_TOGGLE_DEFS=[
@@ -3349,6 +3350,7 @@ window._mirrorSpeechSettingsFromServer=_mirrorSpeechSettingsFromServer;
     window._showTitlebarProfile=!!s.show_titlebar_profile;
     _applyTitlebarProfileVisibility();
     window._botName=s.bot_name||'ARES';
+    if(typeof refreshAssistantIdentity==='function') refreshAssistantIdentity();
     if(s.default_model_provider) window._activeProvider=s.default_model_provider;
     if(s.default_model){
       window._defaultModel=s.default_model;

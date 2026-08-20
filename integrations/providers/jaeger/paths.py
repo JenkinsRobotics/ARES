@@ -67,6 +67,33 @@ def configured_root_override() -> tuple[str, str] | None:
     return (ARES_JAEGER_SOURCE_DIR_ENV, value) if value else None
 
 
+def jaeger_bridge_socket_candidates(
+    home: str | os.PathLike[str] | None,
+    instance: str | None,
+) -> list[Path]:
+    """Where a live ``jaeger bridge`` attach socket may be.
+
+    Mirrors JaegerAI ``bridge_socket.candidate_paths`` without importing it.
+    """
+    name = str(instance or "default").strip() or "default"
+    out: list[Path] = []
+    env_dir = str(os.environ.get("JAEGER_INSTANCE_DIR") or "").strip()
+    if env_dir:
+        out.append(expand_path(env_dir) / "run" / "bridge.sock")
+    if home:
+        root = expand_path(home)
+        out.append(root / ".jaeger_ai" / "instances" / name / "run" / "bridge.sock")
+    out.append(Path.home() / ".jaeger" / "instances" / name / "run" / "bridge.sock")
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in out:
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
 def jaeger_instance_name() -> str | None:
     """Return only an explicit selector; Jaeger owns default resolution."""
     return str(os.environ.get(ARES_JAEGER_INSTANCE_ENV) or "").strip() or str(
@@ -87,5 +114,6 @@ __all__ = [
     "ARES_JAEGER_HOME_ENV", "ARES_JAEGER_INSTANCE_ENV", "ARES_JAEGER_SOURCE_DIR_ENV",
     "JAEGER_HOME_ENV", "configured_root_override", "discover_jaeger_ai_source_root",
     "discover_jaeger_source_root", "expand_path", "is_jaeger_ai_root", "jaeger_home",
+    "jaeger_bridge_socket_candidates",
     "jaeger_instance_name", "jaeger_launcher", "jaeger_update_repo",
 ]

@@ -352,18 +352,19 @@ class JaegerAdapter(JournaledFrameworkAdapter):
     def get_models(self, *, profile: str | None) -> list[ModelDescriptor]:
         del profile
         descriptors: list[ModelDescriptor] = []
-        seen: set[str] = set()
+        seen: set[tuple[str, str]] = set()
         try:
             from api.providers.jaeger.streaming import query_local_companion
             catalog = query_local_companion("model_catalog", {})
             if isinstance(catalog, dict) and isinstance(catalog.get("models"), list):
                 for m in catalog["models"]:
                     mid = str(m.get("id") or m.get("name") or "").strip()
-                    if not mid or mid in seen:
-                        continue
-                    seen.add(mid)
-                    label = str(m.get("label") or mid)
                     prov = str(m.get("provider") or "").strip() or None
+                    key = (prov or "", mid)
+                    if not mid or key in seen:
+                        continue
+                    seen.add(key)
+                    label = str(m.get("label") or mid)
                     descriptors.append(ModelDescriptor(mid, label, prov, self.adapter_id))
         except Exception:
             pass
@@ -373,10 +374,11 @@ class JaegerAdapter(JournaledFrameworkAdapter):
                 from jaeger_ai.core.models.model_resolver import list_registered_models
                 for m in list_registered_models():
                     mid = str(m.get("name") or "").strip()
-                    if not mid or mid in seen:
-                        continue
-                    seen.add(mid)
                     prov = str(m.get("provider") or "").strip() or None
+                    key = (prov or "", mid)
+                    if not mid or key in seen:
+                        continue
+                    seen.add(key)
                     descriptors.append(ModelDescriptor(mid, mid, prov, self.adapter_id))
             except Exception:
                 pass

@@ -396,6 +396,24 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
     configured_default_model = str(default_info.get("model") or "").strip()
     configured_default_provider = str(default_info.get("provider") or "").strip().lower()
     credential_names = _jaeger_credential_names()
+    # A hosted cloud brain must not list on-device Ollama/MLX/GGUF in the
+    # same picker. Duplicate model ids (qwen3.5:397b) were starting the
+    # local daemon while the UI still said Ollama Cloud.
+    _local_picker = {"local", "ollama", "ollama-local", "ollama-launch", "lmstudio"}
+    hide_local = configured_default_provider in {
+        "ollama-cloud", "openai", "anthropic", "gemini", "xai",
+    }
+    if hide_local:
+        groups = [
+            group
+            for group in groups
+            if str(group.get("provider_id") or group.get("provider") or "").strip().lower()
+            not in _local_picker
+        ]
+        existing_pids = {
+            str(g.get("provider_id") or g.get("provider") or "").strip().lower()
+            for g in groups
+        }
 
     # Append xAI if configured
     if "xai_api_key" in credential_names and "xai" not in existing_pids:
@@ -421,9 +439,10 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             })
             existing_pids.add("ollama-cloud")
 
-    # Append local Ollama daemon if running
+    # Append local Ollama daemon if running — never while a hosted cloud
+    # brain is the selected lane.
     ollama_local_ids: set[str] = set()
-    if "ollama" not in existing_pids:
+    if not hide_local and "ollama" not in existing_pids:
         ollama_local = _fetch_ollama_local_models()
         if ollama_local:
             ollama_local_ids = {str(m.get("id") or "").strip() for m in ollama_local}
@@ -440,7 +459,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
     # feed can repeat models the "Ollama (Local)" group above already listed
     # — drop those here rather than showing the same model twice under two
     # different provider labels.
-    if "local" not in existing_pids:
+    if not hide_local and "local" not in existing_pids:
         local_models = [
             m for m in _get_jaeger_local_models()
             if str(m.get("id") or "").strip() not in ollama_local_ids

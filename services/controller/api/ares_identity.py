@@ -60,18 +60,42 @@ def _persona_display_name(persona_id: str | None) -> str | None:
     return pid.replace("_", " ").replace("-", " ").title()
 
 
-def _jaeger_default_agent_name() -> str | None:
+def _jaeger_live_display_name() -> str | None:
+    """Who Jaeger says is answering — the selected character, not identity.yaml.
+
+    ``bot_name`` / identity.yaml is the instance's own name (often still
+    "Jarvis" after a character swap). Prefer the live character sheet:
+    its id first (so a stale display_name cannot pin the chat header),
+    then display_name, then the character label.
+    """
     try:
         from api.providers.jaeger.streaming import query_local_companion
 
         identity = query_local_companion("identity", {})
-        if isinstance(identity, dict):
-            name = _clean_text(identity.get("agent_name"))
-            if name:
-                return name
+        if not isinstance(identity, dict):
+            return None
+        cid = _clean_text(identity.get("character_id"))
+        if cid and cid.lower() not in {"assistant", "default"}:
+            persona = _persona_display_name(cid)
+            if persona:
+                return persona
+            character = _clean_text(identity.get("character"))
+            if character:
+                return character
+        name = _clean_text(identity.get("display_name"))
+        if name:
+            return name
+        character = _clean_text(identity.get("character"))
+        if character and character.lower() != "assistant":
+            return character
+        return _clean_text(identity.get("agent_name")) or None
     except Exception:
         logger.debug("Failed to query Jaeger identity", exc_info=True)
-    return None
+        return None
+
+
+def _jaeger_default_agent_name() -> str | None:
+    return _jaeger_live_display_name()
 
 
 def _default_assistant_name(bot_name: str | None) -> str:
@@ -130,6 +154,13 @@ def get_assistant_display_name(
     profile_name = _profile_display_name(profile)
     if profile_name:
         return profile_name
+
+    # Live Jaeger character wins even when the backend slug is missing or
+    # still the instance name — that's how the header stayed stuck on
+    # "Jarvis" after picking Anakin.
+    live = _jaeger_live_display_name()
+    if live:
+        return live
 
     normalized_backend = _normalize_backend(backend)
     if normalized_backend == "jaeger_local":

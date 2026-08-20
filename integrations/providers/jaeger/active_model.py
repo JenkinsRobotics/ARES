@@ -128,10 +128,18 @@ def active_model(config_path: Path | None = None) -> dict[str, Any]:
             if isinstance(payload, dict):
                 row = payload.get("serving") or payload.get("configured")
                 if isinstance(row, dict):
+                    provider = str(row.get("provider") or "").strip()
+                    location = str(row.get("location") or "").strip().lower()
+                    if location not in {"local", "cloud", "remote"}:
+                        location = (
+                            "local"
+                            if provider in {"local", "in-process", "mlx", "ollama", "lmstudio"}
+                            else "cloud"
+                        )
                     return {
-                        "model": row.get("model"),
-                        "provider": row.get("provider"),
-                        "location": "local" if row.get("provider") in {"local", "in-process"} else "cloud",
+                        "model": row.get("model") or row.get("name"),
+                        "provider": provider or None,
+                        "location": location,
                         "base_url": row.get("base_url"),
                         "source": "jaeger_bridge",
                         "ctx": row.get("context_length"),

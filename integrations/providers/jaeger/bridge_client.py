@@ -156,6 +156,8 @@ class JaegerClient:
                  command: list[str] | None = None,
                  env: dict | None = None, cwd: str | None = None) -> None:
         resolved_instance = instance or resolve_jaeger_instance_name()
+        self._jaeger_home = jaeger_home
+        self._instance = resolved_instance
         self._command = (
             _append_instance_arg_if_bridge(command, resolved_instance)
             if command is not None else _default_command(jaeger_home, resolved_instance)
@@ -165,6 +167,9 @@ class JaegerClient:
             self._env["JAEGER_INSTANCE_NAME"] = resolved_instance
         self._cwd = cwd
         self._proc: subprocess.Popen | None = None
+        self._sock = None
+        self._rx = None
+        self._attached = False
         self._stderr_lines: list[str] = []
         self._stderr_thread: threading.Thread | None = None
         self.ready: dict[str, Any] | None = None
@@ -173,27 +178,8 @@ class JaegerClient:
         self._request_counter = 0
 
     # ── lifecycle ─────────────────────────────────────────────────
-    def start(self) -> dict[str, Any]:
-        """Spawn the bridge and await its ``ready`` handshake. Returns
-        ``{"instance": ..., "model": ...}``. Raises :class:`JaegerError`."""
-        self._proc = subprocess.Popen(
-            self._command,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,        # capture stderr for diagnostics
-            text=True, bufsize=1, env=self._env, cwd=self._cwd,
-        )
-        # Drain stderr on a background thread so it doesn't block stdout reads
-        self._stderr_lines = []
-        if self._proc.stderr is not None:
-            def _drain_stderr():
-                try:
-                    for line in self._proc.stderr:
-                        self._stderr_lines.append(line.rstrip())
-                except Exception:
-                    pass
-            self._stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
-            self._stderr_thread.start()
-        for line in self._proc.stdout:        # type: ignore[union-attr]
+    def _handshake(self, lines) -> dict[str, Any]:
+        for line in lines:
             frame = _parse(line)
             if frame is None:
                 continue
@@ -212,28 +198,122 @@ class JaegerClient:
                     "model": frame.get("model"),
                     "protocol_version": received_protocol,
                     "capabilities": [str(item) for item in capabilities],
+                    "attached": self._attached,
                 }
                 return self.ready
             if frame.get("type") == "fatal":
-                # Surface stderr in the error message for diagnostics
                 stderr_tail = "\n".join(self._stderr_lines[-10:]) if self._stderr_lines else ""
                 msg = str(frame.get("error", "boot failed"))
                 if stderr_tail:
                     msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
                 raise JaegerError(msg)
-        # Bridge exited before ready — include stderr for diagnostics
         stderr_tail = "\n".join(self._stderr_lines[-10:]) if self._stderr_lines else ""
         msg = "bridge exited before ready"
         if stderr_tail:
             msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
         raise JaegerError(msg)
 
+    def _try_attach(self) -> dict[str, Any] | None:
+        """Connect to a live ``jaeger bridge`` socket if one is listening."""
+        import socket as _socket
+        from api.providers.jaeger.paths import jaeger_bridge_socket_candidates
+
+        home = self._jaeger_home
+        if not home:
+            try:
+                home = str(resolve_jaeger_home())
+            except Exception:
+                home = None
+        for path in jaeger_bridge_socket_candidates(home, self._instance):
+            if not path.exists():
+                continue
+            sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            sock.settimeout(2.0)
+            try:
+                sock.connect(str(path))
+            except OSError:
+                sock.close()
+                continue
+            sock.settimeout(None)
+            rx = sock.makefile("rw", buffering=1, encoding="utf-8", newline="\n")
+            self._sock = sock
+            self._rx = rx
+            self._attached = True
+            try:
+                return self._handshake(rx)
+            except Exception:
+                self._attached = False
+                try:
+                    rx.close()
+                except Exception:
+                    pass
+                sock.close()
+                self._sock = None
+                self._rx = None
+                raise
+        return None
+
+    def start(self) -> dict[str, Any]:
+        """Attach to a live bridge if one is up; otherwise spawn one.
+
+        Returns ``{"instance": ..., "model": ...}``. Raises :class:`JaegerError`."""
+        attached = self._try_attach()
+        if attached is not None:
+            return attached
+        self._proc = subprocess.Popen(
+            self._command,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,        # capture stderr for diagnostics
+            text=True, bufsize=1, env=self._env, cwd=self._cwd,
+        )
+        # Drain stderr on a background thread so it doesn't block stdout reads
+        self._stderr_lines = []
+        if self._proc.stderr is not None:
+            def _drain_stderr():
+                try:
+                    for line in self._proc.stderr:
+                        self._stderr_lines.append(line.rstrip())
+                except Exception:
+                    pass
+            self._stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+            self._stderr_thread.start()
+        self._rx = self._proc.stdout
+        return self._handshake(self._proc.stdout)
+
     def is_alive(self) -> bool:
-        """True while the ``jaeger bridge`` child is still running."""
+        """True while the ``jaeger bridge`` child (or attach socket) is up."""
+        if self._attached:
+            sock = self._sock
+            if sock is None:
+                return False
+            try:
+                sock.getpeername()
+                return True
+            except Exception:
+                return False
         proc = self._proc
         return proc is not None and proc.poll() is None
 
     def close(self) -> None:
+        if self._attached:
+            try:
+                self._write(quit_op())  # detach — owner ignores this as shutdown
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                if self._rx is not None:
+                    self._rx.close()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                if self._sock is not None:
+                    self._sock.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._sock = None
+            self._rx = None
+            self._attached = False
+            return
         proc = self._proc
         if proc is not None and proc.poll() is None:
             try:
@@ -274,10 +354,10 @@ class JaegerClient:
         "deny"). The returned ``text`` is always the complete answer —
         deltas are a live preview of it, not a replacement for it."""
         with self._io_lock:
-            if self._proc is None:
+            if self._rx is None:
                 raise JaegerError("not started")
             self._write(send_op(text, session, workspace, display_text))
-            for line in self._proc.stdout:        # type: ignore[union-attr]
+            for line in self._rx:
                 frame = _parse(line)
                 if frame is None:
                     continue
@@ -304,14 +384,14 @@ class JaegerClient:
     def cancel(self, session: str = "") -> None:
         """Cooperatively interrupt the current Jaeger bridge turn."""
         del session  # reserved for a future multi-worker bridge
-        if self._proc is None:
+        if self._rx is None:
             raise JaegerError("not started")
         self._write({"op": "cancel"})
 
     def steer(self, text: str, session: str = "") -> None:
         """Inject guidance into the current Jaeger bridge turn."""
         del session  # reserved for a future multi-worker bridge
-        if self._proc is None:
+        if self._rx is None:
             raise JaegerError("not started")
         self._write({"op": "steer", "text": str(text or "")})
 
@@ -333,13 +413,13 @@ class JaegerClient:
 
     def _request(self, frame: dict[str, Any]) -> Any:
         with self._io_lock:
-            if self._proc is None:
+            if self._rx is None:
                 raise JaegerError("not started")
             self._request_counter += 1
             request_id = f"ares-{self._request_counter}"
             payload = {**frame, "id": request_id}
             self._write(payload)
-            for line in self._proc.stdout:        # type: ignore[union-attr]
+            for line in self._rx:
                 reply = _parse(line)
                 if reply is None:
                     continue
@@ -354,7 +434,11 @@ class JaegerClient:
 
     # ── internals ─────────────────────────────────────────────────
     def _write(self, frame: dict[str, Any]) -> None:
-        assert self._proc is not None and self._proc.stdin is not None
+        sink = self._rx if self._attached else (
+            None if self._proc is None else self._proc.stdin
+        )
+        if sink is None:
+            raise JaegerError("not started")
         with self._write_lock:
-            self._proc.stdin.write(_encode(frame))
-            self._proc.stdin.flush()
+            sink.write(_encode(frame))
+            sink.flush()

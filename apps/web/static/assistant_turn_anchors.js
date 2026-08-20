@@ -1686,7 +1686,7 @@
     return registry;
   }
 
-  ROOT.ARESAssistantTurnAnchors=Object.freeze({
+  ROOT.HermesAssistantTurnAnchors=Object.freeze({
     version:'slice8-renderer-snapshot-adapter',
     activityEventKinds:ACTIVITY_EVENT_KINDS,
     stateLayers:STATE_LAYERS,

@@ -59,7 +59,7 @@ function _isDocumentVisibleAndFocused() {
 let _desktopBackgroundedForNotifications=false;
 // Desktop shells can background a visible document; keep that signal notification-only.
 if(typeof window!=='undefined'){
-  window.__aresSetBackgrounded=(value)=>{
+  window.__hermesSetBackgrounded=(value)=>{
     _desktopBackgroundedForNotifications=!!value;
     if(_desktopBackgroundedForNotifications){
       for(const k in _STREAM_NOTIFICATION_BACKGROUND){
@@ -167,7 +167,6 @@ if(_msgEl) _msgEl.addEventListener('blur', ()=>{ if('speechSynthesis' in window 
 
 let _selectedTextReplyBtn=null;
 let _selectedTextRefineBtn=null;
-let _selectedTextCopyBtn=null;
 let _selectedTextReplyGroup=null;
 let _selectedTextReplyText='';
 let _pendingSelections=[];  // [{id, name, text}] — named context blocks
@@ -795,7 +794,7 @@ function _formatSelectedTextReplyQuote(text, includeMarker=true){
   const normalized=String(text||'').replace(/\r\n?/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
   if(!normalized)return '';
   const quote=normalized.split('\n').map(line=>`> ${line}`).join('\n');
-  return includeMarker?`<!-- ares-selected-context -->\n${quote}`:quote;
+  return includeMarker?`<!-- hermes-selected-context -->\n${quote}`:quote;
 }
 
 function _appendComposerText(text){
@@ -1121,38 +1120,12 @@ function _selectedTextReplyButton(){
       _seedSelectedTextRefineDraft(text);
     }
   });
-  const copy=document.createElement('button');
-  copy.type='button';
-  copy.id='selectedTextCopyBtn';
-  copy.className='selected-text-copy-btn';
-  copy.setAttribute('data-i18n', 'copy');
-  copy.setAttribute('data-i18n-title', 'selected_text_copy_title');
-  copy.setAttribute('data-i18n-aria-label', 'copy');
-  copy.textContent=_selectedTextReplyT('copy', 'Copy');
-  copy.title=_selectedTextReplyT('selected_text_copy_title', 'Copy the selected chat text');
-  copy.setAttribute('aria-label', copy.textContent);
-  copy.addEventListener('mousedown', e=>e.preventDefault());
-  copy.addEventListener('click', e=>{
-    e.preventDefault();
-    const text=_consumeSelectedTextReplySelection();
-    if(!text) return;
-    const done=()=>{ if(typeof showToast==='function') showToast(_selectedTextReplyT('copied','Copied'),1600); };
-    if(typeof _copyText==='function'){
-      _copyText(text).then(done).catch(()=>{ if(typeof showToast==='function') showToast(_selectedTextReplyT('copy_failed','Copy failed'),2000,'error'); });
-    }else{
-      try{
-        navigator.clipboard.writeText(text).then(done).catch(()=>{});
-      }catch(_err){}
-    }
-  });
   group.appendChild(btn);
   group.appendChild(refine);
-  group.appendChild(copy);
   document.body.appendChild(group);
   if(typeof applyLocaleToDOM==='function') applyLocaleToDOM();
   _selectedTextReplyBtn=btn;
   _selectedTextRefineBtn=refine;
-  _selectedTextCopyBtn=copy;
   _selectedTextReplyGroup=group;
   return btn;
 }
@@ -1217,10 +1190,9 @@ function _clearStaleBusyStateBeforeSend({compressionRunning=false}={}){
   if(!S||!S.busy||compressionRunning) return false;
   const session=S.session||{};
   const sid=session.session_id||'';
-  const inflightEntry=typeof INFLIGHT==='object'&&INFLIGHT&&sid?INFLIGHT[sid]:null;
-  const hasLiveInflight=Boolean(inflightEntry&&(inflightEntry.ws||inflightEntry.es||inflightEntry.fetchActive));
   const hasRuntimeConfirmation=Boolean(
-    (hasLiveInflight&&S.activeStreamId)||
+    S.activeStreamId||
+    session.active_stream_id||
     session.pending_user_message||
     session.pending_started_at
   );
@@ -1825,21 +1797,17 @@ async function send(){
     // pick. (#3739/#3737, Codex catch)
     if(_pendingPickMatch && typeof _clearPendingSessionModel==='function') _clearPendingSessionModel(activeSid);
     explicitPickForPostStart=_explicitPick;
-    const startData=await api('/api/chat/start',{
-      method:'POST',
-      timeoutMs: 300000,
-      body:JSON.stringify({
-        session_id:activeSid,message:msgText,
-        // S.session.model remains authoritative; the helper only resolves a
-        // matching provider fallback for the same outgoing model.
-        model:_modelState.model,workspace:S.session.workspace,
-        model_provider:_modelState.model_provider,
-        profile:S.activeProfile||S.session.profile||'default',
-        explicit_model_pick:_explicitPick||undefined,
-        attachments:uploaded.length?uploaded:undefined,
-        moa_config:_pendingMoaConfig?true:undefined
-      })
-    });
+    const startData=await api('/api/chat/start',{method:'POST',body:JSON.stringify({
+      session_id:activeSid,message:msgText,
+      // S.session.model remains authoritative; the helper only resolves a
+      // matching provider fallback for the same outgoing model.
+      model:_modelState.model,workspace:S.session.workspace,
+      model_provider:_modelState.model_provider,
+      profile:S.activeProfile||S.session.profile||'default',
+      explicit_model_pick:_explicitPick||undefined,
+      attachments:uploaded.length?uploaded:undefined,
+      moa_config:_pendingMoaConfig?true:undefined
+    })});
     _pendingMoaConfig=null;
     postStartData = startData;
   }catch(e){
@@ -1850,7 +1818,7 @@ async function send(){
     // re-inject the dead id via _sessionIdFromLocation(), then reset to the
     // empty state instead of pushing a confusing error bubble into the chat.
     if(e&&e.status===404){
-      try{ localStorage.removeItem('ares-webui-session'); }catch(_){ }
+      try{ localStorage.removeItem('hermes-webui-session'); }catch(_){ }
       try{
         if(typeof _appRootPath==='function') history.replaceState(null,'',_appRootPath());
         else history.replaceState(null,'',window.location.pathname.replace(/\/session\/[^/]+/,'')+window.location.search);
@@ -1929,7 +1897,7 @@ async function send(){
       }
       S.session.model=startData.effective_model;
       S.session.model_provider=startData.effective_model_provider||S.session.model_provider||null;
-      localStorage.setItem('ares-webui-model', startData.effective_model);
+      localStorage.setItem('hermes-webui-model', startData.effective_model);
       if(typeof _writePersistedModelState==='function') _writePersistedModelState(startData.effective_model,S.session.model_provider||null);
       if($('modelSelect')) _applyModelToDropdown(startData.effective_model, $('modelSelect'),S.session.model_provider||null);
       if(typeof syncTopbar==='function') syncTopbar();
@@ -2099,14 +2067,14 @@ function closeOtherLiveStreams(activeSid){
 }
 
 function _dispatchExtensionTurnLifecycle(type,sessionId,streamId,details={}){
-  const runtime=(typeof window!=='undefined')&&(window.ARESExtensionSettings||window.HermesExtensionSettings);
+  const runtime=typeof window!=='undefined'&&window.HermesExtensionSettings;
   const dispatch=runtime&&runtime._dispatchTurnLifecycle;
   if(typeof dispatch!=='function') return false;
   try{
     return dispatch(type,{sessionId,streamId,...details});
   }catch(error){
     if(typeof console!=='undefined'&&typeof console.error==='function'){
-      try{console.error('[ARES extensions] lifecycle dispatch failed:',error);}catch(_loggingError){ }
+      try{console.error('[Hermes extensions] lifecycle dispatch failed:',error);}catch(_loggingError){ }
     }
     return false;
   }
@@ -2645,7 +2613,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         if(streamId){
           const st=await api(`/api/chat/stream/status?stream_id=${encodeURIComponent(streamId)}`);
           if(st.active){
-            setComposerStatus('Reconnected');
+            setComposerStatus('Reconnected',1000);
             _wireSSE(new EventSource(new URL(`api/chat/stream?stream_id=${encodeURIComponent(streamId)}${_runJournalReplayParams()}`,document.baseURI||location.href).href,{withCredentials:true}));
             return;
           }
@@ -2701,6 +2669,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   let _streamFadeHoldUntilMs=0;
   let _streamFadeCurrentMs=620;
   let _streamFadeDomText='';
+  let _streamFadeSilentPrefixChars=0;
   let _streamFadeReduceMotionMql=null;
   let _streamFadeReduceMotion=false;
   let _streamFadeReduceMotionOnChange=null;
@@ -2717,8 +2686,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   const _STREAM_FADE_MAX_MS=900;
   const _STREAM_FADE_DONE_MAX_MS=1000;
   const _STREAM_FADE_DONE_DRAIN_MAX_MS=1400;
-  const _anchorApi=(typeof window!=='undefined'&&window.ARESAssistantTurnAnchors)
-    ? window.ARESAssistantTurnAnchors
+  const _anchorApi=(typeof window!=='undefined'&&window.HermesAssistantTurnAnchors)
+    ? window.HermesAssistantTurnAnchors
     : null;
   const _anchorRegistryMap=(typeof window!=='undefined')
     ? (window._liveAnchorRegistries=window._liveAnchorRegistries||new Map())
@@ -3814,16 +3783,20 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       || (Array.isArray(scene&&scene.side_effects)&&scene.side_effects.length)
     );
   }
-  function _attachProjectedAnchorSceneToLastAssistant(messages){
+  function _attachProjectedAnchorSceneToLastAssistant(messages, targetMessage=null, targetIndex=null){
     if(!_anchorRegistry||!Array.isArray(messages)) return false;
-    let lastAsst=null;
-    let lastAsstIndex=-1;
-    for(let i=messages.length-1;i>=0;i--){
-      const candidate=messages[i];
-      if(candidate&&candidate.role==='assistant'){
-        lastAsst=candidate;
-        lastAsstIndex=i;
-        break;
+    let lastAsst=targetMessage;
+    let lastAsstIndex=Number.isInteger(targetIndex)?targetIndex:-1;
+    if(lastAsst){
+      if(lastAsstIndex<0||messages[lastAsstIndex]!==lastAsst) return false;
+    }else{
+      for(let i=messages.length-1;i>=0;i--){
+        const candidate=messages[i];
+        if(candidate&&candidate.role==='assistant'){
+          lastAsst=candidate;
+          lastAsstIndex=i;
+          break;
+        }
       }
     }
     if(!lastAsst) return false;
@@ -3834,12 +3807,92 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       const hasWorklogRows=_anchorSceneHasWorklogWorthyRows(scene);
       const shouldPersistScene=hasWorklogRows||scene.mode==='hide_all_activity'||hasOwnedOutcomes;
       if(!shouldPersistScene) return false;
+      let sceneKey='';
+      try{ sceneKey=JSON.stringify(scene); }catch(_){ sceneKey=''; }
+      if(
+        sceneKey &&
+        lastAsst._anchor_stream_id===streamId &&
+        lastAsst._anchor_scene_persist_key===sceneKey
+      ) return hasWorklogRows;
       lastAsst._anchor_stream_id=streamId;
       lastAsst._anchor_activity_scene=scene;
+      lastAsst._anchor_scene_persist_key=sceneKey;
       _persistSettledAnchorScene(lastAsst, scene, lastAsstIndex);
       return hasWorklogRows;
     }
     return false;
+  }
+  function _settledAnchorRetryOwnerKey(messages, targetIndex, retryStreamId){
+    if(!Array.isArray(messages)||!Number.isInteger(targetIndex)) return '';
+    const target=messages[targetIndex];
+    if(!target||target.role!=='assistant') return '';
+    let turnStart=0;
+    for(let idx=targetIndex-1;idx>=0;idx-=1){
+      if(messages[idx]&&messages[idx].role==='user'){
+        turnStart=idx;
+        break;
+      }
+    }
+    let hasStableOwnerSignal=false;
+    const ownerRows=[];
+    const addUnique=(items,value)=>{
+      const normalized=String(value||'').trim();
+      if(normalized&&!items.includes(normalized)) items.push(normalized);
+    };
+    for(let idx=turnStart;idx<=targetIndex;idx+=1){
+      const message=messages[idx];
+      if(!message||typeof message!=='object') return '';
+      const explicitIds=[];
+      for(const field of ['id','message_id','turn_id','_turn_id','run_id','_run_id']){
+        addUnique(explicitIds,message[field]);
+      }
+      const toolCallIds=[];
+      addUnique(toolCallIds,message.tool_call_id);
+      const addToolOwner=(tool)=>{
+        if(!tool||typeof tool!=='object') return;
+        addUnique(toolCallIds,tool.id||tool.tid||tool.tool_call_id||tool.tool_use_id||tool.call_id);
+      };
+      for(const tool of (Array.isArray(message.tool_calls)?message.tool_calls:[])) addToolOwner(tool);
+      for(const tool of (Array.isArray(message._partial_tool_calls)?message._partial_tool_calls:[])) addToolOwner(tool);
+      for(const part of (Array.isArray(message.content)?message.content:[])) addToolOwner(part);
+      explicitIds.sort();
+      toolCallIds.sort();
+      if(explicitIds.length||toolCallIds.length) hasStableOwnerSignal=true;
+      ownerRows.push({
+        message_ref:_anchorSceneMessageRef(message),
+        reasoning:String(message.reasoning||message._reasoning||message.reasoning_content||message.thinking||'').replace(/\s+/g,' ').trim(),
+        partial:!!message._partial,
+        explicit_ids:explicitIds,
+        tool_call_ids:toolCallIds,
+      });
+    }
+    if(!hasStableOwnerSignal) return '';
+    return JSON.stringify({
+      session_id:activeSid||'',
+      stream_id:String(retryStreamId||''),
+      target_index:targetIndex,
+      messages:ownerRows,
+    });
+  }
+  function _retrySettledAnchorScene(targetMessage, targetIndex, retryStreamId, retryRegistry, retryOwnerKey){
+    if(!targetMessage||!Number.isInteger(targetIndex)) return false;
+    if(!S.session||S.session.session_id!==activeSid) return false;
+    if(S.activeStreamId&&S.activeStreamId!==retryStreamId) return false;
+    if(!_anchorRegistryMap||_anchorRegistryMap.get(retryStreamId)!==retryRegistry) return false;
+    if(!Array.isArray(S.messages)) return false;
+    const currentTarget=S.messages[targetIndex];
+    if(currentTarget!==targetMessage){
+      const currentOwnerKey=_settledAnchorRetryOwnerKey(S.messages,targetIndex,retryStreamId);
+      if(!retryOwnerKey||!currentOwnerKey||currentOwnerKey!==retryOwnerKey) return false;
+      if(targetMessage._anchor_stream_id===retryStreamId){
+        if(currentTarget._anchor_stream_id==null) currentTarget._anchor_stream_id=targetMessage._anchor_stream_id;
+        if(currentTarget._anchor_scene_persist_key==null) currentTarget._anchor_scene_persist_key=targetMessage._anchor_scene_persist_key;
+        if(!currentTarget._anchor_activity_scene&&targetMessage._anchor_activity_scene){
+          currentTarget._anchor_activity_scene=targetMessage._anchor_activity_scene;
+        }
+      }
+    }
+    return _attachProjectedAnchorSceneToLastAssistant(S.messages,currentTarget,targetIndex);
   }
   function _upsertAnchorProcessProse(displayText, options={}){
     const text=String(displayText||'').trim();
@@ -3893,11 +3946,26 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     const value=String(text||'');
     const fade=typeof _shouldUseLiveProseFade==='function'&&_shouldUseLiveProseFade();
     let st;
+    let _rewindPrevRendered='';
     try{
       st=_anchorProseSmdCache.get(key);
       // Self-heal desyncs (edit/sanitize made the text no longer a pure append):
       // rebuild the parser+node from scratch, mirroring the _smdWrite guard.
-      if(st && st.writtenText && !value.startsWith(st.writtenText)) st=null;
+      // Fade-flash guard: when the text REWINDS (tool-call XML stripped from the
+      // live prose), the rebuilt node would re-create every word as a new
+      // is-new span and replay the fade on ALL visible words at once. Mute the
+      // fade renderer for the common prefix so only the post-rewind tail fades.
+      if(st && st.writtenText && !value.startsWith(st.writtenText)){
+        // Snapshot the OLD rendered text BEFORE clearing the node. The silent
+        // prefix is later recomputed in RENDERED-text space (old node text vs
+        // new node text) — source-space byte counts are wrong here because
+        // markdown delimiters, link destinations and MEDIA tokens never reach
+        // the fade add_text hook, so a source-space budget over-mutes the
+        // first genuinely new word after a rewind (#6783 review).
+        const oldBody=st.node&&st.node.querySelector&&st.node.querySelector('.msg-body');
+        _rewindPrevRendered=oldBody?(oldBody.textContent||''):'';
+        st=null;
+      }
       if(st && st.fade!==fade) st=null;
       if(st && st.finalized && st.writtenText!==value){
         const body=st.node&&st.node.querySelector&&st.node.querySelector('.msg-body');
@@ -3932,6 +4000,14 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       if(delta){
         window.smd.parser_write(st.parser,delta);
         st.writtenText=value;
+      }
+      // Rewind rebuild: mute the rendered common prefix (old node text vs new
+      // node text) so already-visible words do not replay their fade; only the
+      // post-rewind tail animates. Rendered-space compare, not source-space
+      // (#6783 review — markdown/MEDIA bytes never reach add_text).
+      if(_rewindPrevRendered && typeof _streamFadeMuteRenderedPrefix==='function'){
+        _streamFadeMuteRenderedPrefix(body,_rewindPrevRendered);
+        _rewindPrevRendered='';
       }
       if(finalize){
         _finalizeAnchorProseIncrementalNode(st);
@@ -4351,10 +4427,24 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   function _smdWrite(displayText, fade=false){
     if(!_smdParser||!window.smd) return;
     displayText=String(displayText||'');
-    // Self-heal desyncs: if displayText no longer starts with what we've already
-    // written (e.g. due to stream sanitization/tag stripping), incremental slicing
+    let _rewindPrevRendered='';
+    // Self-heal desyncs: if displayText no longer starts with what we have
+    // already written (e.g. due to stream sanitization/tag stripping), incremental slicing
     // can skip characters. Rebuild parser from the full current displayText.
     if(_smdWrittenText && !displayText.startsWith(_smdWrittenText)){
+      // Fade-flash fix: when the visible text REWINDS (tool-call XML stripping
+      // makes displayText a strict prefix of what was already written), the
+      // rebuild below would clear the body and re-create every word as a new
+      // `is-new` span — replaying the fade animation on ALL visible text at
+      // once (a full-message blink on every tool call). Instead, snapshot the
+      // OLD RENDERED text and mute the rebuild prefix spans AFTER the
+      // parser_write, in RENDERED-text space: source-space byte counts include
+      // markdown delimiters / link destinations / MEDIA token bytes that never
+      // reach the fade add_text hook, so a source-space budget over-mutes the
+      // first genuinely new word after a rewind (#6783 review).
+      if(assistantBody && typeof assistantBody.textContent==='string'){
+        _rewindPrevRendered=assistantBody.textContent;
+      }
       _smdParser=null;
       _smdWrittenLen=0;
       _smdWrittenText='';
@@ -4367,6 +4457,12 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     try{window.smd.parser_write(_smdParser,delta);}catch(_){}
     _smdWrittenLen=displayText.length;
     _smdWrittenText=displayText;
+    // Rebuild after a rewind: strip is-new from spans covered by the
+    // RENDERED common prefix (old node text vs new node text), so already-
+    // visible words stay plain while only the post-rewind tail fades.
+    if(_rewindPrevRendered && typeof _streamFadeMuteRenderedPrefix==='function'){
+      _streamFadeMuteRenderedPrefix(assistantBody,_rewindPrevRendered);
+    }
     // URL scheme safety is handled by the renderer's set_attr hook
     // (_safeSmdRenderer or _streamFadeRenderer), applied inline as smd
     // creates each DOM node — no post-hoc full-DOM scan needed.
@@ -4443,6 +4539,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     _streamFadeHoldUntilMs=0;
     _streamFadeCurrentMs=_STREAM_FADE_MS;
     _streamFadeDomText='';
+    _streamFadeSilentPrefixChars=0;
   }
   function _cancelAnimationFramePendingStreamRender(){
     if(_pendingRafHandle===null) return;
@@ -4532,11 +4629,24 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       const reduceMotion=_streamFadeReduceMotionEnabled();
       const appendStartedAt=performance.now();
       let last=0, match, changed=false;
+      // Silent-prefix window: after a rebuild caused by a REWIND (tool-call
+      // XML stripping), words that were already visible before the rewind
+      // point must NOT replay their fade animation. They are appended as
+      // plain text; only the tail beyond _streamFadeSilentPrefixChars fades.
+      let silentLeft=_streamFadeSilentPrefixChars||0;
       while((match=wordRe.exec(value))){
         if(match.index>last) frag.appendChild(document.createTextNode(value.slice(last,match.index)));
         if(reduceMotion){
           frag.appendChild(document.createTextNode(match[1]));
           if(match[2]) frag.appendChild(document.createTextNode(match[2]));
+          last=match.index+match[0].length;
+          changed=true;
+          continue;
+        }
+        if(silentLeft>0){
+          frag.appendChild(document.createTextNode(match[1]));
+          if(match[2]) frag.appendChild(document.createTextNode(match[2]));
+          silentLeft-=match[0].length;
           last=match.index+match[0].length;
           changed=true;
           continue;
@@ -4552,6 +4662,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         last=match.index+match[0].length;
         changed=true;
       }
+      if(silentLeft>0) _streamFadeSilentPrefixChars=silentLeft;
+      else _streamFadeSilentPrefixChars=0;
       if(!changed){baseAddText(data,text);return;}
       if(last<value.length) frag.appendChild(document.createTextNode(value.slice(last)));
       parent.appendChild(frag);
@@ -4842,10 +4954,17 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     const wordRe=/(\S+)(\s*)/g;
     const appendStartedAt=performance.now();
     let last=0, match, changed=false;
+    // Silent-prefix window (same contract as _streamFadeRenderer.add_text):
+    // after a rewind-triggered rebuild, words before the rewind point must
+    // not replay their fade animation.
+    let silentLeft=_streamFadeSilentPrefixChars||0;
     while((match=wordRe.exec(value))){
       if(match.index>last) frag.appendChild(document.createTextNode(value.slice(last,match.index)));
       if(reduceMotion){
         frag.appendChild(document.createTextNode(match[1]));
+      }else if(silentLeft>0){
+        frag.appendChild(document.createTextNode(match[1]));
+        silentLeft-=match[0].length;
       }else{
         const span=document.createElement('span');
         span.className='stream-fade-word is-new';
@@ -4859,12 +4978,57 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       last=match.index+match[0].length;
       changed=true;
     }
+    if(silentLeft>0) _streamFadeSilentPrefixChars=silentLeft;
+    else _streamFadeSilentPrefixChars=0;
     if(!changed){
       frag.appendChild(document.createTextNode(value));
     }else if(last<value.length){
       frag.appendChild(document.createTextNode(value.slice(last)));
     }
     el.appendChild(frag);
+  }
+  // Rendered-text-space mute for rewind rebuilds (#6783 review): after a
+  // rewind-triggered rebuild every word is a fresh `is-new` span. Compare the
+  // OLD rendered text (snapshot before rebuild) with the NEW rendered text in
+  // RENDERED coordinates — what smd's add_text actually emits; markdown
+  // delimiters, link destinations and MEDIA token bytes never reach it — and
+  // strip `is-new` from spans inside the common prefix, so already-visible
+  // words don't replay their fade while the genuinely new tail still animates.
+  function _streamFadeMuteRenderedPrefix(rootEl, prevRendered){
+    if(!rootEl || !prevRendered) return;
+    const newRendered=(rootEl.textContent||'');
+    if(!newRendered) return;
+    const _maxCommon=Math.min(prevRendered.length,newRendered.length);
+    let _common=0;
+    while(_common<_maxCommon&&prevRendered.charCodeAt(_common)===newRendered.charCodeAt(_common)) _common+=1;
+    if(_common<=0) return;
+    let consumed=0;
+    const _walk=(node)=>{
+      if(!node||consumed>_common) return;
+      const isText=node.nodeType===3||node.type==='text';
+      if(isText){
+        const len=(node.textContent||'').length;
+        const start=consumed;
+        consumed+=len;
+        // Text node inside a fade span that starts before the common-prefix
+        // boundary → mute the span (drop is-new, keeping the word visible
+        // without replaying its animation).
+        if(start<_common){
+          const parent=node.parentNode;
+          if(parent&&/\bstream-fade-word\b/.test(parent.className||'')&&/\bis-new\b/.test(parent.className||'')){
+            if(parent.classList&&typeof parent.classList.remove==='function'){
+              parent.classList.remove('is-new');
+            }else{
+              parent.className=String(parent.className||'').replace(/\bis-new\b/g,'').replace(/\s{2,}/g,' ').trim();
+            }
+          }
+        }
+        return;
+      }
+      const kids=node.childNodes||node.children;
+      if(kids){ for(let i=0;i<kids.length;i++) _walk(kids[i]); }
+    };
+    _walk(rootEl);
   }
   function _streamFadePauseAfter(text, paragraphBreakIndex){
     if(paragraphBreakIndex>=0) return 90;
@@ -4882,8 +5046,26 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       return {text:'', caughtUp:true, changed:hadVisible};
     }
     if(!_streamFadeVisibleText||!targetText.startsWith(_streamFadeVisibleText)){
-      // Markdown/tool stripping can rewrite the visible prefix. Reset safely rather than
-      // trying to animate across incompatible strings or stale word birth timestamps.
+      // Markdown/tool stripping can rewrite the visible prefix. Shrink the
+      // playout cursor to the common prefix instead of resetting to zero —
+      // a full reset would replay the fade animation on every already-visible
+      // word whenever the display text briefly rewinds (e.g. tool-call XML
+      // being stripped mid-stream). Only when nothing overlaps does the playout
+      // need a true from-scratch start.
+      let _commonLen=0;
+      const _maxCommon=Math.min(_streamFadeVisibleText.length,targetText.length);
+      while(_commonLen<_maxCommon&&_streamFadeVisibleText.charCodeAt(_commonLen)===targetText.charCodeAt(_commonLen)) _commonLen+=1;
+      if(_commonLen>0){
+        _streamFadeVisibleText=targetText.slice(0,_commonLen);
+        _streamFadeVisibleWords=_streamFadeWordCountOf(_streamFadeVisibleText);
+        _streamFadeWordCarry=0;
+        _streamFadeLastTickMs=0;
+        _streamFadeStartedAt=0;
+        // changed:true forces the DOM to sync to the shrunken prefix this
+        // frame (dropping the rewind tail). The rebuild mutes the common
+        // prefix so no fade animation is replayed.
+        return {text:_streamFadeVisibleText,caughtUp:_streamFadeVisibleText===targetText,changed:true};
+      }
       _resetStreamFadeState();
     }
     if(!_streamFadeLastTickMs){
@@ -4899,7 +5081,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     _streamFadeLastTickMs=now;
 
     // OpenWebUI fades the actual arriving tokens, so long/fast responses naturally
-    // appear to accelerate. ARES has a playout buffer, so track incoming word
+    // appear to accelerate. Hermes has a playout buffer, so track incoming word
     // velocity and play out faster than it instead of using a metronomic cadence.
     // LLM telemetry is usually tokens/sec, but the UI reveals words. A fixed word
     // cadence can look stuck even when token throughput is high, so combine:
@@ -5044,6 +5226,10 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     const force=!!(options&&options.force);
     const skipAnchorProcessProse=!!(options&&options.skipAnchorProcessProse);
     if(!assistantBody||(!force&&!_renderPending)) return;
+    // #6449: guard — this stream's session is no longer the active pane.
+    // Callers already gate on _isActiveSession(), but add the guard here too
+    // so any future call-site cannot leak rendering into the wrong session.
+    if(!_isActiveSession()) return;
     if(_renderPending) _cancelAnimationFramePendingStreamRender();
     const displayText=segmentStart===0
       ? _parseStreamState().displayText
@@ -5369,6 +5555,11 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     }
     if(_renderPending) return;
     if(_streamFinalized) return; // Bug A: don't schedule new rAF after stream finalized
+    // #6449: guard — this stream's session is no longer the active frontend pane.
+    // Drop the scheduled render instead of writing into a detached or wrong-session DOM.
+    // Callers (token/interim_assistant handlers) already gate on _isActiveSession(), but
+    // the rAF/setTimeout window between schedule and execution can outlive a session switch.
+    if(!_isActiveSession()) return;
     _renderPending=true;
     // Cap render rate to ~15fps. The browser's rAF fires at 60fps, but each DOM
     // update takes 50-150ms on large sessions. During GC pauses, rAF callbacks
@@ -5384,6 +5575,9 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       _renderPending=false;
       // Guard: a pending setTimeout+rAF can outlive stream finalization.
       if(_streamFinalized) return;
+      // #6449: guard — the frontend session changed between rAF schedule and execution.
+      // Writing DOM into this stream's assistantBody would leak text into the wrong pane.
+      if(!_isActiveSession()) return;
       // Mobile scroll-jank guard: temporarily disable overflow-anchor before DOM
       // writes to suppress Chromium scroll re-anchoring during streaming growth.
       if(typeof window._fixMobileScrollJank==='function') window._fixMobileScrollJank();
@@ -5952,7 +6146,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           if(typeof _hydrateTodosFromSession==='function') _hydrateTodosFromSession(S.session);
           if(typeof clearVisibleMessageRowCache==='function') clearVisibleMessageRowCache();
           if(S.session&&S.session.session_id){
-            try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
+            try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
             if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
           }
           const _markerOnlyAssistantError=_replaceMarkerOnlyAssistantWithStreamError(S.messages);
@@ -5961,7 +6155,19 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
             window._compressionUi.sessionId===activeSid&&
             d.session&&d.session.session_id
           ){
-            window._compressionUi={...window._compressionUi, sessionId:d.session.session_id};
+            if(window._compressionUi.phase==='running'){
+              // Turn completed (done event) but the compression UI is still in
+              // 'running' phase - the 'compressed' SSE event was lost or delayed.
+              // Clear the stale running state instead of leaving it active,
+              // which would surface a phantom "Compressing context" barrier.
+              // This covers both A->B (session rotation) and A->A (no rotation)
+              // since in both cases a running phase at done-time means the
+              // compressed event never arrived.
+              if(typeof clearCompressionUi==='function') clearCompressionUi();
+              else window._compressionUi=null;
+            } else {
+              window._compressionUi={...window._compressionUi, sessionId:d.session.session_id};
+            }
           }
           // Find the last assistant message once for both reasoning persistence and timestamp
           lastAsst=[...S.messages].reverse().find(m=>m.role==='assistant');
@@ -6058,7 +6264,10 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
               _transient:true,
             });
           }
-          clearLiveToolCards();
+          // Keep the rendered live Worklog in place until the settled transcript swaps
+          // it for the settled anchor scene. Removing it first exposes an empty
+          // transcript frame on large sessions.
+          clearLiveToolCards({preserveDom:true});
           S.busy=false;
           // No-reply guard (#373): if agent returned nothing, show inline error
           if(!S.messages.some(m=>m.role==='assistant'&&String(m.content||'').trim())&&!assistantText){removeThinking();S.messages.push({role:'assistant',content:'**No response received.** Check your API key and model selection.'});}
@@ -6100,8 +6309,15 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           if(typeof _armKeepSettledWorklogOpen==='function') _armKeepSettledWorklogOpen(_settledStreamId);
           syncTopbar();renderMessages({preserveScroll:true});
           if(typeof _disarmKeepSettledWorklogOpen==='function') _disarmKeepSettledWorklogOpen();
-          if(typeof _renderMessagesWithScrollSnapshot==='function') _renderMessagesWithScrollSnapshot({_prescrollSnapshot:_doneLiveScrollSnapshot});
-          else renderMessages({preserveScroll:true});
+          const _collapsedInPlace=typeof _collapseJustSettledWorklogInPlace==='function'
+            && _collapseJustSettledWorklogInPlace(_settledStreamId);
+          if(!_collapsedInPlace&&typeof _renderMessagesWithScrollSnapshot==='function'){
+            _renderMessagesWithScrollSnapshot({_prescrollSnapshot:_doneLiveScrollSnapshot});
+          }else if(!_collapsedInPlace){
+            renderMessages({preserveScroll:true});
+          }else if(_doneLiveScrollSnapshot&&typeof _restoreMessageScrollSnapshotSameFrame==='function'){
+            _restoreMessageScrollSnapshotSameFrame(_doneLiveScrollSnapshot);
+          }
           if(shouldFollowOnDone&&typeof scrollToBottom==='function') scrollToBottom();
           if(typeof noteWorkspaceMutationsFromToolCalls==='function') noteWorkspaceMutationsFromToolCalls(S.toolCalls);
           loadDir('.', { preservePreview: true });
@@ -6337,6 +6553,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         _scheduleAnchorRegistryCleanup();
         clearLiveToolCards();if(!assistantText)removeThinking();
         let isRecoveryControlMessage=false;
+        let _anchorRetryTarget=null;
+        let _anchorRetryIndex=-1;
         try{
           const isRateLimit=d.type==='rate_limit';
           const isQuotaExhausted=d.type==='quota_exhausted';
@@ -6363,7 +6581,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
             _attachProjectedAnchorSceneToLastAssistant(_nextMsgs3018);
             S.messages=_carryForwardEphemeralTurnFields(S.messages||[], _nextMsgs3018);
             if(S.session&&S.session.session_id){
-              try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
+              try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
               if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
             }
           } else {
@@ -6371,9 +6589,25 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
             S.messages.push({role:'assistant',content:`**${label}:** ${d.message}${hint}`,provider_details:details,provider_details_label:detailsLabel,_compressionRecovery:recovery||undefined});
             _attachProjectedAnchorSceneToLastAssistant(S.messages);
           }
+          if(!isRecoveryControlMessage){
+            _anchorRetryTarget=[...S.messages].reverse().find(m=>m&&m.role==='assistant')||null;
+            _anchorRetryIndex=_anchorRetryTarget?S.messages.indexOf(_anchorRetryTarget):-1;
+          }
         }catch(_){
           S.messages.push({role:'assistant',content:'**Error:** An error occurred. Check server logs.'});
           _attachProjectedAnchorSceneToLastAssistant(S.messages);
+        }
+        if(_anchorRetryTarget&&_anchorRetryIndex>=0){
+          const _retryTarget=_anchorRetryTarget;
+          const _retryIndex=_anchorRetryIndex;
+          const _retryStreamId=streamId;
+          const _retryRegistry=_anchorRegistry;
+          const _retryOwnerKey=_settledAnchorRetryOwnerKey(S.messages,_retryIndex,_retryStreamId);
+          // Retry only for the exact terminal assistant and registry generation.
+          // A refresh replacement must prove the same full turn and tool owner.
+          setTimeout(()=>{
+            _retrySettledAnchorScene(_retryTarget,_retryIndex,_retryStreamId,_retryRegistry,_retryOwnerKey);
+          },0);
         }
         if(isRecoveryControlMessage){
           (async()=>{
@@ -6414,9 +6648,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           return;
         }
         // Show as a small inline notice, not a full error
-        setComposerStatus(`${d.message||'Warning'}`);
-        // If it's a fallback notice, show it briefly then clear
-        if(d.type==='fallback') setTimeout(()=>setComposerStatus(''),4000);
+        setComposerStatus(`${d.message||'Warning'}`,d.type==='fallback'?4000:undefined);
       }catch(_){}
     });
 
@@ -6465,7 +6697,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           try{
             const st=await api(`/api/chat/stream/status?stream_id=${encodeURIComponent(streamId)}`);
             if(st&&st.active){
-              setComposerStatus('Reconnected');
+              setComposerStatus('Reconnected',1000);
               _wireSSE(new EventSource(new URL(`api/chat/stream?stream_id=${encodeURIComponent(streamId)}${_runJournalReplayParams()}`,document.baseURI||location.href).href,{withCredentials:true}));
               return;
             }
@@ -6600,6 +6832,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       // a second GET race where the visible cancelled work briefly collapses to only
       // the fallback "Task cancelled" marker (#4076).
       const _cancelSessionPayload=_cancelData&&typeof _cancelData.session==='object'?_cancelData.session:null;
+      renderSessionList();
+      _setActivePaneIdleIfOwner();
       (async()=>{
         try{
           if(_applyCancelSessionPayload(_cancelSessionPayload)) return;
@@ -6618,7 +6852,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
                 ? _isMessageReaderUnpinned()
                 : (typeof _messageUserUnpinned!=='undefined' && _messageUserUnpinned));
             clearLiveToolCards();if(!assistantText)removeThinking();
-            const cancelAgentName=(assistantDisplayName()+'').trim()||'ARES';
+            const cancelAgentName=(assistantDisplayName()+'').trim()||'Hermes';
             S.messages.push({role:'assistant',content:`**Task cancelled:** Task cancelled.\n\n*The run was cancelled by the user before ${cancelAgentName} finished. No provider failure occurred.*`,provider_details:'Task cancelled.',provider_details_label:'Cancellation details',_error:true});
             _attachProjectedAnchorSceneToLastAssistant(S.messages);
             renderMessages({preserveScroll:true});
@@ -6632,8 +6866,6 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           });
         }
       })();
-      renderSessionList();
-      _setActivePaneIdleIfOwner();
     });
 
     for(const _runJournalEventName of ['token','interim_assistant','reasoning','tool','tool_complete','todo_state','approval','clarify','state_saved','title','title_status','context_status','goal','goal_continue','done','stream_end','pending_steer_leftover','compressing','compressed','metering','apperror','warning','error','cancel']){
@@ -6755,7 +6987,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         _attachProjectedAnchorSceneToLastAssistant(S.messages);
         if(typeof _hydrateTodosFromSession==='function') _hydrateTodosFromSession(S.session);
         if(S.session&&S.session.session_id){
-          try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
+          try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
           if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
         }
         const _markerOnlyAssistantError=_replaceMarkerOnlyAssistantWithStreamError(S.messages);
@@ -6915,7 +7147,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
 }
 
 function transcript(){
-  const lines=[`# ARES session ${S.session?.session_id||''}`,``,
+  const lines=[`# Hermes session ${S.session?.session_id||''}`,``,
     `Workspace: ${S.session?.workspace||''}`,`Model: ${S.session?.model||''}`,``];
   for(const m of S.messages){
     if(!m||m.role==='tool')continue;
@@ -7120,7 +7352,7 @@ let _approvalCurrentId = null;  // approval_id of the card currently shown
 let _approvalPendingBySession = new Map();
 let _approvalResponding = null;
 
-const _DISMISSED_APPROVALS_KEY = 'ares_dismissed_approvals';
+const _DISMISSED_APPROVALS_KEY = 'hermes_dismissed_approvals';
 
 // Dismissed approvals are namespaced by session so that two sessions carrying
 // the SAME approval_id (e.g. a gateway/run source that reuses externally
@@ -7719,7 +7951,7 @@ function startSessionStream(sid) {
   // Capture the active session id into a dedicated var BEFORE closing, because
   // stopSessionStream() nulls _sessionStreamSessionId — so the reopen path can't
   // rely on it (that was the bug: the stream never reopened on tab re-show).
-  if (typeof document !== 'undefined' && !document._aresSessionStreamVisibilityHook) {
+  if (typeof document !== 'undefined' && !document._hermesSessionStreamVisibilityHook) {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         _sessionStreamHiddenSid = _sessionStreamSessionId;
@@ -7736,7 +7968,7 @@ function startSessionStream(sid) {
         void startSessionStream(resumeSid);
       }
     });
-    document._aresSessionStreamVisibilityHook = true;
+    document._hermesSessionStreamVisibilityHook = true;
   }
   // Don't open when tab is hidden — saves connection pool slots. Preserve the
   // pending session id so the visibility handler reopens it on re-show (a session
@@ -8222,7 +8454,7 @@ function _stashClarifyDraft(reason) {
   const draft = String((input && input.value) || "").trim();
   if (!draft) return false;
   const sid = _clarifySessionId || (S.session && S.session.session_id) || "unknown";
-  const key = `ares-clarify-draft-${sid}-${_clarifySignature || "unknown"}`;
+  const key = `hermes-clarify-draft-${sid}-${_clarifySignature || "unknown"}`;
   try {
     sessionStorage.setItem(key, JSON.stringify({
       draft,
@@ -8732,7 +8964,7 @@ function playAttentionSound(key){
 function _notificationOptions(body,options={}){
   const sid=(options&&options.sid)||(S&&S.session&&S.session.session_id);
   const url=sid?`${location.origin}${_sessionUrlForSid(sid)}`:location.href;
-  return {body:body||'',tag:sid?`ares-${sid}`:'ares-webui',renotify:false,icon:'static/favicon-192.png',badge:'static/favicon-32.png',data:{url}};
+  return {body:body||'',tag:sid?`hermes-${sid}`:'hermes-webui',renotify:true,icon:'static/favicon-192.png',badge:'static/favicon-32.png',data:{url}};
 }
 function _showPwaNotification(title,body,options={}){
   const botName=assistantDisplayName();

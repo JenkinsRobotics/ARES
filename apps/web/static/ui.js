@@ -9,37 +9,11 @@ const S={session:null,messages:[],entries:[],busy:false,pendingFiles:[],toolCall
 
 function assistantDisplayName(){
   if(S.activeProfile&&S.activeProfile!=='default') return S.activeProfile.charAt(0).toUpperCase()+S.activeProfile.slice(1);
-  return window._identityDisplayName||window._botName||'ARES';
-}
-function _stampAssistantIdentityInDom(name){
-  const label=String(name||'').trim();
-  if(!label) return;
-  const initial=label.charAt(0).toUpperCase();
-  document.querySelectorAll('.msg-role.assistant .msg-role-name').forEach(el=>{
-    el.textContent=label;
-  });
-  document.querySelectorAll('.msg-role.assistant .role-icon.assistant').forEach(el=>{
-    el.textContent=initial;
-  });
-}
-async function refreshAssistantIdentity(){
-  try{
-    if(typeof api!=='function') return;
-    const sid=S&&S.session&&S.session.session_id?String(S.session.session_id):'';
-    const url=sid
-      ?('/api/ares/identity?session_id='+encodeURIComponent(sid))
-      :'/api/ares/identity';
-    const payload=await api(url,{retries:0,timeoutToast:false});
-    const name=payload&&String(payload.display_name||'').trim();
-    if(!name) return;
-    window._identityDisplayName=name;
-    if(typeof applyBotName==='function') applyBotName();
-    _stampAssistantIdentityInDom(name);
-  }catch(_e){}
+  return window._botName||'Hermes';
 }
 const INFLIGHT={};  // keyed by session_id while request in-flight
 const SESSION_QUEUES={};  // keyed by session_id for queued follow-up turns
-const MAX_UPLOAD_BYTES=(window.__ARES_CONFIG__&&window.__ARES_CONFIG__.maxUploadBytes)||20*1024*1024;
+const MAX_UPLOAD_BYTES=(window.__HERMES_CONFIG__&&window.__HERMES_CONFIG__.maxUploadBytes)||20*1024*1024;
 const MAX_UPLOAD_MB=Math.round(MAX_UPLOAD_BYTES/1024/1024);
 // Tracks which session's queue to drain in setBusy(false).
 // Set to activeSid just before setBusy(false) in done/error handlers so the
@@ -225,7 +199,7 @@ function initOfflineMonitor(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initOfflineMonitor,{once:true});
 else initOfflineMonitor();
 // Redirect to login when the server responds with 401 (auth session expired).
-// Handles iOS PWA standalone mode and keeps subpath mounts like /ares/ from
+// Handles iOS PWA standalone mode and keeps subpath mounts like /hermes/ from
 // escaping to the personal site root /login.
 // #5578: on a login-shaped page, reload 'login' WITHOUT a next (avoid self-nesting).
 function _redirectIfUnauth(res){if(res&&res.status===401){var _p=(window.location.pathname||'').replace(/\/+$/,'');if(/(?:^|\/)login$/.test(_p)){window.location.href='login';}else{window.location.href='login?next='+encodeURIComponent(window.location.pathname+window.location.search);}return true;}return false;}
@@ -235,7 +209,7 @@ function _getSessionQueue(sid, create=false){
   return SESSION_QUEUES[sid]||[];
 }
 function _queueStorageKey(sid){
-  return 'ares-queue-'+sid;
+  return 'hermes-queue-'+sid;
 }
 function _clearPersistedSessionQueue(sid){
   if(!sid) return;
@@ -345,7 +319,7 @@ function _renderUserFencedBlocks(text){
   const stashContext=(label,quote)=>{contextStash.push(sentContextHtml(label,quote));return '\x00UC'+(contextStash.length-1)+'\x00';};
   const stashSelectedContextBlocks=(value)=>{
     const lines=String(value||'').split('\n');
-    const marker='<!-- ares-selected-context -->';
+    const marker='<!-- hermes-selected-context -->';
     const out=[];
     for(let i=0;i<lines.length;i++){
       const labelMatch=lines[i].match(/^\*\*([^\n]{1,200}):\*\*\s*$/);
@@ -515,7 +489,7 @@ async function startCompressionRecovery(btn){
     const data=await api('/api/session/compression-recovery/start',{method:'POST',body:JSON.stringify({session_id:sourceSid})});
     const sid=data&&data.session&&data.session.session_id;
     if(!sid) throw new Error('Compression recovery did not return a session.');
-    try{localStorage.setItem('ares-webui-session',sid);}catch(_){}
+    try{localStorage.setItem('hermes-webui-session',sid);}catch(_){}
     if(typeof loadSession==='function') await loadSession(sid,{preserveActiveInput:false});
     else if(data.session){S.session=data.session;S.messages=data.session.messages||[];syncTopbar();renderMessages();}
     if(typeof renderSessionList==='function') await renderSessionList();
@@ -1540,6 +1514,53 @@ function _getCachedRender(text, isUser){
   _renderCache.set(key, rendered);
   return rendered;
 }
+// ── Message-level media snapshot stamping ─────────────────────────────────
+// /api/media serves a file's CURRENT bytes. Since ETag revalidation (#6922),
+// an in-place overwrite (same filename) also rewrites every historical chat
+// preview that referenced it — the old/new comparison is lost. At settle time
+// the backend freezes the bytes of each local-file MEDIA: reference into a
+// content-addressed store and stamps the message with
+// `_media_snapshots: {path: digest}`. This helper rewrites the rendered HTML
+// of ONE message to append `&snap=<digest>` to the matching /api/media URLs
+// (and `data-snap` on lazy-preview placeholders), so old previews keep
+// showing the file as it was when the message was emitted.
+// Runs AFTER the text-keyed render cache: the cache stays pure-text, and each
+// message stamps its own digests — two messages with identical text but
+// different snapshots (exactly the old/new case) resolve independently.
+function _stampMediaSnapshots(html, snaps){
+  if(!html || !snaps || typeof snaps !== 'object') return html;
+  let out = String(html);
+  // Direct media URLs: rewrite each COMPLETE `path=` query value atomically.
+  // Value-level parsing (decode the whole value, exact map lookup) instead of
+  // substring split/join: when one path is a PREFIX of another
+  // (/tmp/a.png vs /tmp/a.png.backup) the naive rewrite corrupts the longer
+  // URL and drops its own digest. Matching is boundary-aware — the value runs
+  // to the next `&` separator or an attribute quote/whitespace — so nothing
+  // outside the value ever moves.
+  out = out.replace(/api\/media[?&]path=([^&"'\s<>]+)/g, (match, encodedPath)=>{
+    let decoded;
+    try{ decoded = decodeURIComponent(encodedPath); }
+    catch(e){ return match; }
+    const digest = snaps[decoded];
+    if(typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest)){
+      return match + '&snap=' + digest;
+    }
+    return match;
+  });
+  // Lazy-preview placeholders: data-path="<html-escaped raw path>" — match the
+  // complete attribute value, unescape HTML entities, then exact lookup (same
+  // prefix-safety: a longer path's attribute can never be partially matched).
+  const _unescapeHtml=(s)=>String(s||'').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+  out = out.replace(/data-path="([^"]*)"/g, (match, rawValue)=>{
+    const decoded = _unescapeHtml(rawValue);
+    const digest = snaps[decoded];
+    if(typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest)){
+      return match + ' data-snap="' + digest + '"';
+    }
+    return match;
+  });
+  return out;
+}
 function _currentMessageRenderWindowSize(){
   return Math.max(
     MESSAGE_RENDER_WINDOW_DEFAULT,
@@ -1892,7 +1913,7 @@ async function saveDashboardSettings(opts){
     if(opts.raiseOnError) throw err;
   }
 }
-function openExternalDashboard(event){
+function openHermesDashboard(event){
   if(event){event.preventDefault();event.stopPropagation();}
   const btn=event&&event.currentTarget?event.currentTarget:document.querySelector('[data-dashboard-link]');
   const url=(btn&&btn.dataset&&btn.dataset.dashboardUrl)||_dashboardBrowserUrl(_dashboardStatusCache);
@@ -1900,8 +1921,6 @@ function openExternalDashboard(event){
   window.open(url,'_blank','noopener,noreferrer');
   return false;
 }
-// Compatibility alias for extensions and cached pages using the inherited name.
-const openARESDashboard=openExternalDashboard;
 function _initDashboardLinkProbe(){
   loadDashboardSettings();
   refreshDashboardStatus(true);
@@ -2540,7 +2559,7 @@ const _CSV_EXTS=/\.csv$/i;
 const _EXCALIDRAW_EXTS=/\.excalidraw$/i;
 // ── Media playback speed controls ─────────────────────────────────────────
 const MEDIA_PLAYBACK_RATES=[0.5,0.75,1,1.25,1.5,2];
-const MEDIA_PLAYBACK_STORAGE_KEY='ares-media-playback-rate';
+const MEDIA_PLAYBACK_STORAGE_KEY='hermes-media-playback-rate';
 function _getStoredMediaPlaybackRate(){
   try{
     const raw=localStorage.getItem(MEDIA_PLAYBACK_STORAGE_KEY);
@@ -2850,8 +2869,8 @@ window.addEventListener('visibilitychange',()=>{
 // Dynamic model labels -- populated by populateModelDropdown(), fallback to static map
 let _dynamicModelLabels={};
 window._configuredModelBadges=window._configuredModelBadges||{};
-const MODEL_STATE_KEY='ares-webui-model-state';
-const PENDING_SESSION_MODEL_PREFIX='ares-webui-pending-session-model:';
+const MODEL_STATE_KEY='hermes-webui-model-state';
+const PENDING_SESSION_MODEL_PREFIX='hermes-webui-pending-session-model:';
 const PENDING_SESSION_MODEL_MAX_AGE_MS=10*60*1000;
 
 // ── Smart model resolver ────────────────────────────────────────────────────
@@ -3053,7 +3072,7 @@ function _readPersistedModelState(){
       }
     }
   }catch(_){}
-  const legacy=localStorage.getItem('ares-webui-model');
+  const legacy=localStorage.getItem('hermes-webui-model');
   if(!legacy) return null;
   return {model:legacy,model_provider:_providerFromModelValue(legacy)||null};
 }
@@ -3061,17 +3080,17 @@ function _writePersistedModelState(model, modelProvider){
   const value=String(model||'').trim();
   const provider=modelProvider?String(modelProvider).trim():(_providerFromModelValue(value)||null);
   if(!value){
-    localStorage.removeItem('ares-webui-model');
+    localStorage.removeItem('hermes-webui-model');
     localStorage.removeItem(MODEL_STATE_KEY);
     return;
   }
-  localStorage.setItem('ares-webui-model', value);
+  localStorage.setItem('hermes-webui-model', value);
   try{
     localStorage.setItem(MODEL_STATE_KEY, JSON.stringify({model:value,model_provider:provider||null}));
   }catch(_){}
 }
 function _clearPersistedModelState(){
-  localStorage.removeItem('ares-webui-model');
+  localStorage.removeItem('hermes-webui-model');
   localStorage.removeItem(MODEL_STATE_KEY);
 }
 function _pendingSessionModelKey(sessionId){
@@ -3232,7 +3251,34 @@ function _findModelInDropdown(modelId, sel, preferredProviderId){
   }
   const preferred=String(preferredProviderId||explicitProvider||'').toLowerCase();
   if(preferred){
-    const providerMatch=options.find(o=>norm(o.value)===target && _getOptionProviderId(o).toLowerCase()===preferred);
+    if(preferred==='custom'||preferred.startsWith('custom:')){
+      // A slash is part of a custom endpoint's upstream model ID, not a
+      // provider namespace. Match the exact routed ID (allowing only the
+      // WebUI's @provider: wrapper and dash/dot spelling compatibility).
+      const routeNorm=value=>{
+        let routed=String(value||'');
+        const prefix=`@${preferred}:`;
+        if(routed.toLowerCase().startsWith(prefix)) routed=routed.slice(prefix.length);
+        return routed.toLowerCase().replace(/-/g,'.');
+      };
+      const providerOptions=options.filter(o=>_getOptionProviderId(o).toLowerCase()===preferred);
+      const providerMatch=providerOptions.find(o=>routeNorm(o.value)===routeNorm(rawModel));
+      if(providerMatch) return providerMatch.value;
+      // Legacy sessions may store only the bare suffix of a routed custom
+      // option. Preserve #6195's provider-hinted repair, but only for an
+      // explicit @provider: row; an unwrapped slash ID belongs to the active
+      // endpoint and must not substitute for a distinct bare model.
+      if(!rawModel.includes('/')&&!rawModel.startsWith('@')){
+        const prefix=`@${preferred}:`;
+        const suffixMatches=providerOptions.filter(o=>
+          String(o.value||'').toLowerCase().startsWith(prefix)
+          &&norm(o.value)===target
+        );
+        if(suffixMatches.length===1) return suffixMatches[0].value;
+      }
+      return null;
+    }
+    const providerMatch=options.find(o=>norm(o.value)===target&&_getOptionProviderId(o).toLowerCase()===preferred);
     if(providerMatch) return providerMatch.value;
   }
   // 2. Normalized match — but ONLY when unambiguous. If the bare id
@@ -3512,14 +3558,6 @@ async function populateModelDropdown(opts={}){
         const opt=document.createElement('option');
         opt.value=m.id;
         opt.textContent=m.label;
-        // A catalog group can legitimately mix providers (e.g. JaegerAI's
-        // "local" bucket holds both raw GGUF/MLX files and models actually
-        // served through the local Ollama daemon) — an option's own
-        // provider, when the catalog states one, must win over the group
-        // default so a pick routes to where the model can actually be
-        // reached, not wherever the rest of the group happens to point.
-        const mProvider=(m&&(m.provider_id||m.provider))?String(m.provider_id||m.provider).trim():'';
-        if(mProvider && mProvider!==g.provider_id) opt.dataset.provider=mProvider;
         if(m && (m.supports_fast_tier === true || String(m.supports_fast_tier).toLowerCase()==='true')){
           opt.dataset.fast='1';
         }else if(m && (m.supports_fast_tier === false || String(m.supports_fast_tier).toLowerCase()==='false')){
@@ -3698,10 +3736,10 @@ async function _fetchLiveModels(provider, sel, requestSeq=null){
     const added=_addLiveModelsToSelect(provider,data.models,sel);
     if(added>0){
       if(typeof syncModelChip==='function') syncModelChip();
-      console.debug('[ares] Live models loaded for',provider+':',added,'new models added');
+      console.debug('[hermes] Live models loaded for',provider+':',added,'new models added');
     }
   }catch(e){
-    console.debug('[ares] Live model fetch failed for',provider,e.message);
+    console.debug('[hermes] Live model fetch failed for',provider,e.message);
   }finally{
     _liveModelFetchPending.delete(provider);
   }
@@ -3709,7 +3747,7 @@ async function _fetchLiveModels(provider, sel, requestSeq=null){
 
 /**
  * Check if the given model ID belongs to a different provider than the one
- * currently configured in ARES. Returns a warning string if mismatched,
+ * currently configured in Hermes. Returns a warning string if mismatched,
  * or null if the selection looks compatible.
  *
  * Provider detection is intentionally loose — we compare the model's slash
@@ -3731,7 +3769,7 @@ function _checkProviderMismatch(modelId){
   const norm=p=>aliases[p]||p;
   if(norm(modelProvider)!==norm(ap)){
     return (window.t?window.t('provider_mismatch_warning',modelId,ap):
-      `"${modelId}" may not work with your configured provider (${ap}). Send anyway or run \`ares model\` to switch.`);
+      `"${modelId}" may not work with your configured provider (${ap}). Send anyway or run \`hermes model\` to switch.`);
   }
   return null;
 }
@@ -3865,9 +3903,10 @@ function syncModelChip(){
   const opt=_selectedModelOption();
   const text=opt?opt.textContent:getModelLabel(sel.value||'');
   const compactText=_compactComposerModelChipLabel(sel.value||'', text);
-  label.textContent=compactText;
-  if(mobileLabel) mobileLabel.textContent=compactText;
-  const gatewayRouting=_latestGatewayRoutingForSession(S.session,sel.value||'');
+  const gatewayRouting=_latestGatewayRoutingForSession(S.session);
+  const displayText=_formatGatewayModelLabel(sel.value||'',compactText,gatewayRouting)||compactText;
+  label.textContent=displayText;
+  if(mobileLabel) mobileLabel.textContent=displayText;
   chip.title=gatewayRouting?`${sel.value||'Conversation model'} ${_gatewayRoutingLabel(gatewayRouting)}`:(sel.value||'Conversation model');
   chip.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
   if(mobileAction) mobileAction.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
@@ -4201,12 +4240,7 @@ function renderModelDropdown(){
         const displayName=rawValue.startsWith('@custom:')
           ? getModelLabel(rawValue)
           : (opt.textContent||getModelLabel(rawValue));
-        // A group can mix providers (e.g. JaegerAI's "local" bucket holds
-        // both raw GGUF/MLX files and models served through the local
-        // Ollama daemon) — prefer the option's own provider, when the
-        // catalog set one, over the group default.
-        const optProviderId=(opt.dataset&&opt.dataset.provider)?opt.dataset.provider:providerId;
-        const entry={value:opt.value,name:esc(displayName),id:esc(opt.value),group:child.label||'',groupKey,providerId:optProviderId,modelsEndpointError,badge:_getConfiguredModelBadge(opt.value,_badgeMap,optProviderId),hiddenByDefault:false};
+        const entry={value:opt.value,name:esc(displayName),id:esc(opt.value),group:child.label||'',groupKey,providerId,modelsEndpointError,badge:_getConfiguredModelBadge(opt.value,_badgeMap,providerId),hiddenByDefault:false};
         _modelData.push(entry);
         groupMeta.modelCount++;
       }
@@ -4453,17 +4487,8 @@ function renderModelDropdown(){
       }
     }
     const matches=(m)=>!term||found.has(m.value);
-    // Only a badge that names a ROLE ("primary" / "fallback N") means "this is
-    // one of your configured selections" and earns a spot in the hoisted
-    // Configured section. A bare {provider:...} badge is just provider
-    // metadata, and hoisting on it swallowed the entire catalog: every model
-    // carried one, so all of them were lifted into a single flat Configured
-    // list and every provider group below was left empty — no group headings,
-    // so nothing was collapsible and the picker read as one long alphabetical
-    // run of models from mixed providers. Provider metadata now flows to the
-    // provider groups where it belongs.
     const configuredCandidates=_modelData
-      .filter(m=>m.badge&&m.badge.role&&matches(m));
+      .filter(m=>m.badge&&matches(m));
     const configuredBySemanticKey=new Map();
     const _configuredProviderKey=(m)=>String((m&&m.badge&&m.badge.provider)||_providerFromModelValue(m&&m.value)||'').toLowerCase();
     const _configuredModelKey=(m)=>_normalizeConfiguredModelKey(m&&m.value||'');
@@ -4511,18 +4536,28 @@ function renderModelDropdown(){
       configuredHeading.className='model-group';
       configuredHeading.textContent=t('model_group_configured')||'Configured';
       dd.appendChild(configuredHeading);
+      // 为了显示原始ID，建立 badgeKeyMap: badge对象->原始key
+      const badgeKeyMap = new Map();
+      for(const [k, v] of Object.entries(_badgeMap)){
+        badgeKeyMap.set(v, k);
+      }
       for(const m of configuredModels){
         const row=document.createElement('div');
         row.className='model-opt'+(_isSelectedModelRow(m)?' active':'');
-        // Three slots, three DIFFERENT facts: the model's display name, what
-        // role it plays in your config, and which provider serves it. Naming
-        // the raw model ID in all of them (as this did) rendered every row as
-        // the same string repeated three times.
-        const _role=m.badge&&(m.badge.label||m.badge.role);
-        const badgeHtml=_role?`<span class="model-opt-badge model-opt-badge--${esc((m.badge&&m.badge.role)||'configured')}">${esc(_role)}</span>`:'';
-        const _prov=String((m.badge&&m.badge.provider)||m.providerId||'').replace(/^custom:/,'').split('/')[0];
-        const providerChip=_prov?`<span class="model-opt-provider">${esc(_prov)}</span>`:'';
-        row.innerHTML=`<div class="model-opt-top"><span class="model-opt-name">${esc(m.name)}</span>${badgeHtml}${_selectedModelBadge(m)}${providerChip}</div><span class="model-opt-id">${esc(m.id)}</span>`;
+        let badgeLabel = '';
+        let modelName = m.name;
+        if (m.badge) {
+          // 直接用badge的原始key（即config.yaml里的ID）
+          const rawId = badgeKeyMap.get(m.badge) || m.value || m.badge.label || 'Configured';
+          badgeLabel = rawId;
+          modelName = rawId; // model-opt-name直接用原始ID
+          if(m.badge.provider){
+            const providerName=m.badge.provider.replace(/^custom:/,'').split('/')[0];
+            badgeLabel += ` (${providerName})`;
+          }
+        }
+        const badgeHtml=m.badge?`<span class="model-opt-badge model-opt-badge--${esc(m.badge.role||'configured')}">${esc(badgeLabel)}</span>`:'';
+        row.innerHTML=`<div class="model-opt-top"><span class="model-opt-name">${esc(modelName)}</span>${badgeHtml}${_selectedModelBadge(m)}</div><span class="model-opt-id">${esc(m.id)}</span>`;
         row.onclick=()=>selectFromDropdown(m.value,(m.badge&&m.badge.provider)||m.providerId||null);
         dd.appendChild(row);
       }
@@ -5662,92 +5697,28 @@ function toggleMobileComposerConfig(){
   openMobileComposerConfig();
 }
 
-function openContextActionMenu(e){
+function openComposerContextMenu(e){
   if(e){
     e.preventDefault();
     e.stopPropagation();
-  }
-  const popup=$('ctxActionPopup');
-  if(!popup) return;
-  if(popup.style.display!=='none'){
-    popup.style.display='none';
-    return;
   }
   const tooltip=$('ctxTooltip');
   if(tooltip){
     tooltip.classList.remove('ctx-tooltip-active');
     tooltip.setAttribute('aria-hidden','true');
   }
-  const usage=S.lastUsage||{};
-  const promptTok=usage.last_prompt_tokens||0;
-  const totalTok=(usage.input_tokens||0)+(usage.output_tokens||0);
-  const effectiveTokens=promptTok>0?promptTok:totalTok;
-  const DEFAULT_CTX=128*1024;
-  const ctxWindow=usage.context_length||(S.session&&S.session.context_length)||DEFAULT_CTX;
-  const pct=Math.min(100,Math.round((effectiveTokens/ctxWindow)*100));
-
-  popup.innerHTML=`
-    <div class="ctx-popup-header">
-      <div class="ctx-popup-title">${esc(t('ctx_window_title')||'Context Window & Compaction')}</div>
-      <button type="button" class="ctx-popup-close" onclick="closeContextActionMenu()">&times;</button>
-    </div>
-    <div class="ctx-popup-body">
-      <div class="ctx-popup-metric-grid">
-        <div class="ctx-popup-metric">
-          <div class="ctx-popup-metric-val">${pct}%</div>
-          <div class="ctx-popup-metric-lbl">Used</div>
-        </div>
-        <div class="ctx-popup-metric">
-          <div class="ctx-popup-metric-val">${_fmtTokens(effectiveTokens)}</div>
-          <div class="ctx-popup-metric-lbl">Tokens Used</div>
-        </div>
-        <div class="ctx-popup-metric">
-          <div class="ctx-popup-metric-val">${_fmtTokens(ctxWindow)}</div>
-          <div class="ctx-popup-metric-lbl">Max Limit</div>
-        </div>
-      </div>
-      <div class="ctx-popup-actions">
-        <button type="button" class="btn primary ctx-popup-btn" onclick="closeContextActionMenu(); if(typeof sendSlashCommand==='function') sendSlashCommand('/compress'); else { const inp=$('msg'); if(inp){ inp.value='/compress'; if(typeof sendMessage==='function') sendMessage(); } }">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-          Compact Context Now (/compress)
-        </button>
-        <button type="button" class="btn secondary ctx-popup-btn" onclick="closeContextActionMenu(); if(typeof sendSlashCommand==='function') sendSlashCommand('/context'); else { const inp=$('msg'); if(inp){ inp.value='/context'; if(typeof sendMessage==='function') sendMessage(); } }">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          Token Breakdown (/context)
-        </button>
-        <button type="button" class="btn secondary ctx-popup-btn" onclick="closeContextActionMenu(); switchPanel('settings'); switchSettingsSection('preferences');">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          Edit Context Window Settings
-        </button>
-      </div>
-    </div>
-  `;
-  popup.style.display='block';
-}
-
-function closeContextActionMenu(){
-  const popup=$('ctxActionPopup');
-  if(popup) popup.style.display='none';
-}
-window.openContextActionMenu=openContextActionMenu;
-window.closeContextActionMenu=closeContextActionMenu;
-
-function openComposerContextMenu(e){
-  openContextActionMenu(e);
+  openMobileComposerConfig();
 }
 window.openComposerContextMenu=openComposerContextMenu;
 
 document.addEventListener('click',function(e){
   if(
-    e.target.closest('#ctxActionPopup') ||
-    e.target.closest('#ctxIndicator') ||
     e.target.closest('#composerMobileConfigBtn') ||
     e.target.closest('#composerMobileConfigPanel') ||
     e.target.closest('#composerWsDropdown') ||
     e.target.closest('#composerModelDropdown') ||
     e.target.closest('#composerReasoningDropdown')
   ) return;
-  closeContextActionMenu();
   closeMobileComposerConfig();
 });
 
@@ -5799,13 +5770,6 @@ function _freshProgrammaticScrollActive(){
   return true;
 }
 function _deferClearProgrammaticScroll(ms){clearTimeout(_programmaticScrollResetTimer);_programmaticScrollResetTimer=setTimeout(()=>{_programmaticScroll=false;},ms||80);}
-// Bug #6621: a "jump to question" smooth-scroll
-// has no defense against a live stream token landing mid-animation. Without
-// an explicit owner, scrollIfPinned() sees the reader as still pinned and
-// reclaims the bottom on the very next token, snapping the viewport off the
-// jump target before the smooth-scroll frame ever finishes. The owner token
-// tells scrollIfPinned()/scrollToBottom() a jump is in flight so they leave
-// it alone, then reconciles the real pin state once geometry settles.
 let _messageJumpScrollGeneration=0;
 let _messageJumpScrollOwner=null;
 let _messageJumpScrollSettleTimer=0;
@@ -6401,25 +6365,7 @@ if(typeof window!=='undefined'){
     });
   });
 })();
-function _fmtTokens(n){
-  if(!n||n<0)return'0';
-  if(n===1048576)return'1M';
-  if(n===262144)return'256k';
-  if(n===131072)return'128k';
-  if(n===65536)return'64k';
-  if(n===32768)return'32k';
-  if(n===16384)return'16k';
-  if(n===8192)return'8k';
-  if(n>=1e6){
-    const val=n/1e6;
-    return (val%1===0?val.toFixed(0):val.toFixed(1))+'M';
-  }
-  if(n>=1e3){
-    const val=n/1e3;
-    return (val%1===0?val.toFixed(0):(val>=100?Math.round(val):val.toFixed(1)))+'k';
-  }
-  return String(n);
-}
+function _fmtTokens(n){if(!n||n<0)return'0';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'k';return String(n);}
 function _formatTurnDuration(seconds){
   const n=Number(seconds);
   if(!Number.isFinite(n)||n<0)return'';
@@ -6880,19 +6826,12 @@ function _syncCtxIndicator(usage){
   const totalTok=(usage.input_tokens||0)+(usage.output_tokens||0);
   const cacheReadTok=usage.cache_read_tokens||0;
   const cacheWriteTok=usage.cache_write_tokens||0;
-  // Default context window to 128K when not provided by backend.
-  // Prefer the usage payload, then the session's resolved window
-  // (what /api/session already probed). Without the session fallback
-  // a 1M Ollama Cloud model rendered as 128K the moment lastUsage
-  // arrived without a context_length field.
+  // Default context window to 128K when not provided by backend
   const DEFAULT_CTX=128*1024;
-  const sessionCtx=Number(S.session&&S.session.context_length)||0;
-  const usageCtx=Number(usage.context_length)||0;
-  const explicitCtx=usageCtx>0?usageCtx:sessionCtx;
-  const ctxWindow=explicitCtx||DEFAULT_CTX;
+  const ctxWindow=usage.context_length||DEFAULT_CTX;
   const cost=usage.estimated_cost;
-  // Show indicator whenever we have any usage data (tokens or cost) or a resolved context length
-  if(!promptTok&&!totalTok&&!cost&&!cacheReadTok&&!cacheWriteTok&&!explicitCtx){
+  // Show indicator whenever we have any usage data (tokens or cost)
+  if(!promptTok&&!totalTok&&!cost&&!cacheReadTok&&!cacheWriteTok){
     if(wrap) wrap.style.display='none';
     _syncMobileCtxDisplay({visible:false});
     return;
@@ -6903,8 +6842,9 @@ function _syncCtxIndicator(usage){
     wrap.removeAttribute('aria-hidden');
     wrap.style.display='';
   }
-  const effectiveTokens=contextPromptTok>0?contextPromptTok:totalTok;
-  const rawPct=Math.round((effectiveTokens/ctxWindow)*100);
+  let hasPromptTok=!!promptTok;
+  if(hasPostCompressionEstimate) hasPromptTok=true;
+  const rawPct=hasPromptTok?Math.round((contextPromptTok/ctxWindow)*100):0;
   const pct=Math.min(100,rawPct);
   const overflowed=rawPct>100;
   const ring=$('ctxRingValue');
@@ -6918,20 +6858,10 @@ function _syncCtxIndicator(usage){
     ring.style.strokeDasharray=String(circumference);
     ring.style.strokeDashoffset=String(circumference*(1-pct/100));
   }
-  if(center){
-    // Empty chats used to show a bare "0", which looks like "no
-    // context window" — the user never sees the 1M/256k limit unless
-    // they open the tooltip. Show the window size until tokens exist.
-    if(!effectiveTokens && explicitCtx){
-      center.textContent=_fmtTokens(ctxWindow);
-    }else{
-      center.textContent=String(pct);
-    }
-  }
-  const hasExplicitCtx=explicitCtx>0;
+  if(center) center.textContent=hasPromptTok?String(pct):'\u00b7';
+  const hasExplicitCtx=!!usage.context_length;
   el.classList.toggle('ctx-mid',pct>50&&pct<=75);
   el.classList.toggle('ctx-high',pct>75);
-  el.classList.toggle('ctx-compacted',hasPostCompressionEstimate);
   // ── Compress affordance (#524) ──
   // Show a hint in the tooltip when context usage is high so users
   // discover /compress without having to know the slash command.
@@ -6943,17 +6873,16 @@ function _syncCtxIndicator(usage){
   const cacheHitPct=usage.cache_hit_percent;
   const cacheText=cacheHitPct!=null?t('usage_cache_hit_detail',cacheHitPct,_fmtTokens(cacheReadTok),_fmtTokens(cacheWriteTok)):'';
   const contextLabel=hasPostCompressionEstimate?'Estimated next model context':'Context window';
-  let label=`${_fmtTokens(effectiveTokens)} / ${_fmtTokens(ctxWindow)} tokens (${pct}% used)`;
+  let label=hasPromptTok?`${contextLabel} ${pct}% used`:`${_fmtTokens(totalTok)} tokens used`;
+  if(!hasExplicitCtx&&hasPromptTok) label+=' (est. 128K)';
   if(cost) label+=` \u00b7 $${cost<0.01?cost.toFixed(4):cost.toFixed(2)}`;
   if(cacheText) label+=` \u00b7 ${cacheText}`;
   el.setAttribute('aria-label',label);
-  const usageText=overflowed
-    ? `${contextLabel}: ${rawPct}% used (context exceeded)`
-    : `${_fmtTokens(effectiveTokens)} / ${_fmtTokens(ctxWindow)} tokens (${pct}% used \u00b7 ${Math.max(0,100-pct)}% left)`;
-  const tokensText=`In: ${_fmtTokens(usage.input_tokens||0)} \u00b7 Out: ${_fmtTokens(usage.output_tokens||0)}`+(cacheReadTok?` \u00b7 Cached: ${_fmtTokens(cacheReadTok)}`:'');
+  const usageText=hasPromptTok?(overflowed?`${contextLabel}: ${rawPct}% used (context exceeded)`:`${contextLabel}: ${pct}% used (${100-pct}% left)`):`${_fmtTokens(totalTok)} tokens used`;
+  const tokensText=hasPromptTok?`${contextLabel}: ${_fmtTokens(contextPromptTok)} / ${_fmtTokens(ctxWindow)} tokens used`:`In: ${_fmtTokens(usage.input_tokens||0)} \u00b7 Out: ${_fmtTokens(usage.output_tokens||0)}`;
   if(usageLine) usageLine.textContent=usageText;
   if(tokensLine) tokensLine.textContent=tokensText;
-  const threshold=usage.threshold_tokens||Math.round(ctxWindow*0.75);
+  const threshold=usage.threshold_tokens||0;
   let thresholdText='';
   if(thresholdLine){
     if(threshold&&ctxWindow){
@@ -6983,7 +6912,7 @@ function _syncCtxIndicator(usage){
   }
   _syncMobileCtxDisplay({
     visible:true,
-    hasPromptTok:true,
+    hasPromptTok,
     pct,
     label,
     usageText,
@@ -7346,7 +7275,6 @@ function _formatGatewayModelLabel(modelId,labelText,routing){
   const base=usedModel
     ?_compactComposerModelChipLabel(usedModel,getModelLabel(usedModel))
     :_compactComposerModelChipLabel(modelId,labelText||getModelLabel(modelId));
-  if(!routing.provider_changed && !routing.has_failover && !routing.serving_fallback) return base;
   const via=_gatewayRoutingLabel(routing);
   return via?`${base} ${via}`:base;
 }
@@ -7378,23 +7306,11 @@ function _gatewayModelWarningText(routing){
   const used=getModelLabel(routing.used_model||'served model');
   return`Model switched: ${requested} → ${used}`;
 }
-function _latestGatewayRoutingForSession(session, currentModelId){
+function _latestGatewayRoutingForSession(session){
   if(!session)return null;
-  const routing=session.gateway_routing
-    ||(Array.isArray(session.gateway_routing_history)&&session.gateway_routing_history.length
-        ?session.gateway_routing_history[session.gateway_routing_history.length-1]
-        :null);
-  if(!routing)return null;
-  // A routing record only describes the turn it came from. Once the operator
-  // picks a different model, that record is stale — showing it anyway is how
-  // the composer chip ended up pairing a freshly-picked local model name with
-  // the previous turn's cloud fallback provider ("qwen3.6:35b-mlx via Ollama
-  // Cloud"). Only surface it while it still describes the current pick.
-  if(currentModelId===undefined)return routing; // caller didn't opt into the guard
-  const current=_modelPickerOptionIdentity(currentModelId,'');
-  const candidates=[routing.used_model,routing.requested_model].filter(Boolean);
-  const matches=candidates.some(id=>_modelPickerOptionIdentity(id,'')===current);
-  return matches?routing:null;
+  if(session.gateway_routing)return session.gateway_routing;
+  const history=Array.isArray(session.gateway_routing_history)?session.gateway_routing_history:[];
+  return history.length?history[history.length-1]:null;
 }
 
 function _stripXmlToolCallsDisplay(s){
@@ -7679,7 +7595,7 @@ function renderMd(raw){
     // Stash [label](url) links before autolink so the URL in href= is not re-linked
     const _link_stash=[];
     t=t.replace(/\[([^\]]+)\]\(((?:https?:\/\/|file:\/\/|workspace:\/\/|session:\/\/|mailto:|tel:|message:)[^\s\)]+)\)/g,(_,lb,u)=>{_link_stash.push(_markdownAnchor(lb,u));return `\x00L${_link_stash.length-1}\x00`;});
-    t=t.replace(/(https?:\/\/[^\s<>"')\]]+)/g,(url)=>{const trail=url.match(/[.,;:!?)]$/)?url.slice(-1):'';const clean=trail?url.slice(0,-1):url;return `<a href="${clean}" target="_blank" rel="noopener">${esc(clean)}</a>${trail}`;});
+    t=t.replace(/(https?:\/\/[^\s<>"')\]\uFF09]+)/g,(url)=>{const trail=url.match(/[.,;:!?)\uFF09\uFF0C\uFF1B\uFF1A\uFF01\uFF1F\u3001\u3002]$/)?url.slice(-1):'';const clean=trail?url.slice(0,-1):url;return `<a href="${clean}" target="_blank" rel="noopener">${esc(clean)}</a>${trail}`;});
     t=t.replace(/\x00L(\d+)\x00/g,(_,i)=>_link_stash[+i]);
     t=t.replace(/\x00G(\d+)\x00/g,(_,i)=>_img_stash[+i]);
     // Escape any plain text that isn't already wrapped in a tag we produced
@@ -7981,9 +7897,11 @@ function renderMd(raw){
   // Stash <a>, <img> and <pre> blocks so autolink never runs inside them.
   const _al_stash=[];
   s=s.replace(/(<a\b[^>]*>[\s\S]*?<\/a>|<img\b[^>]*>|<pre\b[^>]*>[\s\S]*?<\/pre>)/g,m=>{_al_stash.push(m);return `\x00B${_al_stash.length-1}\x00`;});
-  s=s.replace(/(https?:\/\/[^\s<>"'\)\]]+)/g,(url)=>{
-    // Strip trailing punctuation that was likely not part of the URL
-    const trail=url.match(/[.,;:!?)]$/)?url.slice(-1):'';
+  s=s.replace(/(https?:\/\/[^\s<>"')\]\uFF09]+)/g,(url)=>{
+    // Strip trailing punctuation that was likely not part of the URL.
+    // CJK full-width punctuation (）。，；：！？、) is included because LLMs
+    // frequently use full-width delimiters in Chinese/Japanese text.
+    const trail=url.match(/[.,;:!?)]$/)||url.match(/[\uFF09\uFF0C\uFF1B\uFF1A\uFF01\uFF1F\u3001\u3002]$/)?url.slice(-1):'';
     const clean=trail?url.slice(0,-1):url;
     return `<a href="${clean}" target="_blank" rel="noopener">${esc(clean)}</a>${trail}`;
   });
@@ -8042,7 +7960,13 @@ function setStatus(t){
   showToast(t, 4000);
 }
 
-function setComposerStatus(t){
+let _composerStatusTimer=null;
+
+function setComposerStatus(t,timeoutMs){
+  if(_composerStatusTimer!==null){
+    clearTimeout(_composerStatusTimer);
+    _composerStatusTimer=null;
+  }
   const el=$('composerStatus');
   if(!el)return;
   const statusHidden=!!(window._composerControlVisibility&&window._composerControlVisibility.hide_composer_status);
@@ -8061,6 +7985,14 @@ function setComposerStatus(t){
   el.removeAttribute('aria-hidden');
   el.textContent=t;
   el.style.display='';
+  if(timeoutMs>0){
+    const timer=setTimeout(()=>{
+      if(_composerStatusTimer!==timer)return;
+      _composerStatusTimer=null;
+      setComposerStatus('');
+    },timeoutMs);
+    _composerStatusTimer=timer;
+  }
 }
 
 let _composerLockState=null;
@@ -8903,15 +8835,15 @@ let _playingEdgeAudio=null;
 
 function _buildBrowserUtterance(text, btn){
   const utter=new SpeechSynthesisUtterance(text);
-  const savedVoice=localStorage.getItem('ares-tts-voice');
+  const savedVoice=localStorage.getItem('hermes-tts-voice');
   const voices=speechSynthesis.getVoices();
   if(savedVoice&&voices.length){
     const match=voices.find(v=>v.name===savedVoice);
     if(match) utter.voice=match;
   }
-  const savedRate=parseFloat(localStorage.getItem('ares-tts-rate'));
+  const savedRate=parseFloat(localStorage.getItem('hermes-tts-rate'));
   if(!isNaN(savedRate)) utter.rate=Math.min(2,Math.max(0.5,savedRate));
-  const savedPitch=parseFloat(localStorage.getItem('ares-tts-pitch'));
+  const savedPitch=parseFloat(localStorage.getItem('hermes-tts-pitch'));
   if(!isNaN(savedPitch)) utter.pitch=Math.min(2,Math.max(0,savedPitch));
   utter.onend=()=>{
     _ttsChunkIndex++;
@@ -8946,9 +8878,9 @@ function _playEdgeTtsChunked(text, btn){
       return;
     }
     const chunk=chunks[idx];
-    const voice=localStorage.getItem('ares-tts-voice')||'zh-CN-XiaoxiaoNeural';
-    const savedRate=parseFloat(localStorage.getItem('ares-tts-rate'));
-    const savedPitch=parseFloat(localStorage.getItem('ares-tts-pitch'));
+    const voice=localStorage.getItem('hermes-tts-voice')||'zh-CN-XiaoxiaoNeural';
+    const savedRate=parseFloat(localStorage.getItem('hermes-tts-rate'));
+    const savedPitch=parseFloat(localStorage.getItem('hermes-tts-pitch'));
     let rate='', pitch='';
     if(!isNaN(savedRate)){const pct=Math.round((savedRate-1)*100);const sign=pct>=0?'+':'';rate=sign+pct+'%';}
     if(!isNaN(savedPitch)){const hz=Math.round((savedPitch-1)*50);const sign=hz>=0?'+':'';pitch=sign+hz+'Hz';}
@@ -9012,7 +8944,7 @@ function speakMessage(btn){
   const clean=_stripForTTS(text);
   if(!clean) return;
 
-  const engine=localStorage.getItem('ares-tts-engine')||'browser';
+  const engine=localStorage.getItem('hermes-tts-engine')||'browser';
   if(engine==='openai'){
     _playOpenaiTts(clean, btn);
     return;
@@ -9025,9 +8957,9 @@ function speakMessage(btn){
     _playEdgeTtsChunked(clean, btn);
     return;
   }
-  // Extension-registered TTS engine (window.registerARESTtsEngine). Synthesize
+  // Extension-registered TTS engine (window.registerHermesTtsEngine). Synthesize
   // via the extension, then play through the shared audio-buffer path.
-  if(typeof window._aresTtsIsRegistered==='function' && window._aresTtsIsRegistered(engine)){
+  if(typeof window._hermesTtsIsRegistered==='function' && window._hermesTtsIsRegistered(engine)){
     if(btn) btn.dataset.speaking='1';
     _ttsSpeaking=true;
     const _failReg=function(msg){
@@ -9036,11 +8968,11 @@ function speakMessage(btn){
       if(msg&&typeof showToast==='function') showToast(msg,4000,'error');
     };
     const _opts={
-      voice: localStorage.getItem('ares-tts-voice')||'',
-      rate: parseFloat(localStorage.getItem('ares-tts-rate')),
-      pitch: parseFloat(localStorage.getItem('ares-tts-pitch')),
+      voice: localStorage.getItem('hermes-tts-voice')||'',
+      rate: parseFloat(localStorage.getItem('hermes-tts-rate')),
+      pitch: parseFloat(localStorage.getItem('hermes-tts-pitch')),
     };
-    Promise.resolve(window._aresTtsSynth(engine, clean, _opts))
+    Promise.resolve(window._hermesTtsSynth(engine, clean, _opts))
       .then(function(buf){ return _playAudioBuf(buf, btn, 'TTS'); })
       .catch(function(e){ _failReg((e&&e.message)||'TTS engine failed'); });
     return;
@@ -9183,9 +9115,9 @@ function stopTTS(){
 }
 
 function autoReadLastAssistant(){
-  const engine=localStorage.getItem('ares-tts-engine')||'browser';
+  const engine=localStorage.getItem('hermes-tts-engine')||'browser';
   if(engine==='browser'&&!('speechSynthesis' in window)) return;
-  const pref=localStorage.getItem('ares-tts-auto-read');
+  const pref=localStorage.getItem('hermes-tts-auto-read');
   if(pref!=='true') return;
   // Find the last assistant message segment in the DOM
   const rows=document.querySelectorAll('.msg-row[data-role="assistant"], .assistant-segment[data-raw-text]');
@@ -9207,17 +9139,17 @@ function autoReadLastAssistant(){
     _playEdgeTtsChunked(clean, null);
     return;
   }
-  // Extension-registered TTS engine (window.registerARESTtsEngine): synth via
+  // Extension-registered TTS engine (window.registerHermesTtsEngine): synth via
   // the extension, then play through the shared audio-buffer path. Mirrors the
   // registered-engine branch in speakMessage() so auto-read honors the selection.
-  if(typeof window._aresTtsIsRegistered==='function' && window._aresTtsIsRegistered(engine)){
+  if(typeof window._hermesTtsIsRegistered==='function' && window._hermesTtsIsRegistered(engine)){
     _ttsSpeaking=true;
     const _opts={
-      voice: localStorage.getItem('ares-tts-voice')||'',
-      rate: parseFloat(localStorage.getItem('ares-tts-rate')),
-      pitch: parseFloat(localStorage.getItem('ares-tts-pitch')),
+      voice: localStorage.getItem('hermes-tts-voice')||'',
+      rate: parseFloat(localStorage.getItem('hermes-tts-rate')),
+      pitch: parseFloat(localStorage.getItem('hermes-tts-pitch')),
     };
-    Promise.resolve(window._aresTtsSynth(engine, clean, _opts))
+    Promise.resolve(window._hermesTtsSynth(engine, clean, _opts))
       .then(function(buf){ return _playAudioBuf(buf, null, 'TTS'); })
       .catch(function(){ _ttsSpeaking=false; _playingEdgeAudio=null; });
     return;
@@ -9235,8 +9167,8 @@ function autoReadLastAssistant(){
 }
 
 // ── Reconnect banner (B4/B5: reload resilience) ──
-const INFLIGHT_KEY = 'ares-webui-inflight'; // localStorage key for in-flight session tracking
-const INFLIGHT_STATE_KEY = 'ares-webui-inflight-state'; // localStorage snapshots for mid-stream reload recovery
+const INFLIGHT_KEY = 'hermes-webui-inflight'; // localStorage key for in-flight session tracking
+const INFLIGHT_STATE_KEY = 'hermes-webui-inflight-state'; // localStorage snapshots for mid-stream reload recovery
 const INFLIGHT_STATE_DEFAULT_LIMITS = {
   maxSessions:8,
   messages:24,
@@ -9604,7 +9536,33 @@ function snapshotLiveTurnHtmlForSession(sid){
   const turn=$('liveAssistantTurn');
   if(!turn) return;
   if(turn.dataset&&turn.dataset.sessionId&&turn.dataset.sessionId!==sid) return;
-  INFLIGHT[sid].liveTurnHtml=turn.outerHTML;
+  let snapshotTurn=turn;
+  const sourceControls=turn.querySelectorAll
+    ? Array.from(turn.querySelectorAll('.transparent-event-copy,.thinking-copy-btn'))
+    : [];
+  if(sourceControls.some(control=>!!control._transparentCopiedFeedbackNormal)){
+    // Copy-success feedback is transient, while its normal presentation lives
+    // only on element properties. Sanitize an independent clone so switching
+    // sessions cannot persist the check/Copied/accent presentation, without
+    // mutating the visible control or disturbing its active feedback timer.
+    snapshotTurn=turn.cloneNode(true);
+    const clonedControls=Array.from(snapshotTurn.querySelectorAll('.transparent-event-copy,.thinking-copy-btn'));
+    sourceControls.forEach((source,index)=>{
+      const normal=source._transparentCopiedFeedbackNormal;
+      const clone=clonedControls[index];
+      if(!normal||!clone) return;
+      clone.innerHTML=normal.innerHTML;
+      if(clone.style){
+        if(normal.styleCssText!==null) clone.style.cssText=normal.styleCssText;
+        else clone.style.color=normal.color||'';
+      }
+      if(normal.titleAttr===null) clone.removeAttribute('title');
+      else clone.setAttribute('title',normal.titleAttr);
+      if(normal.ariaLabel===null) clone.removeAttribute('aria-label');
+      else clone.setAttribute('aria-label',normal.ariaLabel);
+    });
+  }
+  INFLIGHT[sid].liveTurnHtml=snapshotTurn.outerHTML;
 }
 
 function _liveAssistantSegmentTextLength(seg){
@@ -9785,149 +9743,7 @@ document.addEventListener('visibilitychange',_syncSystemHealthMonitorVisibility)
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startSystemHealthMonitor);
 else startSystemHealthMonitor();
 
-// ── Live System & AI Model Telemetry Pill & Popover ──
-let _lastSystemStats = null;
-let _systemStatsTimer = null;
-const SYSTEM_STATS_INTERVAL_MS = 3000;
-
-async function pollSystemStats() {
-  if (document.visibilityState !== 'visible') return;
-  try {
-    const stats = await api('/api/system/stats', { timeoutToast: false });
-    if (!stats || !stats.ok) return;
-    _lastSystemStats = stats;
-    _updateTitlebarStatsPill(stats);
-    _updateSystemTelemetryPopover(stats);
-  } catch (_) {}
-}
-
-function _updateTitlebarStatsPill(stats) {
-  const label = $('titlebarStatsLabel');
-  const badge = $('titlebarModelBadge');
-  const dot = $('titlebarStatsDot');
-  if (!label || !badge || !dot) return;
-
-  const cpu = stats.host?.cpu_percent ?? 0;
-  const mem = stats.host?.memory?.used_gb ?? 0;
-  label.textContent = `⚡ ${cpu}% · 💾 ${mem} GB`;
-
-  const ai = stats.ai_runtimes || {};
-  if (ai.is_local_model_loaded && ai.active_model_in_vram) {
-    const shortName = ai.active_model_in_vram.split(':')[0];
-    badge.textContent = `🧠 ${shortName} (VRAM)`;
-    badge.style.background = 'rgba(59,130,246,0.2)';
-    badge.style.color = '#60a5fa';
-    dot.classList.add('model-active');
-  } else if (ai.ollama?.available || ai.jaeger?.available) {
-    badge.textContent = 'AI Ready';
-    badge.style.background = 'rgba(16,185,129,0.15)';
-    badge.style.color = '#34d399';
-    dot.classList.remove('model-active');
-  } else {
-    badge.textContent = 'AI Cloud';
-    badge.style.background = 'rgba(156,163,175,0.15)';
-    badge.style.color = 'var(--muted)';
-    dot.classList.remove('model-active');
-  }
-}
-
-function toggleSystemTelemetryModal(event) {
-  if (event) event.stopPropagation();
-  let pop = $('systemTelemetryPopover');
-  if (pop) {
-    pop.remove();
-    return;
-  }
-
-  const btn = $('titlebarSystemStatsBtn');
-  if (!btn) return;
-  const rect = btn.getBoundingClientRect();
-
-  pop = document.createElement('div');
-  pop.id = 'systemTelemetryPopover';
-  pop.className = 'system-telemetry-popover';
-  pop.style.top = `${rect.bottom + 8}px`;
-  pop.style.left = `${Math.max(12, rect.left)}px`;
-
-  document.body.appendChild(pop);
-  _updateSystemTelemetryPopover(_lastSystemStats);
-
-  function _closeOnClickOutside(e) {
-    if (pop && !pop.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
-      pop.remove();
-      document.removeEventListener('click', _closeOnClickOutside);
-    }
-  }
-  setTimeout(() => document.addEventListener('click', _closeOnClickOutside), 10);
-  void pollSystemStats();
-}
-
-function _updateSystemTelemetryPopover(stats) {
-  const pop = $('systemTelemetryPopover');
-  if (!pop || !stats) return;
-
-  const host = stats.host || {};
-  const mem = host.memory || {};
-  const ai = stats.ai_runtimes || {};
-  const ollama = ai.ollama || {};
-  const jaeger = ai.jaeger || {};
-
-  let modelsHtml = '<div style="color:var(--muted);font-size:11px">No local models currently loaded in VRAM</div>';
-  if (ollama.models && ollama.models.length > 0) {
-    modelsHtml = ollama.models.map(m => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
-        <span style="font-weight:600;color:var(--text)">${m.name}</span>
-        <span style="font-size:10px;background:rgba(59,130,246,0.15);color:#60a5fa;padding:1px 5px;border-radius:4px">${m.size_vram_formatted} VRAM</span>
-      </div>
-    `).join('');
-  }
-
-  pop.innerHTML = `
-    <div class="system-telemetry-head">
-      <span class="system-telemetry-title">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
-        System & AI Health (${stats.profile || assistantDisplayName()})
-      </span>
-      <span style="font-size:10px;color:var(--muted)">Live</span>
-    </div>
-    <div class="system-telemetry-grid">
-      <div class="system-telemetry-card">
-        <span class="system-telemetry-card-title">CPU Load</span>
-        <span class="system-telemetry-card-value">${host.cpu_percent ?? 0}%</span>
-      </div>
-      <div class="system-telemetry-card">
-        <span class="system-telemetry-card-title">RAM (Unified)</span>
-        <span class="system-telemetry-card-value">${mem.formatted || '0 GB'}</span>
-      </div>
-    </div>
-    <div class="system-telemetry-runtime">
-      <div class="system-telemetry-runtime-header">
-        <span>Ollama VRAM Runtime</span>
-        <span style="color:${ollama.available ? '#34d399' : 'var(--muted)'}">${ollama.status || 'offline'}</span>
-      </div>
-      ${modelsHtml}
-    </div>
-    <div class="system-telemetry-runtime">
-      <div class="system-telemetry-runtime-header">
-        <span>Jaeger AI Bridge</span>
-        <span style="color:${jaeger.available ? '#34d399' : 'var(--muted)'}">${jaeger.status || 'disconnected'}</span>
-      </div>
-      <div style="font-size:10.5px;color:var(--muted)">${jaeger.message || 'STDIO / Versioned Contract v7'}</div>
-    </div>
-  `;
-}
-
-function startSystemStatsMonitor() {
-  // Titlebar no longer shows a CPU/VRAM chip — it advertised "model
-  // loaded" without any unload/optimize action. Insights still has
-  // system health. Keep this as a no-op so leftover callers are safe.
-  if (_systemStatsTimer) {
-    clearInterval(_systemStatsTimer);
-    _systemStatsTimer = null;
-  }
-}
-
-// ── Optional ARES messaging gateway heartbeat alert (#716) ──
+// ── Hermes agent/gateway heartbeat alert (#716) ──
 const AGENT_HEALTH_INTERVAL_MS=30000;
 const AGENT_HEALTH_DISMISSED_KEY='agent-health-dismissed';
 let _agentHealthTimer=null;
@@ -9953,7 +9769,7 @@ function _showAgentHealthAlert(payload){
   const title=$('agentHealthTitle');
   const details=$('agentHealthDetails');
   if(!banner) return;
-  if(title) title.textContent='ARES messaging gateway is not responding';
+  if(title) title.textContent='Hermes agent is not responding';
   const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
   if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
   banner.hidden=false;
@@ -10043,9 +9859,11 @@ async function refreshSession() {
     S.messages = data.session.messages || [];
     _messagesTruncated = !!data.session._messages_truncated;
     _oldestIdx = data.session._messages_offset || 0;
-    const pendingMsg=getPendingSessionMessage(data.session,S.messages);
-    if(pendingMsg) S.messages.push(pendingMsg);
-    S.activeStreamId=data.session.active_stream_id||null;
+    if (typeof _mergePendingSessionMessage !== 'function') {
+      throw new Error('Pending-session merge helper unavailable');
+    }
+    _mergePendingSessionMessage(data.session, S.messages);
+    S.activeStreamId = data.session.active_stream_id || null;
 
     syncTopbar(); _renderMessagesWithScrollSnapshot();
     showToast('Conversation refreshed');
@@ -10063,7 +9881,7 @@ function _formatUpdateTargetStatus(label,info){
 }
 function _formatManualUpdateInstruction(info){
   if(!(info&&info.no_git&&info.manual_update&&info.behind>0)) return null;
-  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/ares-webui:latest');
+  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/hermes-webui:latest');
 }
 function _formatUpdateCheckError(label,info){
   if(!info||!info.error) return null;
@@ -10144,7 +9962,7 @@ function toggleUpdateSummaryExpanded(){
   panel.classList.toggle('update-summary-expanded',expanded);
   _syncUpdateSummaryExpandButton(expanded);
 }
-const WHATS_NEW_SUMMARY_STORAGE_KEY='ares-whats-new-generated-summaries';
+const WHATS_NEW_SUMMARY_STORAGE_KEY='hermes-whats-new-generated-summaries';
 const WHATS_NEW_SUMMARY_STORAGE_MAX_BYTES=256*1024;
 function _summaryStorageByteLength(value){
   const text=typeof value==='string'?value:JSON.stringify(value);
@@ -10411,7 +10229,7 @@ function _i18nUpdateText(key, fallback){
 }
 function dismissUpdate(){
   const b=$('updateBanner');if(b)b.classList.remove('visible');
-  sessionStorage.setItem('ares-update-dismissed','1');
+  sessionStorage.setItem('hermes-update-dismissed','1');
 }
 function _isUpdateApplyNetworkError(error){
   if(error && error.status) return false;
@@ -10480,8 +10298,8 @@ async function applyUpdates(){
     }
     const stashConflictMessage=stashConflictMessages.join('\n\n');
     showToast(stashConflictMessage||'Update applied — restarting…',stashConflictMessages.length?10000:undefined,stashConflictMessages.length?'warning':undefined);
-    sessionStorage.removeItem('ares-update-checked');
-    sessionStorage.removeItem('ares-update-dismissed');
+    sessionStorage.removeItem('hermes-update-checked');
+    sessionStorage.removeItem('hermes-update-dismissed');
     _waitForServerThenReload({baselineServerIdentity});
   }catch(e){
     const msg=_formatUpdateApplyExceptionMessage(e);
@@ -10529,8 +10347,8 @@ async function applyClearUpdateLock(btn){
   try{
     const res=await api('/api/updates/clear_lock',{method:'POST',body:JSON.stringify({target}),timeoutMs:60000});
     if(res.ok){
-      sessionStorage.removeItem('ares-update-checked');
-      sessionStorage.removeItem('ares-update-dismissed');
+      sessionStorage.removeItem('hermes-update-checked');
+      sessionStorage.removeItem('hermes-update-dismissed');
       showToast('Update applied — restarting…');
       _waitForServerThenReload({});
     } else if(res.lock_held){
@@ -10578,7 +10396,7 @@ function _renderLockManualInstruction(target, res){
   code.style.background='rgba(0,0,0,0.05)';
   code.style.padding='6px';
   code.style.margin='4px 0';
-  code.style.fontFamily='ui-monospace,monospace';
+  code.style.fontFamily='var(--font-mono)';
   code.style.borderRadius='4px';
   code.style.whiteSpace='pre-wrap';
   code.style.wordBreak='break-all';
@@ -10676,8 +10494,8 @@ async function forceUpdate(btn){
       return;
     }
     showToast('Force update applied — restarting…');
-    sessionStorage.removeItem('ares-update-checked');
-    sessionStorage.removeItem('ares-update-dismissed');
+    sessionStorage.removeItem('hermes-update-checked');
+    sessionStorage.removeItem('hermes-update-dismissed');
     _waitForServerThenReload({baselineServerIdentity});
   }catch(e){
     if(errEl){errEl.textContent='Force update failed: '+e.message;errEl.style.display='block';}
@@ -11007,7 +10825,7 @@ function syncTopbar(){
     if(typeof _syncWorkspaceHeadingState==='function') _syncWorkspaceHeadingState();
     if(typeof syncModelChip==='function') syncModelChip();
     if(typeof syncTerminalButton==='function') syncTerminalButton();
-    if(typeof _syncARESPanelSessionActions==='function') _syncARESPanelSessionActions();
+    if(typeof _syncHermesPanelSessionActions==='function') _syncHermesPanelSessionActions();
     else {
       const sidebarName=$('sidebarWsName');
       if(sidebarName && sidebarName.textContent==='Workspace'){
@@ -11128,14 +10946,14 @@ function syncTopbar(){
   // Show Clear button only when session has messages
   const clearBtn=$('btnClearConv');
   if(clearBtn) clearBtn.style.display=(S.messages&&S.messages.filter(msg=>msg.role!=='tool').length>0)?'':'none';
-  if(typeof _syncARESPanelSessionActions==='function') _syncARESPanelSessionActions();
+  if(typeof _syncHermesPanelSessionActions==='function') _syncHermesPanelSessionActions();
   if(typeof syncWorkspaceDisplays==='function') syncWorkspaceDisplays();
   if(typeof syncTerminalButton==='function') syncTerminalButton();
   // modelSelect already set above
   // Update profile chip label.
   // The chip is the profile-SWITCHER trigger (it fronts the profile dropdown) and
   // governs where the next message / new chat routes — both follow the client
-  // active profile (the ares_profile cookie, set only by /api/profile/switch).
+  // active profile (the hermes_profile cookie, set only by /api/profile/switch).
   // It must therefore reflect S.activeProfile, NOT the loaded session's profile.
   // #3331 briefly keyed this on S.session.profile so the label would track the
   // session being browsed, but loadSession() never updates S.activeProfile, so
@@ -11266,7 +11084,7 @@ function _createAssistantTurn(tsTitle='', tpsText=''){
 }
 function _setLatestAssistantTurnLandmark(turn, isLatest){
   if(!turn) return;
-  const label='Latest ARES response';
+  const label='Latest Hermes response';
   if(isLatest){
     if(typeof document!=='undefined'){
       document.querySelectorAll('.assistant-turn[data-latest-assistant-response="true"]').forEach(el=>{
@@ -11571,7 +11389,7 @@ function _thinkingCardHtml(text, open){
   const copyBtn=`<button class="thinking-copy-btn" onclick="event.stopPropagation();_copyThinkingText(this)" title="${t('copy')}" aria-label="${t('copy')}">${li('copy',12)}</button>`;
   const shouldOpen=!!open||_worklogDetailsExpandedDefault();
   const classes=`thinking-card${shouldOpen?' open':''}`;
-  return `<div class="${classes}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thought_process')}</span><span class="thinking-card-btn-row">${copyBtn}<span class="thinking-card-toggle">${li('chevron-right',12)}</span></span></div><div class="thinking-card-body"><pre>${esc(clean)}</pre></div></div>`;
+  return `<div class="${classes}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thinking')}</span><span class="thinking-card-btn-row">${copyBtn}<span class="thinking-card-toggle">${li('chevron-right',12)}</span></span></div><div class="thinking-card-body"><pre>${esc(clean)}</pre></div></div>`;
 }
 function isSimplifiedToolCalling(){
   return window._simplifiedToolCalling!==false;
@@ -11654,7 +11472,124 @@ function _transparentToolSummary(tc){
   if(target) return target;
   return '';
 }
-function _copyEventToClipboard(row){
+function _showTransparentCopiedFeedback(control,row,opts){
+  if(!control&&!row) return;
+  opts=opts||{};
+  // A live-row refresh may replace a header's copy control with new markup.
+  // Keep the lifetime on the persistent row, then resolve the currently visible
+  // control for every render/expiry rather than retaining a detached button.
+  const feedbackRow=row||(control&&control.closest?control.closest('.transparent-event-row'):null);
+  const owner=feedbackRow||control;
+  if(!owner) return;
+  const currentControl=()=>{
+    if(feedbackRow&&feedbackRow.querySelector){
+      return feedbackRow.querySelector('.transparent-event-copy,.thinking-copy-btn');
+    }
+    return control||null;
+  };
+  const connectedControl=()=>{
+    const target=currentControl();
+    if(!target||target.isConnected!==true) return null;
+    if(feedbackRow&&feedbackRow.isConnected!==true) return null;
+    return target;
+  };
+  const clearFeedbackState=(state)=>{
+    if(state&&state.timer){
+      clearTimeout(state.timer);
+      state.timer=null;
+    }
+    if(owner._transparentCopiedFeedback===state) delete owner._transparentCopiedFeedback;
+  };
+  const restoreControl=(target)=>{
+    if(!target) return;
+    const normal=target._transparentCopiedFeedbackNormal;
+    if(!normal) return;
+    target.innerHTML=normal.innerHTML;
+    if(target.style){
+      if(normal.styleCssText!==null) target.style.cssText=normal.styleCssText;
+      else target.style.color=normal.color||'';
+    }
+    if(normal.titleAttr===null){
+      if(target.removeAttribute) target.removeAttribute('title');
+    }else if(target.setAttribute){
+      target.setAttribute('title',normal.titleAttr);
+    }
+    if(normal.ariaLabel===null){
+      if(target.removeAttribute) target.removeAttribute('aria-label');
+    }else if(target.setAttribute){
+      target.setAttribute('aria-label',normal.ariaLabel);
+    }
+    delete target._transparentCopiedFeedbackNormal;
+  };
+  const renderCopiedControl=(target)=>{
+    if(!target) return;
+    if(!target._transparentCopiedFeedbackNormal){
+      target._transparentCopiedFeedbackNormal={
+        innerHTML:target.innerHTML,
+        color:target.style?target.style.color:undefined,
+        styleCssText:target.style&&typeof target.style.cssText==='string'?target.style.cssText:null,
+        titleAttr:target.getAttribute?target.getAttribute('title'):null,
+        ariaLabel:target.getAttribute?target.getAttribute('aria-label'):null,
+      };
+    }
+    const copiedLabel=t('copied')||'Copied';
+    target.innerHTML=typeof li==='function'?li('check',11):'✓';
+    if(target.style){
+      target.style.color='var(--accent)';
+      target.style.opacity='1';
+    }
+    if(target.setAttribute) target.setAttribute('title',copiedLabel);
+    else target.title=copiedLabel;
+    if(target.setAttribute) target.setAttribute('aria-label',copiedLabel);
+  };
+  const now=Date.now();
+  let state=owner._transparentCopiedFeedback;
+  if(opts.rehydrate){
+    if(!state) return;
+    const target=connectedControl();
+    if(!target){
+      clearFeedbackState(state);
+      return;
+    }
+    if(!state.expiresAt||state.expiresAt<=now){
+      if(state.timer) clearTimeout(state.timer);
+      state.timer=null;
+      restoreControl(target);
+      if(owner._transparentCopiedFeedback===state) delete owner._transparentCopiedFeedback;
+      return;
+    }
+    renderCopiedControl(target);
+    return;
+  }
+  const target=connectedControl();
+  if(!target){
+    if(state) clearFeedbackState(state);
+    return;
+  }
+  if(!state){
+    state={timer:null,generation:0,expiresAt:0};
+    owner._transparentCopiedFeedback=state;
+  }else if(state.timer){
+    clearTimeout(state.timer);
+  }
+  state.generation+=1;
+  const generation=state.generation;
+  state.expiresAt=now+1500;
+  renderCopiedControl(target);
+  state.timer=setTimeout(()=>{
+    if(owner._transparentCopiedFeedback!==state||state.generation!==generation) return;
+    const expiryTarget=connectedControl();
+    if(!expiryTarget){
+      state.timer=null;
+      delete owner._transparentCopiedFeedback;
+      return;
+    }
+    state.timer=null;
+    restoreControl(expiryTarget);
+    delete owner._transparentCopiedFeedback;
+  },1500);
+}
+function _copyEventToClipboard(row,control){
   if(!row) return;
   const type=row.getAttribute('data-event-type');
   let text='';
@@ -11697,9 +11632,12 @@ function _copyEventToClipboard(row){
   }else{
     text=row.textContent||'';
   }
+  if(!text) return;
+  const copied=()=>_showTransparentCopiedFeedback(control,row);
   const fallback=()=>{
+    let ta=null;
     try{
-      const ta=document.createElement('textarea');
+      ta=document.createElement('textarea');
       ta.value=text;
       ta.setAttribute('readonly','');
       ta.style.position='absolute';
@@ -11707,14 +11645,17 @@ function _copyEventToClipboard(row){
       document.body.appendChild(ta);
       ta.select();
       const ok=document.execCommand('copy');
-      document.body.removeChild(ta);
+      if(ok) copied();
       if(typeof showToast==='function') showToast(ok?(t('copied')||'Copied'):(t('copy_failed')||'Copy failed'),1600);
     }catch(_){
       if(typeof showToast==='function') showToast(t('copy_failed')||'Copy failed',2000,'error');
+    }finally{
+      if(ta&&ta.parentNode) ta.parentNode.removeChild(ta);
     }
   };
   if(navigator&&navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(()=>{
+      copied();
       if(typeof showToast==='function') showToast(`${t('copied')||'Copied'} ${label}`,1600);
     }).catch(fallback);
   }else{
@@ -11725,21 +11666,29 @@ function _attachCopyButton(header){
   if(!header) return null;
   const bindCopyButton=(btn)=>{
     if(!btn) return null;
+    const row=header.closest?header.closest('.transparent-event-row'):null;
+    const feedbackState=row&&row._transparentCopiedFeedback;
+    const feedbackActive=!!(feedbackState&&Number(feedbackState.expiresAt)>Date.now());
     btn.classList.add('transparent-event-copy');
     btn.setAttribute('role','button');
     btn.setAttribute('tabindex','0');
-    btn.setAttribute('aria-label',t('copy')||'Copy');
     btn.setAttribute('data-transparent-copy','1');
-    btn.title=t('copy')||'Copy';
+    if(!btn._transparentCopiedFeedback&&!feedbackActive){
+      btn.setAttribute('aria-label',t('copy')||'Copy');
+      btn.title=t('copy')||'Copy';
+    }
     const handler=function(ev){
       ev.stopPropagation();
       ev.preventDefault();
-      _copyEventToClipboard(header.closest('.transparent-event-row'));
+      _copyEventToClipboard(header.closest('.transparent-event-row'),btn);
     };
     btn.onclick=handler;
     btn.onkeydown=function(ev){
       if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();handler(ev);}
     };
+    if(btn.parentNode&&typeof _showTransparentCopiedFeedback==='function'){
+      _showTransparentCopiedFeedback(btn,row,{rehydrate:true});
+    }
     return btn;
   };
   // Reuse ANY existing copy button (handles both .transparent-event-copy
@@ -11762,6 +11711,8 @@ function _attachCopyButton(header){
   const toggle=header.querySelector('.tool-card-toggle,.thinking-card-toggle');
   if(toggle&&toggle.parentNode===header) header.insertBefore(btn,toggle);
   else header.appendChild(btn);
+  const row=header.closest?header.closest('.transparent-event-row'):null;
+  if(typeof _showTransparentCopiedFeedback==='function') _showTransparentCopiedFeedback(btn,row,{rehydrate:true});
   return btn;
 }
 function _transparentEventCountLabel(toolCount){
@@ -11991,7 +11942,7 @@ function _syncTransparentEventControls(turn){
     label.setAttribute('data-transparent-tool-count',String(toolCount));
   }
   bar.setAttribute('data-tool-count',String(toolCount));
-  // Wire the ARES chat name tag toggle for the live turn.
+  // Wire the Hermes chat name tag toggle for the live turn.
   _wireTransparentTurnToggle(turn);
   // Apply recency fade so the newest activity stands out while streaming. The
   // fade helper is internally gated to the live turn, so this no-ops on settled
@@ -12193,7 +12144,7 @@ function _decorateTransparentEventRow(row, opts){
       if(btnRow&&btnRow.parentNode===header&&!btnRow.children.length) btnRow.remove();
       header.style.flexDirection='row';
       const label=header.querySelector('.thinking-card-label');
-      if(label) label.textContent=(typeof t==='function'?t('thought_process'):'Thought process');
+      if(label) label.textContent='Thinking';
       let preview=header.querySelector('.transparent-event-preview,.transparent-event-thinking-preview');
       const previewText=_transparentEventPreview(opts.preview||opts.text||row.textContent||'');
       if(previewText){
@@ -12266,7 +12217,7 @@ function _setTransparentRowsExpanded(root, expanded){
     _setTransparentCardOpen(card,!!expanded);
   });
 }
-// ── Transparent turn-level collapse (ARES chat name tag) ───────────────
+// ── Transparent turn-level collapse (Hermes chat name tag) ───────────────
 // In transparent_stream mode the assistant role label is the turn's "name
 // tag". Clicking it collapses the entire event stack underneath so the
 // transcript shows only the final answer (Output only). A chevron on the
@@ -12431,7 +12382,7 @@ function _renderTransparentTurnFooter(turn, opts){
 // finalized into a settled assistant turn (the live attribute is removed in
 // _convertLiveActivityGroupToSettled / when liveAssistantTurn loses its id).
 let _liveActivityUserExpanded;
-const _activityDisclosureStoragePrefix='ares-activity-disclosure:';
+const _activityDisclosureStoragePrefix='hermes-activity-disclosure:';
 function _activityDisclosureStorageKey(activityKey){
   if(!activityKey||!S.session||!S.session.session_id) return null;
   return _activityDisclosureStoragePrefix+S.session.session_id+':'+activityKey;
@@ -13241,7 +13192,7 @@ function isLiveAnchorActivitySceneOwner(streamId){
   return !streamId||!current||String(streamId)===current;
 }
 function _projectLiveAnchorActivitySceneForStream(streamId, mode){
-  const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
+  const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
   const map=(typeof window!=='undefined')?window._liveAnchorRegistries:null;
   const registry=map&&streamId?map.get(streamId):null;
   if(!api||!registry||typeof api.projectAssistantTurnAnchorActivityScene!=='function') return null;
@@ -14109,6 +14060,67 @@ function _armKeepSettledWorklogOpen(streamId){
 function _disarmKeepSettledWorklogOpen(){
   _keepSettledWorklogOpenForStreamId=null;
 }
+function _assistantTurnHasVisibleRenderedSegment(turn){
+  if(!turn||typeof turn.querySelectorAll!=='function') return null;
+  for(const seg of turn.querySelectorAll('.assistant-segment')){
+    if(seg.classList.contains('assistant-segment-worklog-source')) continue;
+    if(seg.classList.contains('assistant-segment-anchor')) continue;
+    if((seg.textContent||'').trim()) return true;
+  }
+  return false;
+}
+function _collapseJustSettledWorklogInPlace(streamId){
+  // #6414: STREAM_DONE used to render the settled turn once with its Worklog
+  // forced open, then immediately run a second full render only to collapse it.
+  // That second `innerHTML=''` rebuild removes the Worklog the user just saw and
+  // can expose a reset frame. Keep the canonical first render, then collapse its
+  // one settled group in place. The rows are released after the group is hidden;
+  // an expand still rebuilds them from the settled transcript via the normal
+  // #5839 deferred-row path.
+  const inner=$('msgInner');
+  if(!inner||!streamId) return false;
+  const group=Array.from(inner.querySelectorAll('[data-anchor-settled-scene-owner="1"]'))
+    .filter(candidate=>candidate.getAttribute('data-anchor-stream-id')===String(streamId))
+    .pop();
+  if(!group) return false;
+  const ownerTurn=typeof group.closest==='function'?group.closest('.assistant-turn'):null;
+  const ownerHasVisibleSegment=_assistantTurnHasVisibleRenderedSegment(ownerTurn);
+  if(ownerHasVisibleSegment===null) return false;
+  const disclosureKey=group.getAttribute('data-activity-disclosure-key')||'';
+  const savedDisclosure=_readActivityDisclosureState(disclosureKey);
+  const rows=_deferredWorklogRowsFromGroup(group);
+  if(!rows||!rows.length) return false;
+  const match=/^anchor-scene:(\d+)$/.exec(disclosureKey);
+  const message=match&&S.messages&&S.messages[Number(match[1])];
+  const errored=!!(message&&message._anchor_activity_scene&&
+    _anchorSceneHasErroredTerminalState(message._anchor_activity_scene));
+  const keepOpen=!ownerHasVisibleSegment
+    || savedDisclosure==='open'
+    || (errored&&savedDisclosure!=='closed')
+    || (_worklogDetailsExpandedDefault()&&savedDisclosure!=='closed');
+  if(!keepOpen){
+    const detailDisclosure=typeof _captureWorklogDetailDisclosureState==='function'
+      ? _captureWorklogDetailDisclosureState(group)
+      : null;
+    group._deferredWorklogRows=rows;
+    group._deferredWorklogDisclosure=detailDisclosure&&detailDisclosure.size
+      ? detailDisclosure
+      : null;
+    group.setAttribute('data-worklog-rows-deferred','1');
+    group.classList.add('tool-call-group-collapsed');
+    group.classList.remove('open');
+    const summary=group.querySelector('.tool-worklog-summary,.tool-call-group-summary');
+    if(summary) summary.setAttribute('aria-expanded','false');
+    _syncToolCallGroupSummary(group);
+    requestAnimationFrame(()=>{
+      if(!group.isConnected||!group.classList.contains('tool-call-group-collapsed')) return;
+      if(group.getAttribute('data-worklog-rows-deferred')!=='1') return;
+      const list=_toolWorklogListEl(group);
+      if(list) list.replaceChildren();
+    });
+  }
+  return true;
+}
 // True while a just-settled worklog is being force-rendered open (between
 // _armKeepSettledWorklogOpen and _disarmKeepSettledWorklogOpen). renderMessages()
 // consults this so it does NOT write the forced-open DOM into _sessionHtmlCache:
@@ -14823,12 +14835,7 @@ function _isContextCompactionMessage(m){
   return _isContextCompactionText(text);
 }
 function _isContextCompactionText(text){
-  const s = String(text||'').trim();
-  return /^\s*\[context (?:compaction|compression|summary)/i.test(s)
-      || /^\s*context (?:compaction|compression|summary)/i.test(s)
-      || /^\s*\[trajectory (?:compaction|compression|summary)/i.test(s)
-      || /^\s*\[earlier turns were (?:compacted|compressed|summarized)/i.test(s)
-      || /^\s*\[summary generation failed/i.test(s);
+  return /^\s*\[context compaction/i.test(String(text||'')) || /^\s*context compaction/i.test(String(text||''));
 }
 function _isPreservedCompressionTaskListMarkerText(text){
   return /^\s*\[your active task list was preserved across context compression\]/i.test(String(text||''));
@@ -15143,6 +15150,54 @@ function clearMessageRenderCache(){
   _clearMessageVirtualHeightCache();
 }
 
+// #6999: feed a structured payload field's string form through the FNV-1a
+// loop IN FULL, without materializing clipped copies or skipping the middle.
+// The previous length+head+tail clip made same-length middle-only edits
+// (tool arguments, attachment metadata, tool snippets, compression-anchor
+// keys) produce identical signatures — a deterministic stale-cache collision
+// in _sessionHtmlCache (cross-session navigation served old HTML). Hashing
+// every character keeps the signature sensitive to ANY content change at a
+// constant-allocation cost: strings are streamed char-by-char (no copy) and
+// object fields are walked key-by-key so only scalar string forms are ever
+// allocated — no integral JSON.stringify() of a whole payload, and no
+// head/tail slice copies. _renderCacheKey's length+edges shortcut is only
+// safe for the render-window geometry key, where equal span+edges means
+// equal window; here equal signature must mean equal CONTENT.
+function _addBoundedHash(add, value, depth){
+  if(value==null){ add('null'); return; }
+  const t=typeof value;
+  if(t==='string'){ add(value.length); add(value); return; }
+  if(t==='number'||t==='boolean'){ add(t); add(value); return; }
+  if(t==='object'){ _hashObjectInto(add, value, (depth||0)+1); return; }
+  add(t); add(String(value));
+}
+function _hashObjectInto(add, value, depth){
+  if(value==null){ add('null'); return; }
+  if(depth>64){
+    // Pathological depth (e.g. a cyclic structure JSON.stringify would also
+    // reject): serialize integrally so no field is silently dropped — the
+    // exact same data still yields the exact same signature.
+    try{ add(JSON.stringify(value)); }catch(e){ add('[unserializable]'); }
+    return;
+  }
+  if(Array.isArray(value)){
+    add('array'); add(value.length);
+    for(let i=0;i<value.length;i++){ add(i); _addBoundedHash(add, value[i], depth); }
+    return;
+  }
+  add('object');
+  // #6999 re-gate: walk keys in INSERTION ORDER (never sorted) so the cache
+  // signature equals the rendered projection — the tool-detail render paths
+  // use Object.entries(tc.args), which preserves insertion order. Sorting here
+  // gave opposite-insertion-order argument objects the same signature while
+  // they render DIFFERENT HTML. The explicit per-key index is the
+  // insertion-order discriminator: {alpha:A, beta:B} and {beta:B, alpha:A}
+  // now hash differently.
+  const keys=Object.keys(value);
+  add(keys.length);
+  for(let i=0;i<keys.length;i++){ add(keys[i]); add(i); _addBoundedHash(add, value[keys[i]], depth); }
+}
+
 function _messageRenderCacheSignature(){
   let hash=2166136261;
   function add(value){
@@ -15169,24 +15224,31 @@ function _messageRenderCacheSignature(){
     }
     if(Array.isArray(m.tool_calls)){
       add('message-tool-calls');add(m.tool_calls.length);
-      m.tool_calls.forEach(tc=>{add(tc&&tc.id);add(tc&&tc.name);add(tc&&tc.type);add(JSON.stringify(tc&&tc.function||{}));});
+      m.tool_calls.forEach(tc=>{
+        add(tc&&tc.id);add(tc&&tc.name);add(tc&&tc.type);
+        add(tc&&tc.function&&tc.function.name);
+        // function.arguments is already a string — streamed in full, no copy.
+        _addBoundedHash(add, tc&&tc.function&&tc.function.arguments);
+      });
     }
     if(Array.isArray(m._partial_tool_calls)){
       add('partial-tool-calls');add(m._partial_tool_calls.length);
       m._partial_tool_calls.forEach(tc=>{add(tc&&tc.id);add(tc&&tc.name);add(tc&&tc.snippet);});
     }
     if(_messageHasReasoningPayload(m)) add(m.reasoning||m.thinking||m._reasoning||'reasoning');
-    if(Array.isArray(m.attachments)) m.attachments.forEach(a=>add(a&&typeof a==='object'?JSON.stringify(a):a));
+    if(Array.isArray(m.attachments)) m.attachments.forEach(a=>_addBoundedHash(add, a));
   }
   const toolCalls=Array.isArray(S.toolCalls)?S.toolCalls:[];
   add('settled-tool-calls');add(toolCalls.length);
   toolCalls.forEach(tc=>{
     if(!tc||typeof tc!=='object'){ add(tc); return; }
-    add(tc.tid);add(tc.id);add(tc.name);add(tc.done);add(tc.is_diff);add(tc.assistant_msg_idx);add(tc.snippet);add(JSON.stringify(tc.args||{}));
+    add(tc.tid);add(tc.id);add(tc.name);add(tc.done);add(tc.is_diff);add(tc.assistant_msg_idx);
+    _addBoundedHash(add, tc.snippet);
+    _addBoundedHash(add, tc.args||{});
   });
   if(S.session){
     add(S.session.message_count);add(S.session.updated_at);add(S.session.compression_anchor_visible_idx);
-    add(JSON.stringify(S.session.compression_anchor_message_key||null));
+    _addBoundedHash(add, S.session.compression_anchor_message_key||null);
     add(S.session.compression_anchor_summary||'');
   }
   return `${messages.length}:${toolCalls.length}:${hash.toString(16)}`;
@@ -15422,7 +15484,7 @@ function _idLinkedHistoricalTurnScene(messages, turnStart, turnEnd, options){
   const end=Math.min(list.length,Math.max(start,Number(turnEnd)||0));
   const opts=options&&typeof options==='object'?options:{};
   const sessionId=String(opts.sessionId||opts.session_id||'').trim();
-  const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
+  const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
   if(!sessionId||!api||typeof api.projectAssistantTurnAnchorHistoricalTranscriptScene!=='function') return null;
 
   const declarations=[];
@@ -16130,7 +16192,7 @@ function _assistantTurnAnchorSettledFinalAnswer(message, content, context){
   const sceneFinal=_assistantAnchorSceneFinalAnswerText(message);
   const effectiveContent=String(content||'').trim()?content:sceneFinal;
   try{
-    const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
+    const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
     if(!api||typeof api.projectAssistantTurnAnchorSettledMessageFinalAnswer!=='function') return String(sceneFinal||'').trim()?sceneFinal:null;
     const result=api.projectAssistantTurnAnchorSettledMessageFinalAnswer(message,{
       session_id:context&&context.session_id,
@@ -16507,6 +16569,17 @@ function renderMessages(options){
     rawIdx++;
   }
   const firstRenderedRawIdx=renderVisWithIdx.length?renderVisWithIdx[0].rawIdx:Infinity;
+  // #6999: the turn-content maps MUST see the FULL visWithIdx, not the
+  // virtual render window. _assistantTurnFinalVisibleContentMap /
+  // _assistantTurnVisibleContentMap derive the echo-strip context for a
+  // rendered assistant row from ALL assistant siblings of its turn
+  // (ui.js:10783-10830). Windowed-out siblings are still input context even
+  // though their own rows are not read: cutting through an assistant run
+  // loses the final/visible answer used to strip reasoning echoes, and
+  // concatenating head+tail across an omitted user boundary would merge
+  // distinct turns into one run (duplicate final-answer in Worklog/Thinking,
+  // or later-turn prose used as an echo-strip input). Turn context must
+  // always be complete — never cut mid-run, never head+tail with a gap.
   const assistantTurnFinalVisibleContentByRawIdx=_assistantTurnFinalVisibleContentMap(visWithIdx);
   const assistantTurnVisibleContentByRawIdx=_assistantTurnVisibleContentMap(visWithIdx);
   const hasServerOlder=!!(typeof _messagesTruncated!=='undefined' && _messagesTruncated && S.messages.length>0);
@@ -16766,6 +16839,13 @@ function renderMessages(options){
       }).join('')}</div>`;
     }
     let bodyHtml = _getCachedRender(displayContent, isUser);
+    // Message-level media snapshots: settled assistant messages carry a
+    // path→digest map (written at settle time) freezing the file bytes the
+    // turn emitted. Stamp it AFTER the text-keyed render cache so identical
+    // text with different snapshots (old/new comparison) never collides.
+    if(!isUser && m && m._media_snapshots && typeof m._media_snapshots==='object'){
+      bodyHtml = _stampMediaSnapshots(bodyHtml, m._media_snapshots);
+    }
     if(!isUser&&m.provider_details){
       const summary=m.provider_details_label||'Provider details';
       bodyHtml += `<details class="provider-error-details"><summary>${esc(String(summary))}</summary><pre><code>${esc(String(m.provider_details))}</code></pre></details>`;
@@ -16986,10 +17066,15 @@ function renderMessages(options){
         if(!firstSeg&&thinkingText&&window._showThinking!==false&&!((isCompactWorklogMode()||isTransparentStream())&&_assistantThinkingBelongsInWorklog(m, rawIdx, toolCallAssistantIdxs))) orderedSeg.insertAdjacentHTML('beforeend', _thinkingCardHtml(thinkingText));
         const isLastTextPart=partIdx===lastTextPartIdx;
         const partBodyHtml=_getCachedRender(partDisplayText,false);
+        // Message-level media snapshots: transparent ordered segments carry the
+        // same per-message path→digest map as the main transcript; stamp it so
+        // historical previews freeze (&snap=) instead of following overwrites.
+        // Inlined in the template (no intermediate variable) so test-harness
+        // block extraction of the ordered-segment slice stays self-contained.
         if(isLastTextPart&&statusHtml){
           orderedSeg.insertAdjacentHTML('beforeend', statusHtml);
         }
-        orderedSeg.insertAdjacentHTML('beforeend', `${isLastTextPart?filesHtml:''}<div class="msg-body">${partBodyHtml}</div>${isLastTextPart?footHtml:''}`);
+        orderedSeg.insertAdjacentHTML('beforeend', `${isLastTextPart?filesHtml:''}<div class="msg-body">${(typeof m!=='undefined'&&m&&m._media_snapshots&&typeof m._media_snapshots==='object')?_stampMediaSnapshots(partBodyHtml,m._media_snapshots):partBodyHtml}</div>${isLastTextPart?footHtml:''}`);
         blocks.appendChild(orderedSeg);
         if(!firstSeg) firstSeg=orderedSeg;
       });
@@ -17046,9 +17131,10 @@ function renderMessages(options){
       if((isCompactWorklogMode()||isTransparentStream())&&_assistantThinkingBelongsInWorklog(m, rawIdx, toolCallAssistantIdxs)) assistantThinking.set(rawIdx, thinkingText);
       else if(window._showThinking!==false) seg.insertAdjacentHTML('beforeend', _thinkingCardHtml(thinkingText));
     }
-    const hasVisibleBody=!!(String(content||'').trim()||filesHtml||statusHtml||recoveryHtml);
+    const hasVisibleBody=!!(String(content||'').trim()||filesHtml||recoveryHtml);
     if(statusHtml){
       seg.insertAdjacentHTML('beforeend', statusHtml);
+      if(hasVisibleBody) seg.insertAdjacentHTML('beforeend', `${filesHtml}<div class="msg-body">${bodyHtml}</div>${footHtml}`);
     }else if(hasVisibleBody){
       seg.insertAdjacentHTML('beforeend', `${filesHtml}<div class="msg-body">${bodyHtml}</div>${footHtml}`);
     }else if(!(thinkingText&&window._showThinking!==false&&!isSimplifiedToolCalling())){
@@ -17184,7 +17270,7 @@ function renderMessages(options){
     }catch(e){}
     S.messages.forEach((m,rawIdx)=>{
       if(!m) return;
-      // OpenAI / ARES CLI format: role=tool with tool_call_id
+      // OpenAI / Hermes CLI format: role=tool with tool_call_id
       if(m.role==='tool'){
         const tid=m.tool_call_id||m.tool_use_id||'';
         if(tid) resultsByTid[tid]=_cliToolResultSnippet(m.content);
@@ -17673,7 +17759,7 @@ function renderMessages(options){
       }
     }
   }
-  // Transparent mode per-turn wiring: collapsible ARES chat name tag, old-event
+  // Transparent mode per-turn wiring: collapsible Hermes chat name tag, old-event
   // fading, and the bottom-of-turn footer (elapsed · tokens · TTFT · status).
   // Runs after the per-turn duration block above so the footer can reuse the
   // computed durationText / tokens / TTFT for each settled assistant turn.
@@ -17750,11 +17836,12 @@ function renderMessages(options){
   // (Opus advisor, stage-342).
   {
     const _turnHasVisibleContent=(turn)=>{
-      const segs=turn.querySelectorAll('.assistant-segment');
-      for(const seg of segs){
-        // A segment shows real content only when it is NOT worklog-folded AND its
-        // body/files/status actually painted (the anchor-only placeholder class
-        // carries no visible body).
+      if(typeof _assistantTurnHasVisibleRenderedSegment==='function'){
+        return _assistantTurnHasVisibleRenderedSegment(turn)===true;
+      }
+      // Keep the extracted renderMessages test harness self-contained.
+      if(!turn||typeof turn.querySelectorAll!=='function') return false;
+      for(const seg of turn.querySelectorAll('.assistant-segment')){
         if(seg.classList.contains('assistant-segment-worklog-source')) continue;
         if(seg.classList.contains('assistant-segment-anchor')) continue;
         if((seg.textContent||'').trim()) return true;
@@ -18230,21 +18317,6 @@ function _toolWorklogSummary(toolCalls, opts){
     }
     return out;
   };
-  // A batch that mixes tool kinds collapses to ONE generic count —
-  // "Ran 16 commands" — instead of "Ran 4 commands, Read 9 files,
-  // Searched workspace 3 times". The per-kind detail is still there on
-  // every row inside the group; the summary is a disclosure label, and
-  // three clauses of it stops being one. A single-kind batch keeps its
-  // specific line ("Read 9 files"): there is nothing to merge, and the
-  // specific wording says more for the same width.
-  const kinds=new Set([...Object.keys(runningCounts),...Object.keys(doneCounts)]
-    .filter(k=>(runningCounts[k]||0)+(doneCounts[k]||0)>0));
-  if(kinds.size>1){
-    const running=Object.values(runningCounts).reduce((a,b)=>a+b,0);
-    const line=_toolWorklogSummaryLine(
-      'shell', running?'running':'done', cards.length);
-    return failed?`${line}, ${failed} failed`:line;
-  }
   const lines=[...emit(runningCounts,'running'),...emit(doneCounts,'done')];
   if(failed) lines.push(`${failed} failed`);
   return lines.length?_toolWorklogJoin(lines):_toolActionLabel(cards[0]);
@@ -18892,14 +18964,17 @@ function _findLiveAssistantAnchorForSegment(inner, segmentSeq){
 }
 
 function clearLiveToolCards(){
+  const preserveDom=!!(arguments[0]&&arguments[0].preserveDom);
   if(typeof _clearActivityElapsedTimer==='function') _clearActivityElapsedTimer();
-  const inner=_assistantTurnBlocks($('liveAssistantTurn'));
-  if(inner) inner.querySelectorAll('.live-worklog[data-live-worklog-shell],.tool-worklog-group[data-live-tool-call-group],.tool-call-group[data-live-tool-call-group],.tool-card-row[data-live-tid]:not(.transparent-event-row),[data-anchor-scene-owner="1"],[data-anchor-scene-row="1"]').forEach(el=>el.remove());
+  if(!preserveDom){
+    const inner=_assistantTurnBlocks($('liveAssistantTurn'));
+    if(inner) inner.querySelectorAll('.live-worklog[data-live-worklog-shell],.tool-worklog-group[data-live-tool-call-group],.tool-call-group[data-live-tool-call-group],.tool-card-row[data-live-tid]:not(.transparent-event-row),[data-anchor-scene-owner="1"],[data-anchor-scene-row="1"]').forEach(el=>el.remove());
+  }
   // Reset the per-turn user expand intent so the next turn starts at the
   // default collapsed state (#1298).
   if(typeof _clearLiveActivityUserIntent==='function') _clearLiveActivityUserIntent();
-  // Legacy #liveToolCards container cleanup — kept for safety in case any
-  // leftover cards were inserted there before this refactor took effect.
+  // Legacy #liveToolCards container cleanup (sibling to the settled-rendered
+  // subtree). Always clear/hide it to avoid leaking stale fallback content.
   const container=$('liveToolCards');
   if(container){container.innerHTML='';container.style.display='none';}
 }
@@ -18929,7 +19004,7 @@ function _setLiveWorklogThinkingPlaceholder(group){
     group.querySelector('.tool-worklog-label') || group.querySelector('.tool-call-group-label')
   );
   if(label){
-    const text=typeof t==='function'?t('thought_process'):'Thought process';
+    const text=typeof t==='function'?t('worklog_thinking'):'Thinking';
     label.textContent=text;
     label.setAttribute('data-sweep-label', text);
   }
@@ -19377,7 +19452,8 @@ function loadDiffInline(container){
   root.querySelectorAll('.diff-inline-load:not([data-loaded])').forEach(el=>{
     el.setAttribute('data-loaded','1');
     const path=el.dataset.path;
-    fetch('api/media?path='+encodeURIComponent(path))
+    const snapQuery=_mediaSnapQuery(el);
+    fetch('api/media?path='+encodeURIComponent(path)+snapQuery)
       .then(r=>{if(!r.ok) throw new Error(r.status);return r.text();})
       .then(text=>{
         if(text.length>DIFF_MAX_SIZE){
@@ -19406,8 +19482,18 @@ function _mediaSessionQuery(){
   return mediaSessionId?'&session_id='+encodeURIComponent(mediaSessionId):'';
 }
 
+// Message-level media snapshots: lazy preview loaders (pdf/html/csv/diff/
+// excalidraw) build their fetch URL from data-path at load time. The stamping
+// pass in _stampMediaSnapshots carries the content digest in data-snap;
+// append it here so the preview shows the file as the message emitted it.
+function _mediaSnapQuery(el){
+  const snap=el&&el.dataset?el.dataset.snap:'';
+  return (snap&&/^[0-9a-f]{64}$/.test(snap))?('&snap='+snap):'';
+}
+
 function _csvMediaUrl(path, opts={}){
   let url='api/media?path='+encodeURIComponent(path)+_mediaSessionQuery();
+  if(opts.snap) url+='&snap='+encodeURIComponent(opts.snap);
   if(opts.download) url+='&download=1';
   return url;
 }
@@ -19447,8 +19533,9 @@ function loadCsvInline(container){
   root.querySelectorAll('.csv-inline-load:not([data-loaded])').forEach(el=>{
     el.setAttribute('data-loaded','1');
     const path=el.dataset.path;
-    const mediaUrl=_csvMediaUrl(path);
-    const downloadUrl=_csvMediaUrl(path,{download:true});
+    const snap=_mediaSnapQuery(el).replace(/^&snap=/,'');
+    const mediaUrl=_csvMediaUrl(path,{snap:snap||undefined});
+    const downloadUrl=_csvMediaUrl(path,{download:true,snap:snap||undefined});
     fetch(mediaUrl)
       .then(r=>{if(!r.ok) throw new Error(r.status);return r.text();})
       .then(text=>{
@@ -19467,7 +19554,8 @@ function loadExcalidrawInline(container){
   root.querySelectorAll('.excalidraw-inline-load:not([data-loaded])').forEach(el=>{
     el.setAttribute('data-loaded','1');
     const path=el.dataset.path;
-    fetch('api/media?path='+encodeURIComponent(path))
+    const snapQuery=_mediaSnapQuery(el);
+    fetch('api/media?path='+encodeURIComponent(path)+snapQuery)
       .then(r=>{if(!r.ok) throw new Error(r.status);return r.text();})
       .then(text=>{
         if(text.length>EXCALIDRAW_MAX_SIZE){
@@ -19596,14 +19684,15 @@ function loadPdfInline(container){
     const path=el.dataset.path;
     const fname=path.split('/').pop()||path;
     const mediaSessionId=(typeof S!=='undefined'&&S&&S.session&&S.session.session_id)?String(S.session.session_id):'';
+    const snapQuery=_mediaSnapQuery(el);
     const publicMediaUrl='api/media?path='+encodeURIComponent(path);
-    const mediaUrl=publicMediaUrl+(mediaSessionId?'&session_id='+encodeURIComponent(mediaSessionId):'');
+    const mediaUrl=publicMediaUrl+(mediaSessionId?'&session_id='+encodeURIComponent(mediaSessionId):'')+snapQuery;
     const loadPdf=(pdfjsLib)=>{
       fetch(mediaUrl)
         .then(r=>{if(!r.ok) throw new Error(r.status); return r.arrayBuffer();})
         .then(buf=>{
           if(buf.byteLength>PDF_MAX_SIZE){
-            const dlUrl=publicMediaUrl+'&download=1';
+            const dlUrl=publicMediaUrl+'&download=1'+snapQuery;
             el.outerHTML=`<div class="pdf-preview-fallback"><a class="msg-media-link" href="${dlUrl}" download="${esc(fname)}">📎 ${esc(fname)}</a><br><span style="color:var(--muted);font-size:12px">${t('pdf_too_large')}</span></div>`;
             return;
           }
@@ -19611,7 +19700,7 @@ function loadPdfInline(container){
         })
         .then(pdf=>{
           if(!pdf) return;
-          const dlUrl=publicMediaUrl+'&download=1';
+          const dlUrl=publicMediaUrl+'&download=1'+snapQuery;
           const total=pdf.numPages;
           const pagesLabel=total>1?` · ${total} pages`:'';
           const wrap=document.createElement('div');
@@ -19650,7 +19739,7 @@ function loadPdfInline(container){
           renderPage(1);
         })
         .catch(()=>{
-          const dlUrl=publicMediaUrl+'&download=1';
+          const dlUrl=publicMediaUrl+'&download=1'+snapQuery;
           el.outerHTML=`<div class="pdf-preview-fallback"><a class="msg-media-link" href="${dlUrl}" download="${esc(fname)}">📎 ${esc(fname)}</a><br><span style="color:var(--muted);font-size:12px">${t('pdf_error')}</span></div>`;
         });
     };
@@ -19670,7 +19759,7 @@ function loadPdfInline(container){
       window.addEventListener('pdfjs-ready',()=>{ _pdfjsReady=true; loadPdf(window._pdfjsLib); },{once:true});
       setTimeout(()=>{
         if(!_pdfjsReady){
-          const dlUrl=publicMediaUrl+'&download=1';
+          const dlUrl=publicMediaUrl+'&download=1'+snapQuery;
           if(el.parentNode){
             el.outerHTML=`<div class="pdf-preview-fallback"><a class="msg-media-link" href="${dlUrl}" download="${esc(fname)}">📎 ${esc(fname)}</a><br><span style="color:var(--muted);font-size:12px">${t('pdf_error')}</span></div>`;
           }
@@ -19691,22 +19780,23 @@ function loadHtmlInline(container){
     const path=el.dataset.path;
     const fname=path.split('/').pop()||path;
     const mediaSessionId=(typeof S!=='undefined'&&S&&S.session&&S.session.session_id)?String(S.session.session_id):'';
+    const snapQuery=_mediaSnapQuery(el);
     const publicMediaUrl='api/media?path='+encodeURIComponent(path);
-    const mediaUrl=publicMediaUrl+(mediaSessionId?'&session_id='+encodeURIComponent(mediaSessionId):'');
-    fetch(mediaUrl)
+    const mediaUrl=publicMediaUrl+(mediaSessionId?'&session_id='+encodeURIComponent(mediaSessionId):'')+snapQuery;
+    fetch(mediaUrl, {cache:'no-store'})
       .then(r=>{if(!r.ok) throw new Error(r.status); return r.text();})
       .then(html=>{
         if(html.length>HTML_MAX_SIZE){
-          const openUrl=publicMediaUrl+'&inline=1';
+          const openUrl=publicMediaUrl+'&inline=1'+snapQuery;
           el.outerHTML=`<div class="html-preview-fallback"><a class="msg-media-link" href="${openUrl}" target="_blank" rel="noopener">📎 ${esc(fname)}</a><br><span style="color:var(--muted);font-size:12px">${t('html_too_large')}</span></div>`;
           return;
         }
-        const openUrl=publicMediaUrl+'&inline=1';
+        const openUrl=publicMediaUrl+'&inline=1'+snapQuery;
         const safeHtml=html.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         el.outerHTML=`<div class="html-preview-wrap"><div class="html-preview-header"><span>${t('html_sandbox_label')}</span><a href="${openUrl}" target="_blank" rel="noopener" class="html-open-link">${t('html_open_full')} ↗</a></div><iframe srcdoc="${safeHtml}" sandbox="allow-scripts" class="html-preview-iframe" loading="lazy"></iframe></div>`;
       })
       .catch(()=>{
-        const dlUrl=publicMediaUrl+'&download=1';
+        const dlUrl=publicMediaUrl+'&download=1'+snapQuery;
         el.outerHTML=`<div class="html-preview-fallback"><a class="msg-media-link" href="${dlUrl}" download="${esc(fname)}">📎 ${esc(fname)}</a><br><span style="color:var(--muted);font-size:12px">${t('html_error')}</span></div>`;
       });
   });
@@ -19830,7 +19920,7 @@ function _thinkingMarkup(text=''){
   const clean=_sanitizeThinkingDisplayText(text);
   const openClass=_worklogDetailsExpandedDefault()?' open':'';
   return (clean&&String(clean).trim())
-    ? `<div class="thinking-card${openClass}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thought_process')}</span><span class="thinking-card-toggle">${li('chevron-right',12)}</span></div><div class="thinking-card-body"><pre>${esc(String(clean).trim())}</pre></div></div>`
+    ? `<div class="thinking-card${openClass}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thinking')}</span><span class="thinking-card-toggle">${li('chevron-right',12)}</span></div><div class="thinking-card-body"><pre>${esc(String(clean).trim())}</pre></div></div>`
     : `<div class="thinking"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
 }
 function _renderThinkingInto(row,text=''){
@@ -20138,30 +20228,139 @@ function _visibleWorkspaceEntries(entries){
   const list=Array.isArray(entries)?entries:[];
   return S.showHiddenWorkspaceFiles?list:list.filter(item=>!_workspaceShouldHideEntry(item));
 }
+const WORKSPACE_SORT_KEYS=['name-asc','name-desc','created-desc','modified-desc'];
+const WORKSPACE_SORT_DEFAULT='name-asc';
+function _normalizeWorkspaceSortKey(value){
+  return WORKSPACE_SORT_KEYS.includes(value)?value:WORKSPACE_SORT_DEFAULT;
+}
+function _workspaceEntryRank(item){
+  const rank=item&&item.workspace_sort_rank;
+  return rank===0||rank===1||rank===2?rank:1;
+}
+function _workspaceEntryTimestampKey(item,field){
+  const raw=item&&item[field];
+  if(typeof raw==='string'){
+    const value=raw.trim();
+    if(!/^[+-]?\d+$/.test(value))return null;
+    const negative=value[0]==='-';
+    const digits=value.replace(/^[+-]/,'').replace(/^0+(?=\d)/,'');
+    if(digits==='0')return '0';
+    return negative?'-'+digits:digits;
+  }
+  if(typeof raw==='number') return Number.isInteger(raw)?String(raw):null;
+  if(typeof raw==='bigint') return String(raw);
+  return null;
+}
+function _compareWorkspaceTimestampDesc(a,b,field){
+  const av=_workspaceEntryTimestampKey(a,field),bv=_workspaceEntryTimestampKey(b,field);
+  if(av==null&&bv==null)return 0;
+  if(av==null)return 1;
+  if(bv==null)return -1;
+  const an=av[0]==='-',bn=bv[0]==='-';
+  if(an!==bn)return an?1:-1;
+  const aa=an?av.slice(1):av,bb=bn?bv.slice(1):bv;
+  if(aa.length!==bb.length)return an?aa.length-bb.length:bb.length-aa.length;
+  return aa===bb?0:(an?(aa<bb?-1:1):(aa<bb?1:-1));
+}
+function _workspaceSortComparator(key){
+  if(key==='name-desc') return (a,b)=>String(b.name||'').toLowerCase().localeCompare(String(a.name||'').toLowerCase());
+  const field=key==='created-desc'?'birthtime_ns':'mtime_ns';
+  return (a,b)=>_compareWorkspaceTimestampDesc(a,b,field);
+}
+function _workspaceCreatedSortAvailable(){return !!(S.session&&S.session.workspace&&S._workspaceBirthtimeSeen);}
+function _effectiveWorkspaceSortKey(){
+  const key=_normalizeWorkspaceSortKey(S.workspaceSortKey);
+  return key==='created-desc'&&!_workspaceCreatedSortAvailable()?WORKSPACE_SORT_DEFAULT:key;
+}
+function _workspaceEntriesForRender(entries){
+  const list=_visibleWorkspaceEntries(entries);
+  const key=_effectiveWorkspaceSortKey();
+  if(key===WORKSPACE_SORT_DEFAULT)return list;
+  const cmp=_workspaceSortComparator(key);
+  return list.slice().sort((a,b)=>{
+    const rank=_workspaceEntryRank(a)-_workspaceEntryRank(b);
+    return rank!==0?rank:cmp(a,b);
+  });
+}
+function _resetWorkspaceBirthtimeSupport(scope=''){
+  S._workspaceBirthtimeSeen=false;
+  S._workspaceBirthtimeWorkspace=String(scope||'');
+  _syncWorkspacePrefsIndicators();
+  _syncWorkspaceSortMenuState();
+}
+function _syncWorkspaceBirthtimeSupportScope(scope=''){
+  const next=String(scope||'');
+  if(S._workspaceBirthtimeWorkspace!==next) _resetWorkspaceBirthtimeSupport(next);
+}
+function _noteWorkspaceBirthtimeSupport(entries){
+  if(S._workspaceBirthtimeSeen)return;
+  if((Array.isArray(entries)?entries:[]).some(e=>_workspaceEntryTimestampKey(e,'birthtime_ns')!==null)){
+    S._workspaceBirthtimeSeen=true;
+    S._workspaceBirthtimeWorkspace=String((S.session&&S.session.workspace)||S._workspaceBirthtimeWorkspace||'');
+    _syncWorkspacePrefsIndicators();
+    _syncWorkspaceSortMenuState();
+  }
+}
+function _syncWorkspacePrefsIndicators(ind=$('workspaceHiddenIndicator'),dot=$('workspacePrefsDot')){
+  if(ind){
+    if(S.showHiddenWorkspaceFiles){ind.hidden=false;ind.removeAttribute('hidden');}
+    else{ind.hidden=true;ind.setAttribute('hidden','');}
+  }
+  if(dot){
+    const active=S.showHiddenWorkspaceFiles||_effectiveWorkspaceSortKey()!==WORKSPACE_SORT_DEFAULT;
+    if(active){dot.hidden=false;dot.removeAttribute('hidden');}
+    else{dot.hidden=true;dot.setAttribute('hidden','');}
+  }
+}
+function _syncWorkspaceSortMenuState(menu=_workspacePrefsMenu){
+  if(!menu||!menu.querySelectorAll)return;
+  const active=_effectiveWorkspaceSortKey();
+  const createdOk=_workspaceCreatedSortAvailable();
+  menu.querySelectorAll('.workspace-prefs-item--radio').forEach(row=>{
+    const input=row&&row.querySelector?row.querySelector('input[name="workspaceSortKey"]'):null;
+    if(!input)return;
+    const checked=input.value===active;
+    const disabled=input.value==='created-desc'&&!createdOk;
+    input.checked=checked;
+    input.disabled=disabled;
+    row.setAttribute('aria-checked',checked?'true':'false');
+    row.setAttribute('aria-disabled',disabled?'true':'false');
+    if(row.classList&&row.classList.toggle) row.classList.toggle('is-disabled',disabled);
+    if(input.value==='created-desc'){
+      const copy=row.querySelector('.workspace-prefs-copy');
+      let meta=row.querySelector('.workspace-prefs-meta');
+      if(disabled){
+        if(!meta&&copy&&typeof document!=='undefined'){
+          meta=document.createElement('span');
+          meta.className='workspace-prefs-meta';
+          copy.appendChild(meta);
+        }
+        if(meta)meta.textContent=typeof t==='function'?t('workspace_sort_created_unavailable'):'Creation time is not reported by this server or platform.';
+      }else if(meta)meta.remove();
+    }
+  });
+  if(menu===_workspacePrefsMenu&&typeof _workspacePrefsAnchor!=='undefined'&&_workspacePrefsAnchor&&typeof _positionWorkspacePrefsMenu==='function') _positionWorkspacePrefsMenu(_workspacePrefsAnchor);
+}
 function _syncWorkspaceHiddenToggle(){
   const el=$('workspaceShowHiddenFiles');
   if(el)el.checked=!!S.showHiddenWorkspaceFiles;
-  // Reflect "hidden files are visible" state on the panel heading + kebab dot,
-  // so users can see they've flipped a non-default workspace pref without
-  // having to open the menu. The menu itself stays out of the way otherwise.
-  const ind=$('workspaceHiddenIndicator');
-  if(ind){
-    if(S.showHiddenWorkspaceFiles){ ind.hidden=false; ind.removeAttribute('hidden'); }
-    else { ind.hidden=true; ind.setAttribute('hidden',''); }
-  }
-  const dot=$('workspacePrefsDot');
-  if(dot){
-    if(S.showHiddenWorkspaceFiles){ dot.hidden=false; dot.removeAttribute('hidden'); }
-    else { dot.hidden=true; dot.setAttribute('hidden',''); }
-  }
+  _syncWorkspacePrefsIndicators($('workspaceHiddenIndicator'),$('workspacePrefsDot'));
 }
 function toggleWorkspaceHiddenFiles(value){
   S.showHiddenWorkspaceFiles=!!value;
-  try{localStorage.setItem('ares-workspace-show-hidden-files',S.showHiddenWorkspaceFiles?'1':'0');}catch(_){}
+  try{localStorage.setItem('hermes-workspace-show-hidden-files',S.showHiddenWorkspaceFiles?'1':'0');}catch(_){}
   _syncWorkspaceHiddenToggle();
   renderFileTree();
 }
-try{S.showHiddenWorkspaceFiles=localStorage.getItem('ares-workspace-show-hidden-files')==='1';}catch(_){}
+try{S.showHiddenWorkspaceFiles=localStorage.getItem('hermes-workspace-show-hidden-files')==='1';}catch(_){}
+try{S.workspaceSortKey=_normalizeWorkspaceSortKey(localStorage.getItem('hermes-workspace-sort-key'));}catch(_){S.workspaceSortKey=WORKSPACE_SORT_DEFAULT;}
+function setWorkspaceSortKey(value){
+  S.workspaceSortKey=_normalizeWorkspaceSortKey(value);
+  try{localStorage.setItem('hermes-workspace-sort-key',S.workspaceSortKey);}catch(_){ }
+  _syncWorkspacePrefsIndicators();
+  _syncWorkspaceSortMenuState();
+  renderFileTree();
+}
 
 // ── Workspace preferences kebab menu (#1793 UX refinement) ───────────────
 // The "Show hidden files" toggle used to live as a permanent inline row
@@ -20199,6 +20398,35 @@ function _buildWorkspacePrefsMenu(){
   const menu=document.createElement('div');
   menu.className='workspace-prefs-menu open';
   menu.setAttribute('role','menu');
+  const group=document.createElement('div');
+  group.className='workspace-prefs-group';
+  group.setAttribute('role','group');
+  const groupLabel=(typeof t==='function'?t('workspace_sort_by'):'Sort by');
+  group.setAttribute('aria-label',groupLabel);
+  const head=document.createElement('div');
+  head.className='workspace-prefs-grouplabel';
+  head.textContent=groupLabel;
+  group.appendChild(head);
+  const createdOk=_workspaceCreatedSortAvailable();
+  const active=_effectiveWorkspaceSortKey();
+  [['name-asc','workspace_sort_name_asc'],['name-desc','workspace_sort_name_desc'],['created-desc','workspace_sort_created_desc'],['modified-desc','workspace_sort_modified_desc']].forEach(([key,i18nKey])=>{
+    const disabled=key==='created-desc'&&!createdOk;
+    const row=document.createElement('label');
+    row.className='workspace-prefs-item workspace-prefs-item--radio'+(disabled?' is-disabled':'');
+    row.setAttribute('role','menuitemradio');
+    row.setAttribute('aria-checked',active===key?'true':'false');
+    row.setAttribute('aria-disabled',disabled?'true':'false');
+    row.innerHTML='<input type="radio" name="workspaceSortKey" value="'+esc(key)+'" id="workspaceSort_'+esc(key)+'"'+(disabled?' disabled':'')+' onchange="setWorkspaceSortKey(this.value)">'+
+      '<span class="workspace-prefs-copy"><span class="workspace-prefs-name">'+esc(typeof t==='function'?t(i18nKey):key)+'</span>'+
+      (disabled?'<span class="workspace-prefs-meta">'+esc(typeof t==='function'?t('workspace_sort_created_unavailable'):'Creation time is not reported by this server or platform.')+'</span>':'')+'</span>';
+    const input=row.querySelector('input');
+    if(input)input.checked=active===key;
+    group.appendChild(row);
+  });
+  menu.appendChild(group);
+  const sep=document.createElement('div');
+  sep.className='workspace-prefs-sep';
+  menu.appendChild(sep);
   // The checkbox keeps id="workspaceShowHiddenFiles" so existing call
   // sites (and the existing test_issue1793_file_tree_cruft_filter test)
   // can find it the same way as before. Only the parent container moves.
@@ -20418,13 +20646,15 @@ function renderFileTree(){
   const emptyEl=$('wsEmptyState');
   const hasWorkspace=!!(S.session&&S.session.workspace);
   if(!hasWorkspace){
+    _syncWorkspaceBirthtimeSupportScope('');
     if(emptyEl){emptyEl.textContent=t('workspace_empty_no_path');emptyEl.style.display='flex';}
     box.style.display='none';
     return;
   }
+  _noteWorkspaceBirthtimeSupport(S.entries);
   if(emptyEl) emptyEl.style.display='none';
   box.style.display='';
-  const visibleEntries=_visibleWorkspaceEntries(S.entries);
+  const visibleEntries=_workspaceEntriesForRender(S.entries);
   if(!visibleEntries.length){
     if(emptyEl){emptyEl.textContent=t('workspace_empty_dir');emptyEl.style.display='flex';}
     return;
@@ -20812,7 +21042,7 @@ function _renderTreeItems(container, entries, depth){
 
     // Render children if directory is expanded
     if(isDirLike&&S._expandedDirs.has(item.path)){
-      const children=_visibleWorkspaceEntries(S._dirCache[item.path]||[]);
+      const children=_workspaceEntriesForRender(S._dirCache[item.path]||[]);
       if(children.length){
         _renderTreeItems(container, children, depth+1);
       }else{

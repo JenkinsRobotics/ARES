@@ -1,8 +1,8 @@
 (function(){
   'use strict';
 
-  const SETTINGS_PREFIX='ares.ext.settings.';
-  const STORAGE_PREFIX='ares.ext.storage.';
+  const SETTINGS_PREFIX='hermes.ext.settings.';
+  const STORAGE_PREFIX='hermes.ext.storage.';
   const FIELD_TYPES=new Set(['boolean','string','number','integer','enum']);
   const TURN_LIFECYCLE_TYPES=new Set(['turn:start','turn:complete','turn:error','turn:cancel']);
   const TURN_LIFECYCLE_STATE_LIMIT=512;
@@ -233,9 +233,7 @@
     return !!(meta&&meta.storage_owned&&Array.isArray(meta.settings_schema)&&meta.settings_schema.length);
   }
 
-  function settingsForExtension(id){
-    const clean=extensionId(id);
-    const meta=schemas.get(clean)||{id:clean,name:clean,storage_owned:false,settings_schema:[]};
+  function settingsAccessor(clean,meta,isTrusted){
     const schema=supportsSettings(meta)?meta.settings_schema:[];
     const key=settingsKey(clean);
     function current(){
@@ -253,7 +251,7 @@
     }
     return {
       extensionId:clean,
-      trusted:schemas.has(clean),
+      trusted:isTrusted,
       storageOwned:!!meta.storage_owned,
       supported:supportsSettings(meta),
       schema,
@@ -282,9 +280,13 @@
     };
   }
 
-  function storageForExtension(id){
+  function settingsForExtension(id){
     const clean=extensionId(id);
     const meta=schemas.get(clean)||{id:clean,name:clean,storage_owned:false,settings_schema:[]};
+    return settingsAccessor(clean,meta,schemas.has(clean));
+  }
+
+  function storageAccessor(clean,meta){
     const allowed=!!meta.storage_owned;
     const key=storageKey(clean);
     return {
@@ -312,6 +314,12 @@
         return true;
       },
     };
+  }
+
+  function storageForExtension(id){
+    const clean=extensionId(id);
+    const meta=schemas.get(clean)||{id:clean,name:clean,storage_owned:false,settings_schema:[]};
+    return storageAccessor(clean,meta);
   }
 
   function eventAccessor(clean){
@@ -389,7 +397,7 @@
         }catch(error){
           if(typeof console!=='undefined'&&typeof console.error==='function'){
             try{
-              console.error(`[ARES extensions] ${extensionId} ${type} listener failed:`,error);
+              console.error(`[Hermes extensions] ${extensionId} ${type} listener failed:`,error);
             }catch(_loggingError){ }
           }
         }
@@ -408,8 +416,8 @@
     if(!trusted) return null;
     const handle=Object.freeze({
       id:clean,
-      settings:settingsForExtension(clean),
-      storage:storageForExtension(clean),
+      settings:settingsAccessor(clean,trusted,true),
+      storage:storageAccessor(clean,trusted),
       events:eventAccessor(clean),
     });
     registrations.set(clean,handle);
@@ -427,14 +435,12 @@
     clearStorageForExtension(id){return storageForExtension(id).clear();},
   };
 
-  window.ARESExtensionSettings=api;
   window.HermesExtensionSettings=api;
-  window.aresExt=window.aresExt||{};
-  window.aresExt.settings=window.aresExt.settings||{};
-  window.aresExt.storage=window.aresExt.storage||{};
-  window.aresExt.settings.forExtension=settingsForExtension;
-  window.aresExt.storage.forExtension=storageForExtension;
-  window.aresExt.register=registerExtension;
-  window.hermesExt=window.aresExt;
-  primeFromStatus(window.__ARES_EXTENSION_CONFIG__||{});
+  window.hermesExt=window.hermesExt||{};
+  window.hermesExt.settings=window.hermesExt.settings||{};
+  window.hermesExt.storage=window.hermesExt.storage||{};
+  window.hermesExt.settings.forExtension=settingsForExtension;
+  window.hermesExt.storage.forExtension=storageForExtension;
+  window.hermesExt.register=registerExtension;
+  primeFromStatus(window.__HERMES_EXTENSION_CONFIG__||{});
 })();

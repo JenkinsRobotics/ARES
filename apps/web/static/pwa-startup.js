@@ -32,8 +32,8 @@
   }
 
   syncMode();
-  window.addEventListener('online',function(){syncMode();dispatch('ares:pwa-connection-change',{online:true});});
-  window.addEventListener('offline',function(){syncMode();dispatch('ares:pwa-connection-change',{online:false});});
+  window.addEventListener('online',function(){syncMode();dispatch('hermes:pwa-connection-change',{online:true});});
+  window.addEventListener('offline',function(){syncMode();dispatch('hermes:pwa-connection-change',{online:false});});
   if(window.matchMedia){
     ['(display-mode: standalone)','(display-mode: fullscreen)','(display-mode: window-controls-overlay)'].forEach(function(query){
       try{
@@ -47,15 +47,15 @@
 
   window.addEventListener('beforeinstallprompt',function(event){
     event.preventDefault();
-    window.aresDeferredInstallPrompt=event;
+    window.hermesDeferredInstallPrompt=event;
     root.classList.add('pwa-installable');
-    dispatch('ares:pwa-installable');
+    dispatch('hermes:pwa-installable');
   });
   window.addEventListener('appinstalled',function(){
-    window.aresDeferredInstallPrompt=null;
+    window.hermesDeferredInstallPrompt=null;
     root.classList.remove('pwa-installable');
     root.classList.add('pwa-installed');
-    dispatch('ares:pwa-installed');
+    dispatch('hermes:pwa-installed');
   });
   document.addEventListener('visibilitychange',function(){
     if(document.visibilityState==='visible'){
@@ -65,16 +65,16 @@
     }
   });
 
-  window.ARESPWA={
+  window.HermesPWA={
     isStandalone:isStandalone,
     syncMode:syncMode,
     launchAction:function(){
       try{return new URLSearchParams(window.location.search||'').get('action')||null;}catch(_){return null;}
     },
     promptInstall:function(){
-      var prompt=window.aresDeferredInstallPrompt;
+      var prompt=window.hermesDeferredInstallPrompt;
       if(!prompt||typeof prompt['prompt']!=='function')return Promise.resolve({outcome:'unavailable'});
-      window.aresDeferredInstallPrompt=null;
+      window.hermesDeferredInstallPrompt=null;
       root.classList.remove('pwa-installable');
       prompt['prompt']();
       return Promise.resolve(prompt.userChoice).catch(function(){return {outcome:'dismissed'};});

@@ -37,7 +37,7 @@ let _pendingCarryForwardSnapshot = null;
 // Debounced save — prevents hammering the server on every keystroke.
 let _draftSaveTimer = null;
 const _DRAFT_SAVE_DELAY_MS = 400;
-const NEW_CHAT_DRAFT_SESSION_KEY = 'ares-new-chat-draft-session';
+const NEW_CHAT_DRAFT_SESSION_KEY = 'hermes-new-chat-draft-session';
 const _composerDraftKnownPayloadSessions = new Set();
 const _composerDraftRestoreSuppressedUntilBySid = new Map();
 const _COMPOSER_DRAFT_RESTORE_SUPPRESS_MS = 30000;
@@ -336,9 +336,9 @@ function _clearComposerDraft(sid, text, files) {
   }).catch(() => {});
 }
 
-const SESSION_VIEWED_COUNTS_KEY = 'ares-session-viewed-counts';
-const SESSION_COMPLETION_UNREAD_KEY = 'ares-session-completion-unread';
-const SESSION_OBSERVED_STREAMING_KEY = 'ares-session-observed-streaming';
+const SESSION_VIEWED_COUNTS_KEY = 'hermes-session-viewed-counts';
+const SESSION_COMPLETION_UNREAD_KEY = 'hermes-session-completion-unread';
+const SESSION_OBSERVED_STREAMING_KEY = 'hermes-session-observed-streaming';
 // Per-profile session-count cache (issue #4717 / #4662 Phase 1.5). Records how
 // many sessions each profile rendered last time, keyed by profile name, so a
 // profile switch can pick an honest loading skeleton BEFORE the new /api/sessions
@@ -346,7 +346,7 @@ const SESSION_OBSERVED_STREAMING_KEY = 'ares-session-observed-streaming';
 // placeholder instead of a content skeleton that implies data which never arrives.
 // A profile we've never recorded falls back to the normal content skeleton (safe
 // default — never hide a skeleton for a profile that may well have conversations).
-const SESSION_PROFILE_COUNTS_KEY = 'ares-session-profile-counts';
+const SESSION_PROFILE_COUNTS_KEY = 'hermes-session-profile-counts';
 let _sessionProfileCounts = null;
 let _sessionViewedCounts = null;
 let _sessionCompletionUnread = null;
@@ -410,7 +410,7 @@ async function _manualTitleRegenerateTimeoutMs(){
 
 function _formatSessionModelWithGateway(s){
   if(!s||!s.model)return'';
-  const routing=(typeof _latestGatewayRoutingForSession==='function')?_latestGatewayRoutingForSession(s,s.model):(s.gateway_routing||null);
+  const routing=(typeof _latestGatewayRoutingForSession==='function')?_latestGatewayRoutingForSession(s):(s.gateway_routing||null);
   if(typeof _formatGatewayModelLabel==='function'){
     return _formatGatewayModelLabel(s.model,s.model,routing)||getModelLabel(s.model);
   }
@@ -1215,9 +1215,9 @@ function _markPollingCompletionUnreadTransitions(sessions) {
     const lastMessageAt = Number(s.last_message_at || 0);
     const hasServerRunSignal=Boolean(s.is_streaming||_hasPendingUserMessageSignal(s));
     const canMarkCompletedStream=Boolean(hasServerRunSignal||previousSnapshot||observedStreaming);
-    // Cron liveness is server-side (only /api/crons/status and the
-    // session-list overlay expose it); defer completion/unread while the
-    // job is still running or a mid-run message makes the row look done.
+    // #6728: cron liveness is server-side (only /api/crons/status exposes it);
+    // the sidebar must defer its completion/unread transition while the job is
+    // still running, or a mid-run message makes the row look completed.
     const cronRunning = Boolean(s.cron_running);
     const completedObservedStream = !cronRunning && canMarkCompletedStream && wasStreaming === true && !isStreaming;
     const completedWithNewMessages = !cronRunning && Boolean(
@@ -1498,7 +1498,7 @@ async function newSession(flash, options={}){
     S.lastUsage={...(data.session.last_usage||{})};
     if(!(options&&options.worktree)) _rememberNewChatDraftSession(S.session);
     if(flash)S.session._flash=true;
-    try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
+    try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
     _setActiveSessionUrl(S.session.session_id);
     if(typeof startSessionStream==='function') startSessionStream(S.session.session_id);
     _setSessionViewedCount(S.session.session_id, S.session.message_count || 0);
@@ -1597,7 +1597,7 @@ async function newSession(flash, options={}){
  */
 function _clearStuckSessionOnBoot(sid, currentSid){
   if(!currentSid){
-    try{ localStorage.removeItem('ares-webui-session'); }catch(_){ }
+    try{ localStorage.removeItem('hermes-webui-session'); }catch(_){ }
     try{ history.replaceState(null,'',_appRootPath()); }catch(_){ }
   }
 }
@@ -1647,7 +1647,7 @@ async function _switchProfileForSessionLoad(profile){
       _resetCronUnreadForProfileSwitch();
     }
     if(typeof _clearPersistedModelState==='function') _clearPersistedModelState();
-    else localStorage.removeItem('ares-webui-model');
+    else localStorage.removeItem('hermes-webui-model');
     if(data.default_model) window._defaultModel=data.default_model;
     if(data.default_model_provider) window._activeProvider=data.default_model_provider;
     if(typeof refreshProfileTransitionReasoningChip==='function'){
@@ -1684,8 +1684,8 @@ async function loadSession(sid){
   // Extension pre-open hook — fires once per sidebar click, not on every call.
   // _openSidebarSession passes _preloadNotified:true so the hook isn't re-fired
   // when loadSession runs the actual navigation inside it.
-  if(!opts.skipExtHooks && !opts._preloadNotified && typeof _aresNotifySessionOpen==='function'){
-    var _preResult=_aresNotifySessionOpen(sid, null, {preload:true, opts:opts});
+  if(!opts.skipExtHooks && !opts._preloadNotified && typeof _hermesNotifySessionOpen==='function'){
+    var _preResult=_hermesNotifySessionOpen(sid, null, {preload:true, opts:opts});
     if(_preResult&&_preResult.cancel===true){
       return;
     }
@@ -1703,6 +1703,12 @@ async function loadSession(sid){
   // #2971: idempotent re-arm before the no-op guard revives a stream a prior
   // failed loadSession killed; no-ops on real switches.
   _rearmActiveSessionStream();
+  // #6999: same-session force-reload coordination lives in the refresh paths
+  // (refreshActiveSessionIfExternallyUpdated guard + session-updated SSE
+  // handler in messages.js), NOT here: a second loadSession(sid,{force:true})
+  // for the same sid is a legitimate supersede (generation bump below) that
+  // cross-session ordering tests rely on. Coalescing at the entry point would
+  // drop the superseding fetch and leave a stale first load in charge.
   if(currentSid===sid && !forceReload && (!_loadingSessionId || _loadingSessionId===sid)){
     // Re-selecting the already-open session is a no-op for transcript/scroll, but
     // it is still a *visit*: clear a stale sidebar unread dot (e.g. one a
@@ -1885,7 +1891,7 @@ async function loadSession(sid){
         // Only the rethrow stays gated on !currentSid: boot rethrows to fall
         // through to empty-state; mid-session there is no boot path to reach.
         if(!currentSid || currentSid===sid){
-          try{ localStorage.removeItem('ares-webui-session'); }catch(_){ }
+          try{ localStorage.removeItem('hermes-webui-session'); }catch(_){ }
           try{ history.replaceState(null,'',_appRootPath()); }catch(_){ }
           if (_isCurrentLoad()) _loadingSessionId = null;
           if(!currentSid){
@@ -2041,7 +2047,7 @@ async function loadSession(sid){
     Number(data.session.message_count || 0),
     Number(data.session.last_message_at || data.session.updated_at || 0)
   );
-  try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
+  try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
   _setActiveSessionUrl(S.session.session_id);
   if(typeof startSessionStream==='function') startSessionStream(S.session.session_id);
 
@@ -2213,10 +2219,6 @@ async function loadSession(sid){
     if(typeof startClarifyPolling==='function') startClarifyPolling(sid);
     if(typeof _fetchYoloState==='function') _fetchYoloState(sid);
   }else{
-    if(typeof setBusy==='function') setBusy(false);
-    else S.busy=false;
-    S.activeStreamId=null;
-    if(typeof setComposerStatus==='function') setComposerStatus('');
     // Phase 2b: Idle session — load full messages lazily for rendering.
     // _ensureMessagesLoaded is idempotent; it skips if S.messages already populated.
     // #5177: when the caller asked us to keep stale messages until the new ones
@@ -2396,8 +2398,8 @@ async function loadSession(sid){
     _hideHandoffHint();
   }
   // Extension post-load hook
-  if(!opts.skipExtHooks && typeof _aresNotifySessionOpen==='function'){
-    try{ _aresNotifySessionOpen(sid, S.session, {loaded:true, opts:opts}); }catch(_){}
+  if(!opts.skipExtHooks && typeof _hermesNotifySessionOpen==='function'){
+    try{ _hermesNotifySessionOpen(sid, S.session, {loaded:true, opts:opts}); }catch(_){}
   }
 }
 
@@ -2407,7 +2409,7 @@ const _HANDOFF_THRESHOLD = 10;  // conversation rounds
 const _HANDOFF_STORAGE_PREFIX = 'handoff:';
 const _HANDOFF_SUFFIX_DISMISSED_AT = 'dismissed_at';
 const _HANDOFF_SUFFIX_SUMMARY_HANDLED_AT = 'summary_handled_at';
-const _MESSAGING_RAW_SOURCES = new Set(['weixin', 'telegram', 'discord', 'slack', 'email', 'wecom', 'wecom_callback']);
+const _MESSAGING_RAW_SOURCES = new Set(['weixin', 'telegram', 'discord', 'slack', 'email', 'wecom', 'wecom_callback', 'matrix']);
 const _MESSAGING_SOURCE_LABELS = {
   weixin: 'WeChat',
   telegram: 'Telegram',
@@ -2416,6 +2418,7 @@ const _MESSAGING_SOURCE_LABELS = {
   email: 'Email',
   wecom: 'WeCom',
   wecom_callback: 'WeCom Callback',
+  matrix: 'Matrix',
 };
 
 function _isMessagingSession(session) {
@@ -2483,8 +2486,8 @@ async function _openSidebarSession(session, loadOpts={}){
   if(!session||!session.session_id) return;
   // Extension pre-open hook — before any side-effects (external import, profile switching).
   // Handler returns {cancel:true} to prevent the open.
-  if(!loadOpts.skipExtHooks && typeof _aresNotifySessionOpen==='function'){
-    var _preResult=_aresNotifySessionOpen(session.session_id, null, {preload:true, opts:loadOpts});
+  if(!loadOpts.skipExtHooks && typeof _hermesNotifySessionOpen==='function'){
+    var _preResult=_hermesNotifySessionOpen(session.session_id, null, {preload:true, opts:loadOpts});
     if(_preResult&&_preResult.cancel===true) return;
   }
   // #5409: close mobile sidebar AFTER veto guard passes — only close if open proceeds.
@@ -2537,7 +2540,7 @@ function _isCliSession(session) {
 
 function _sessionSourceLabel(filter, count) {
   const n = Number(count) || 0;
-  return filter === 'cli' ? `Jaeger (${n})` : `WebUI (${n})`;
+  return filter === 'cli' ? `CLI sessions (${n})` : `WebUI sessions (${n})`;
 }
 
 function _clearSessionSourceTabCounts() {
@@ -2601,14 +2604,14 @@ function _setSessionSourceFilter(filter) {
   _activeProject = null;
   _selectedSessions.clear();
   _sessionSelectMode = false;
-  try { localStorage.setItem('ares-session-source-filter', next); } catch (_e) {}
+  try { localStorage.setItem('hermes-session-source-filter', next); } catch (_e) {}
   renderSessionListFromCache();
   void renderSessionList({deferWhileInteracting:false});
 }
 
 function _restoreSessionSourceFilter() {
   try {
-    const raw = localStorage.getItem('ares-session-source-filter');
+    const raw = localStorage.getItem('hermes-session-source-filter');
     if (raw === 'cli' || raw === 'webui') _sessionSourceFilter = raw;
   } catch (_e) {}
 }
@@ -3319,6 +3322,32 @@ function _hasCurrentTailUserDuplicate(messages,candidate){
   return !!(existing&&_sameTranscriptMessage(existing,candidate));
 }
 
+// Keep pending-user recovery ordering identical across load, reconnect, and
+// explicit refresh paths. The pending prompt owns the live assistant tail and
+// must be projected before it, regardless of which recovery response arrived.
+function _mergePendingSessionMessage(session,messages){
+  if(!Array.isArray(messages)) return false;
+  const liveAssistantIdx=messages.findIndex(m=>m&&m.role==='assistant'&&m._live);
+  const currentTurnMessages=liveAssistantIdx>=0?messages.slice(0,liveAssistantIdx):messages;
+  const pendingMsg=typeof getPendingSessionMessage==='function'?getPendingSessionMessage(session,currentTurnMessages):null;
+  if(!pendingMsg) return false;
+  if(_hasCurrentTailUserDuplicate(currentTurnMessages,pendingMsg)) return false;
+  if(liveAssistantIdx>=0){
+    const misplacedIdx=messages.findIndex((m,idx)=>
+      idx>liveAssistantIdx&&m&&m.role==='user'&&_sameTranscriptMessage(m,pendingMsg)
+    );
+    if(misplacedIdx>=0){
+      const [misplacedUser]=messages.splice(misplacedIdx,1);
+      messages.splice(liveAssistantIdx,0,misplacedUser);
+    }else{
+      messages.splice(liveAssistantIdx,0,pendingMsg);
+    }
+  }else{
+    messages.push(pendingMsg);
+  }
+  return true;
+}
+
 function _currentTurnAssistantText(messages){
   const list=Array.isArray(messages)?messages:[];
   let start=-1;
@@ -3902,33 +3931,7 @@ let _allProjects = [];  // cached project list
 // double-underscore prefixes provide.
 const NO_PROJECT_FILTER = '__none__';
 let _activeProject = null;  // project_id filter (null = show all, NO_PROJECT_FILTER = unassigned only)
-// Keep pending-user recovery ordering identical across load, reconnect, and
-// explicit refresh paths. The pending prompt owns the live assistant tail and
-// must be projected before it, regardless of which recovery response arrived.
-function _mergePendingSessionMessage(session,messages){
-  if(!Array.isArray(messages)) return false;
-  const liveAssistantIdx=messages.findIndex(m=>m&&m.role==='assistant'&&m._live);
-  const currentTurnMessages=liveAssistantIdx>=0?messages.slice(0,liveAssistantIdx):messages;
-  const pendingMsg=typeof getPendingSessionMessage==='function'?getPendingSessionMessage(session,currentTurnMessages):null;
-  if(!pendingMsg) return false;
-  if(_hasCurrentTailUserDuplicate(currentTurnMessages,pendingMsg)) return false;
-  if(liveAssistantIdx>=0){
-    const misplacedIdx=messages.findIndex((m,idx)=>
-      idx>liveAssistantIdx&&m&&m.role==='user'&&_sameTranscriptMessage(m,pendingMsg)
-    );
-    if(misplacedIdx>=0){
-      const [misplacedUser]=messages.splice(misplacedIdx,1);
-      messages.splice(liveAssistantIdx,0,misplacedUser);
-    }else{
-      messages.splice(liveAssistantIdx,0,pendingMsg);
-    }
-  }else{
-    messages.push(pendingMsg);
-  }
-  return true;
-}
-
-const SHOW_ALL_PROFILES_STORAGE_KEY = 'ares-show-all-profiles';
+const SHOW_ALL_PROFILES_STORAGE_KEY = 'hermes-show-all-profiles';
 let _showAllProfiles = false;  // false = filter to active profile only
 let _profileSwitchOpeningExistingSession = false;  // true while cross-profile sidebar click switches profile before loadSession()
 let _otherProfileCount = 0;       // count of sessions from other profiles (server-reported)
@@ -4202,7 +4205,11 @@ function _sessionUrlForSid(sid){
     current.searchParams.delete('q');
     current.searchParams.delete('prompt');
     current.searchParams.delete('send');
-    base.search=current.searchParams.toString();
+    const retained=new URLSearchParams();
+    current.searchParams.forEach((value,key)=>{
+      if(key!=='action'||value!=='new-chat') retained.append(key,value);
+    });
+    base.search=retained.toString();
     base.hash=current.hash;
   }catch(_e){}
   return base.pathname+base.search+base.hash;
@@ -4211,7 +4218,13 @@ function _setActiveSessionUrl(sid){
   if(typeof window==='undefined'||!window.history||!sid) return;
   const next=_sessionUrlForSid(sid);
   if(next && next!==(window.location.pathname+window.location.search+window.location.hash)){
-    window.history.pushState({session_id:sid},'',next);
+    let consumeLaunchAction=false;
+    try{
+      const current=new URL(window.location.href);
+      consumeLaunchAction=current.searchParams.getAll('action').includes('new-chat');
+    }catch(_e){}
+    const method=consumeLaunchAction?'replaceState':'pushState';
+    window.history[method]({session_id:sid},'',next);
   }
 }
 
@@ -4320,7 +4333,7 @@ function _renderBatchActionBar(){
       const cleanupFailedCount=results.filter(result=>result.response&&result.response.state_db_cleanup_failed).length;
       ids.forEach(_clearHandoffStorageForSession);
       if(S.session&&ids.includes(S.session.session_id)){
-        S.session=null;S.messages=[];S.entries=[];localStorage.removeItem('ares-webui-session');
+        S.session=null;S.messages=[];S.entries=[];localStorage.removeItem('hermes-webui-session');
         if(typeof _hydrateTodosFromSession==='function') _hydrateTodosFromSession(null);
         const remaining=await api('/api/sessions'+_sessionListQueryString());
         if(remaining.sessions&&remaining.sessions.length){await loadSession(remaining.sessions[0].session_id);}
@@ -4653,7 +4666,7 @@ function _syncSessionShareState(session, nextSession){
   if(S.session&&S.session.session_id===session.session_id){
     S.session.share_token=session.share_token;
     S.session.share_created_at=session.share_created_at;
-    if(typeof _syncARESPanelSessionActions==='function') _syncARESPanelSessionActions();
+    if(typeof _syncHermesPanelSessionActions==='function') _syncHermesPanelSessionActions();
   }
   renderSessionListFromCache();
   void renderSessionList();
@@ -4825,7 +4838,7 @@ async function _archiveSession(session, archived=true, beforeListRender=null){
     const cached=(_allSessions||[]).find(s=>s&&s.session_id===session.session_id);
     if(cached) cached.archived=archived;
     if(S.session&&S.session.session_id===session.session_id) S.session.archived=archived;
-    try{ if(archived&&session.session_id&&localStorage.getItem('ares-webui-session')===session.session_id) localStorage.removeItem('ares-webui-session'); }catch(_){ }
+    try{ if(archived&&session.session_id&&localStorage.getItem('hermes-webui-session')===session.session_id) localStorage.removeItem('hermes-webui-session'); }catch(_){ }
     showToast(session.archived?_sessionArchiveToast(response,session):t('session_restored'));
     if(renderHold) await renderHold;
     if(_showArchived&&!_sessionPrefersReducedMotion()) _sessionSwipeReturnOffsets.set(session.session_id,'0px');
@@ -6003,15 +6016,15 @@ function ensureActiveSessionExternalRefreshPoll(){
   _activeSessionExternalRefreshTimer = setInterval(() => {
     void refreshActiveSessionIfExternallyUpdated('poll');
   }, _activeSessionExternalRefreshMs);
-  if(typeof document !== 'undefined' && !document._aresExternalRefreshVisibilityHook){
+  if(typeof document !== 'undefined' && !document._hermesExternalRefreshVisibilityHook){
     document.addEventListener('visibilitychange', () => {
       if(!document.hidden) void refreshActiveSessionIfExternallyUpdated('visible');
     });
-    document._aresExternalRefreshVisibilityHook = true;
+    document._hermesExternalRefreshVisibilityHook = true;
   }
-  if(typeof window !== 'undefined' && !window._aresExternalRefreshFocusHook){
+  if(typeof window !== 'undefined' && !window._hermesExternalRefreshFocusHook){
     window.addEventListener('focus', () => { void refreshActiveSessionIfExternallyUpdated('focus'); });
-    window._aresExternalRefreshFocusHook = true;
+    window._hermesExternalRefreshFocusHook = true;
   }
 }
 
@@ -6092,8 +6105,8 @@ const _SIDEBAR_SSE_BLUR_CLOSE_MS = 1000;
 
 function _installSidebarSseFocusHook(){
   if(typeof window === 'undefined' || typeof document === 'undefined') return;
-  if(document._aresSidebarSseFocusHook) return;
-  document._aresSidebarSseFocusHook = true;
+  if(document._hermesSidebarSseFocusHook) return;
+  document._hermesSidebarSseFocusHook = true;
   window.addEventListener('blur', () => {
     if(_sidebarSseBlurCloseTimer) return;
     _sidebarSseBlurCloseTimer = setTimeout(() => {
@@ -6130,7 +6143,7 @@ function _closeSessionEventsSSE(){
 }
 
 function ensureSessionEventsSSE(){
-  if(typeof document !== 'undefined' && !document._aresSessionEventsVisibilityHook){
+  if(typeof document !== 'undefined' && !document._hermesSessionEventsVisibilityHook){
     document.addEventListener('visibilitychange', () => {
       if(document.hidden){
         _closeSessionEventsSSE();
@@ -6139,7 +6152,7 @@ function ensureSessionEventsSSE(){
         void _refreshSessionListAfterSidebarResume('visible');
       }
     });
-    document._aresSessionEventsVisibilityHook = true;
+    document._hermesSessionEventsVisibilityHook = true;
   }
   _installSidebarSseFocusHook();
   if(typeof EventSource==='undefined') return;
@@ -6282,7 +6295,7 @@ function startGatewaySSE(){
   stopGatewaySSE();
   if(!window._showCliSessions) return;
   // Visibility hook (install once) — mirror ensureSessionEventsSSE() pattern
-  if(typeof document !== 'undefined' && !document._aresGatewaySSEVisibilityHook){
+  if(typeof document !== 'undefined' && !document._hermesGatewaySSEVisibilityHook){
     document.addEventListener('visibilitychange', () => {
       if(document.hidden){
         stopGatewaySSE();
@@ -6290,7 +6303,7 @@ function startGatewaySSE(){
         void startGatewaySSE();
       }
     });
-    document._aresGatewaySSEVisibilityHook = true;
+    document._hermesGatewaySSEVisibilityHook = true;
   }
   _installSidebarSseFocusHook();
   // Don't open when tab is hidden OR the window has lost focus (PWA blur) —
@@ -7227,7 +7240,7 @@ function _sessionDisplayTitle(s){
 
 function _sessionTitleIsDefaultWebUI(rawTitle){
   const title=String(rawTitle||'').replace(/\s+/g,' ').trim();
-  return title==='ARES WebUI'||/^ARES WebUI #\d+$/.test(title);
+  return title==='Hermes WebUI'||/^Hermes WebUI #\d+$/.test(title);
 }
 
 function _sessionTitleTags(rawTitle){
@@ -7610,6 +7623,12 @@ function _attachProjectQuickCreateButton(chip, project){
       // project-assigned session appears deterministically.
       try{ if(typeof renderSessionListFromCache==='function') renderSessionListFromCache(); }catch(_){}
       try{ if(typeof renderSessionList==='function') void renderSessionList({deferWhileInteracting:false}); }catch(_){}
+      // Mobile: the sidebar is a full-screen drawer over the main view — close
+      // it after the project conversation is created so the user actually sees
+      // the new session (mirrors $('btnNewChat').onclick in boot.js and the
+      // #5409 close in _openSidebarSession). Failure path keeps the drawer open
+      // so the toast stays visible for retry.
+      if(typeof closeMobileSidebar==='function') closeMobileSidebar();
     }catch(err){
       _setActiveProjectFilter(previousProject);
       if(typeof showToast==='function') showToast('New conversation failed: '+(err&&err.message||err));
@@ -7869,7 +7888,7 @@ function renderSessionListFromCache(){
   if(_sessionSourceFilter==='cli'&&sessions.length===0){
     const empty=document.createElement('div');
     empty.className='session-empty-note';
-    empty.textContent=window._showCliSessions?'No Jaeger sessions found.':'Enable Show agent sessions in Settings to list Jaeger sessions here.';
+    empty.textContent=window._showCliSessions?'No CLI sessions found.':'Enable Show agent sessions in Settings to list CLI sessions here.';
     list.appendChild(empty);
   } else if(_activeProject&&sessions.length===0){
     const empty=document.createElement('div');
@@ -7885,8 +7904,8 @@ function renderSessionListFromCache(){
   const now=_serverNowMs();
   // Collapse state persisted in localStorage
   let _groupCollapsed={};
-  try{_groupCollapsed=JSON.parse(localStorage.getItem('ares-date-groups-collapsed')||'{}');}catch(e){}
-  const _saveCollapsed=()=>{try{localStorage.setItem('ares-date-groups-collapsed',JSON.stringify(_groupCollapsed));}catch(e){}};
+  try{_groupCollapsed=JSON.parse(localStorage.getItem('hermes-date-groups-collapsed')||'{}');}catch(e){}
+  const _saveCollapsed=()=>{try{localStorage.setItem('hermes-date-groups-collapsed',JSON.stringify(_groupCollapsed));}catch(e){}};
   // Group sessions by date
   const groups=[];
   let curLabel=null,curItems=[];
@@ -8970,7 +8989,7 @@ function renderSessionListFromCache(){
 }
 
 async function _handleActiveSessionStorageEvent(e){
-  if(!e || e.key !== 'ares-webui-session') return;
+  if(!e || e.key !== 'hermes-webui-session') return;
   // Do not treat localStorage as a global active-session bus. Each tab owns its
   // active conversation via its URL (/session/<id>), so another tab switching
   // sessions must not force this tab to navigate away from an in-flight turn.
@@ -9124,7 +9143,7 @@ async function deleteSession(sid, beforeDelete=null){
   if(S.session&&S.session.session_id===sid){
     S.session=null;S.messages=[];S.entries=[];
     if(typeof _hydrateTodosFromSession==='function') _hydrateTodosFromSession(null);
-    localStorage.removeItem('ares-webui-session');
+    localStorage.removeItem('hermes-webui-session');
     // load the most recent remaining session, or show blank if none left
     const remaining=await api('/api/sessions'+_sessionListQueryString());
     if(remaining.sessions&&remaining.sessions.length){

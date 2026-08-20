@@ -2,11 +2,7 @@ async function api(path,opts={}){
   // Strip leading slash so URL resolves relative to location.href (supports subpath mounts)
   const rel = path.startsWith('/') ? path.slice(1) : path;
   const url=new URL(rel,document.baseURI||location.href);
-  let defaultTimeout = 120000;
-  if (path.includes('/api/chat/') || path.includes('/api/dispatch') || path.includes('/api/companion') || path.includes('/api/kanban')) {
-    defaultTimeout = 300000;
-  }
-  const timeoutMs=Object.prototype.hasOwnProperty.call(opts,'timeoutMs')?opts.timeoutMs:defaultTimeout;
+  const timeoutMs=Object.prototype.hasOwnProperty.call(opts,'timeoutMs')?opts.timeoutMs:30000;
   const timeoutToast=opts.timeoutToast!==false;
   const redirect401=opts.redirect401!==false;
   const maxAttempts=Object.prototype.hasOwnProperty.call(opts,'retries')?Math.max(0,Number(opts.retries)||0)+1:3;
@@ -48,7 +44,7 @@ async function api(path,opts={}){
         if(!res.ok){
           // 401 means the auth session expired. Redirect to login so the user can
           // re-authenticate. This is especially important for iOS PWA (standalone mode)
-          // and for subpath mounts like /ares/, where /login escapes to the site root.
+          // and for subpath mounts like /hermes/, where /login escapes to the site root.
           if(res.status===401){
             // #5578: if we're ALREADY on the login page, appending
             // window.location.pathname+search (which contains ?next=…) into a
@@ -147,7 +143,7 @@ function recordClientSSEError(source, details={}){
 // Persist/restore expanded directory state per workspace in localStorage
 function _wsExpandKey(){
   const ws=S.session&&S.session.workspace;
-  return ws?'ares-webui-expanded:'+ws:null;
+  return ws?'hermes-webui-expanded:'+ws:null;
 }
 function _saveExpandedDirs(){
   const key=_wsExpandKey();if(!key)return;
@@ -249,7 +245,7 @@ function _workspaceRouteForPath(path, kind, opts={}){
   // Resolve the app-relative "/api/…" route against document.baseURI so the
   // URLs that are consumed OUTSIDE api() — previewImg.src, the media/pdf/html
   // frame src, the download anchor, window.open — keep working under a subpath
-  // mount like /ares/. A bare "/api/…" string resolves to the server root
+  // mount like /hermes/. A bare "/api/…" string resolves to the server root
   // there and 404s. (api() strips the leading slash and re-resolves against
   // baseURI itself, so routes passed through it are unaffected by already
   // being absolute.)
@@ -424,7 +420,7 @@ function _escHtml(s){
 }
 
 const ARTIFACT_IGNORE_RE = /(^|\/)(?:\.git|\.hg|\.svn|node_modules|\.venv|venv|__pycache__|dist|build|\.next|\.cache)(?:\/|$)/;
-// Canonical ARES mutators plus MCP filesystem aliases that can create/edit files.
+// Canonical Hermes mutators plus MCP filesystem aliases that can create/edit files.
 const ARTIFACT_MUTATION_TOOLS = new Set(['write_file','patch','edit_file','create_file','mcp_filesystem_write_file','mcp_filesystem_edit_file']);
 
 function _normalizeArtifactPath(path){
@@ -435,7 +431,7 @@ function _normalizeArtifactPath(path){
   // tool arg recorded as "./foo.md" or "~/foo.md" compare equal for mutation
   // tracking; otherwise an agent edit via a ./-prefixed path leaves the open
   // preview stale (#3262 / pre-release regression-gate finding).
-  path = path.replace(/^~\//,'').replace(/^(?:\.\/)+/,'').replace(/^workspace\//,'');
+  path = path.replace(/^~\//,'').replace(/^(?:\.\/)+/,'');
   if(!path) return '';
   if(ARTIFACT_IGNORE_RE.test(path)) return '';
   if(!/[./]/.test(path)) return '';
@@ -615,7 +611,7 @@ function renderSessionArtifacts(){
 
 async function _workspacePathExists(path){
   if(!S.session||!path) return false;
-  const parts=String(path).split('/').filter(Boolean);
+  const parts=String(path).replace(/\\/g,'/').split('/').filter(Boolean);
   const name=parts.pop();
   if(!name) return false;
   const dir=parts.length?parts.join('/'):'.';
@@ -626,9 +622,12 @@ async function _workspacePathExists(path){
 async function openArtifactPath(path){
   if(!path) return;
   switchWorkspacePanelTab('files');
-  let rel = path.replace(/^~\//,'').replace(/^\.\/+/,'');
+  // Normalize backslash separators to '/' first — Windows absolute paths
+  // (e.g. "D:\workspace\dir\file") otherwise break prefix-strip and the
+  // /api/list existence check (which splits on '/').
+  let rel = String(path).replace(/\\/g,'/').replace(/^~\//,'').replace(/^(?:\.\/)+/,'');
   // Strip workspace prefix so /api/list receives a workspace-relative path.
-  const ws = S.session && S.session.workspace;
+  const ws = (S.session && S.session.workspace || '').replace(/\\/g,'/');
   if(ws){
     const normWs = ws.replace(/\/+$/,'') + '/';
     if(rel.startsWith(normWs)) rel = rel.slice(normWs.length);
@@ -733,6 +732,7 @@ async function loadDir(path, opts={}){
                              // rejected here instead of painting the wrong profile's files.
   try{
     if(!path||path==='.'||refreshExpanded){
+      if(typeof _syncWorkspaceBirthtimeSupportScope==='function') _syncWorkspaceBirthtimeSupportScope((S.session&&S.session.workspace)||'');
       S._dirCache={};
       _restoreExpandedDirs();  // restore per-workspace expanded state after root and refresh resets
     }
@@ -742,6 +742,14 @@ async function loadDir(path, opts={}){
       `/api/list?session_id=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path||'.')}`
     );
     if(!S.session||S.session.session_id!==sessionId||treeGen!==_wsTreeGen)return;
+    if(data.workspace_recovered&&data.workspace){
+      S.session.workspace=String(data.workspace);
+      S._dirCache={};
+      _restoreExpandedDirs();
+      if(typeof syncWorkspaceDisplays==='function')syncWorkspaceDisplays();
+      if(typeof syncTerminalButton==='function')syncTerminalButton();
+      showToast(t('workspace_recovered_notice',S.session.workspace),5000,'warning');
+    }
     S.entries=data.entries||[];renderBreadcrumb();renderFileTree();
     // #2673 — refresh Artifacts tab when its source data (the file tree) updates.
     if(typeof renderSessionArtifacts==='function') renderSessionArtifacts();

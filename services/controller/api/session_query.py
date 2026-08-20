@@ -72,10 +72,55 @@ def search_sessions(
                 item["title"] = _redact_text(item["title"])
             safe.append(item)
         return {"sessions": safe, "all_profiles": all_profiles, "active_profile": active_profile}
+    from api.backend_catalog import JAEGER_BACKEND_ID
+    from api.session_contract import (
+        backend_for_session,
+        require_operation,
+        runtime_owns_transcript,
+        runtime_query,
+    )
+
+    jaeger_rows = [
+        row
+        for row in sessions
+        if backend_for_session(row) == JAEGER_BACKEND_ID and runtime_owns_transcript(row)
+    ]
+    jaeger_matches: set[str] = set()
+    if content_search and jaeger_rows:
+        require_operation("search", backend=JAEGER_BACKEND_ID)
+        jaeger_matches = {
+            str(item.get("id"))
+            for item in (runtime_query("search", query=term, limit=10_000) or [])
+            if isinstance(item, dict) and item.get("id")
+        }
     results = []
     for row in sessions:
         if term in str(row.get("title") or "").lower():
             item = dict(row, match_type="title")
+        elif (
+            content_search
+            and backend_for_session(row) == JAEGER_BACKEND_ID
+            and runtime_owns_transcript(row)
+        ):
+            session_id = str(row.get("session_id") or "")
+            if session_id not in jaeger_matches:
+                continue
+            require_operation("load", backend=JAEGER_BACKEND_ID)
+            messages = runtime_query("load", session_id=session_id)
+            messages = messages[:depth] if depth else messages
+            match = next(
+                (
+                    str(message.get("text") or "")
+                    for message in messages
+                    if isinstance(message, dict)
+                    and term in str(message.get("text") or "").lower()
+                ),
+                None,
+            )
+            item = dict(row, match_type="content")
+            preview = session_search_preview(match, term)
+            if preview:
+                item["match_preview"] = _redact_text(preview)
         elif content_search:
             try:
                 messages = get_session(row["session_id"]).messages
@@ -125,7 +170,9 @@ def export_session(
     active_profile = profile or get_active_profile_name()
     if not _profiles_match(getattr(session, "profile", None), active_profile):
         raise FileNotFoundError("Session not found")
-    safe = redact_session_data(session.__dict__)
+    from api.session_projection import project_session_detail
+
+    safe = redact_session_data(project_session_detail(session, load_messages=True))
     if format.lower() != "html":
         return json.dumps(safe, ensure_ascii=False, indent=2), "application/json; charset=utf-8", "json"
     from api.session_export_html import render_session_html
@@ -144,4 +191,3 @@ def export_session(
 
 _session_search_message_text = session_search_message_text
 _session_search_preview = session_search_preview
-

@@ -351,7 +351,7 @@ def should_accept_context_length_refresh(
     return model_changed or not (resolved == 256_000 and persisted > resolved)
 
 
-_JAEGER_WORKER_IDS = frozenset({"jaeger_local", "jaeger", "jros_local", "jros"})
+_JAEGER_WORKER_IDS = frozenset({"jaeger_local", "jaeger", "jaeger_local", "jaeger"})
 
 
 def _ollama_probe_provider(provider: str | None) -> str | None:

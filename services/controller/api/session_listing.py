@@ -108,6 +108,7 @@ def prune_orphaned_webui_zero_message_sessions(rows: list[dict]) -> list[dict]:
             continue
         candidate = (
             session_source_is_webui(row)
+            and row.get("transcript_owner") != "jaeger"
             and not row.get("active_stream_id")
             and not row.get("has_pending_user_message")
             and not row.get("pending_user_message")

@@ -1,6 +1,6 @@
 """JaegerAI detection and default-election contract.
 
-A stale ``ARES_JAEGER_HOME`` left over from the legacy JROS checkout made a
+A stale ``ARES_JAEGER_HOME`` left over from the legacy JaegerAI checkout made a
 perfectly good JaegerAI install report "not installed" — and the message told
 the user to set the very variable that was already set and causing it. These
 tests pin the diagnostic and the election rule that depends on it.
@@ -34,7 +34,7 @@ def _clear_jaeger_env(monkeypatch):
         paths.ARES_JAEGER_HOME_ENV,
         paths.JAEGER_HOME_ENV,
         paths.ARES_JAEGER_SOURCE_DIR_ENV,
-        paths.LEGACY_JROS_DIR_ENV,
+        paths.ARES_JAEGER_INSTANCE_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -64,8 +64,8 @@ def test_explicit_home_override_selects_that_checkout(tmp_path, monkeypatch):
 
 def test_configured_root_override_reports_the_variable_in_use(tmp_path, monkeypatch):
     _clear_jaeger_env(monkeypatch)
-    monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/nope/JROS")
-    assert paths.configured_root_override() == (paths.ARES_JAEGER_HOME_ENV, "/nope/JROS")
+    monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/nope/JaegerAI")
+    assert paths.configured_root_override() == (paths.ARES_JAEGER_HOME_ENV, "/nope/JaegerAI")
 
 
 def test_configured_root_override_is_none_when_nothing_is_set(monkeypatch):
@@ -76,15 +76,15 @@ def test_configured_root_override_is_none_when_nothing_is_set(monkeypatch):
 def test_stale_override_names_the_variable_instead_of_saying_not_installed(monkeypatch):
     """The old message told the user to set the variable that was breaking it."""
     _clear_jaeger_env(monkeypatch)
-    monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/Users/nobody/GitHub/JROS")
+    monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/Users/nobody/GitHub/JaegerAI")
 
     result = status.check_status(use_cache=False)
 
     assert not result.available
     assert paths.ARES_JAEGER_HOME_ENV in result.message
-    assert "/Users/nobody/GitHub/JROS" in result.message
+    assert "/Users/nobody/GitHub/JaegerAI" in result.message
     assert result.details.get("configured_by") == paths.ARES_JAEGER_HOME_ENV
-    assert result.details.get("configured_root") == "/Users/nobody/GitHub/JROS"
+    assert result.details.get("configured_root") == "/Users/nobody/GitHub/JaegerAI"
 
 
 def test_valid_checkout_via_override_reports_connected_over_the_bridge(tmp_path, monkeypatch):
@@ -104,14 +104,14 @@ def test_valid_checkout_via_override_reports_connected_over_the_bridge(tmp_path,
 def test_explicit_election_always_wins(monkeypatch):
     from api import backend_selector
 
-    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: True)
-    assert backend_selector.get_active_backend({"ares_backend": "hermes_local"}) == "hermes_local"
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", lambda: True)
+    assert backend_selector.get_active_backend({"ares_backend": "jaeger_local"}) == "jaeger_local"
 
 
 def test_jaeger_is_the_default_when_nothing_is_elected_and_it_is_ready(monkeypatch):
     from api import backend_selector
 
-    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: True)
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", lambda: True)
     assert backend_selector.get_active_backend({}) == backend_selector.BACKEND_JAEGER
 
 
@@ -119,7 +119,7 @@ def test_no_default_is_invented_when_jaeger_is_unavailable(monkeypatch):
     """Falls back cleanly to the 'choose a provider' state, not a substitute."""
     from api import backend_selector
 
-    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: False)
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", lambda: False)
     assert backend_selector.get_active_backend({}) == ""
 
 
@@ -129,7 +129,7 @@ def test_election_survives_a_failing_availability_probe(monkeypatch):
     def _boom():
         raise RuntimeError("probe exploded")
 
-    monkeypatch.setattr(backend_selector, "is_jros_available", _boom)
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", _boom)
     assert backend_selector.get_active_backend({}) == ""
 
 
@@ -138,6 +138,6 @@ def test_session_backend_inherits_the_jaeger_default(monkeypatch):
 
     from api import backend_selector
 
-    monkeypatch.setattr(backend_selector, "is_jros_available", lambda: True)
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", lambda: True)
     session = SimpleNamespace(ares_backend=None)
     assert backend_selector.get_session_backend(session, {}) == backend_selector.BACKEND_JAEGER

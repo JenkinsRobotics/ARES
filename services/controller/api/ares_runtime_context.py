@@ -9,7 +9,7 @@ The context tells the agent:
   - Which backend is running
   - What capabilities are available
   - What open promises/tasks exist
-  - Whether JROS embodiment is connected
+  - Whether JaegerAI embodiment is connected
 
 This is backend-agnostic and never treats ARES itself as an inference runtime.
 """
@@ -17,84 +17,37 @@ This is backend-agnostic and never treats ARES itself as an inference runtime.
 from __future__ import annotations
 
 import logging
-import os
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
 
 # Lazy import — avoids circular dependency at module level.
-# backend_selector.is_jros_available() is the canonical probe.
-_IS_JROS_AVAILABLE_FUNC: Optional[Any] = None
+# backend_selector.is_jaeger_available() is the canonical probe.
+_IS_JaegerAI_AVAILABLE_FUNC: Optional[Any] = None
 
 
-def _get_jros_available_func():
-    """Lazy-load the JROS availability check from backend_selector."""
-    global _IS_JROS_AVAILABLE_FUNC
-    if _IS_JROS_AVAILABLE_FUNC is not None:
-        return _IS_JROS_AVAILABLE_FUNC
+def _get_jaeger_available_func():
+    """Lazy-load the JaegerAI availability check from backend_selector."""
+    global _IS_JaegerAI_AVAILABLE_FUNC
+    if _IS_JaegerAI_AVAILABLE_FUNC is not None:
+        return _IS_JaegerAI_AVAILABLE_FUNC
     try:
-        from api.backend_selector import is_jros_available
-        _IS_JROS_AVAILABLE_FUNC = is_jros_available
+        from api.backend_selector import is_jaeger_available
+        _IS_JaegerAI_AVAILABLE_FUNC = is_jaeger_available
     except ImportError:
         logging.getLogger(__name__).debug(
-            "backend_selector not available — JROS assumed down"
+            "backend_selector not available — JaegerAI assumed down"
         )
-        _IS_JROS_AVAILABLE_FUNC = lambda: False
-    return _IS_JROS_AVAILABLE_FUNC
+        _IS_JaegerAI_AVAILABLE_FUNC = lambda: False
+    return _IS_JaegerAI_AVAILABLE_FUNC
 
 
-def is_jros_available() -> bool:
-    """Check if JROS daemon is reachable. Delegates to backend_selector."""
-    func = _get_jros_available_func()
+def is_jaeger_available() -> bool:
+    """Check if JaegerAI daemon is reachable. Delegates to backend_selector."""
+    func = _get_jaeger_available_func()
     try:
         return bool(func())
     except Exception:
         return False
-
-
-# ── ARES Continuity DB ────────────────────────────────────────────
-
-_ARES_DB_DIR = Path(os.environ.get("ARES_HOME", os.path.expanduser("~/.ares")))
-_ARES_DB_PATH = _ARES_DB_DIR / "ares_continuity.db"
-
-
-def _ensure_db() -> sqlite3.Connection:
-    """Create or open the ARES continuity database."""
-    _ARES_DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_ARES_DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            priority TEXT DEFAULT 'medium',
-            status TEXT DEFAULT 'open',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS promises (
-            id TEXT PRIMARY KEY,
-            text TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            captured_at TEXT NOT NULL,
-            resolved TEXT DEFAULT 0
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            turn_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            checks TEXT DEFAULT '{}',
-            timestamp TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    return conn
 
 
 # ── Build Runtime Context ─────────────────────────────────────────
@@ -123,7 +76,7 @@ def build_runtime_context(
         def should_inject_self_persistence(config):
             return True
 
-    jros_up = is_jros_available()
+    jaeger_up = is_jaeger_available()
 
     from api.backend_selector import normalize_backend
 
@@ -140,13 +93,13 @@ def build_runtime_context(
                 "permissions", "continuity",
             ],
         },
-        "jros": {
-            "available": jros_up,
+        "jaeger": {
+            "available": jaeger_up,
             "provides": [
                 "embodiment", "speech", "hearing", "vision",
                 "motor_control", "animation", "skill_tree",
                 "timeline",
-            ] if jros_up else [],
+            ] if jaeger_up else [],
         },
         "active_runtime": {
             "id": effective_backend,
@@ -155,38 +108,30 @@ def build_runtime_context(
         },
     }
 
-    # Load open tasks from continuity DB
+    # Tasks use the same canonical store as the Kanban UI and dispatcher.
     open_tasks: list[dict[str, str]] = []
     try:
-        conn = _ensure_db()
-        rows = conn.execute(
-            "SELECT id, title, status, priority FROM tasks "
-            "WHERE status != 'done' ORDER BY priority DESC, created_at ASC "
-            "LIMIT 10"
-        ).fetchall()
+        from api import kanban_store
+
+        kanban_store.init_db()
+        with kanban_store.connect_closing() as conn:
+            tasks = kanban_store.list_tasks(conn)
         open_tasks = [
-            {"id": r["id"], "title": r["title"],
-             "status": r["status"], "priority": r["priority"]}
-            for r in rows
-        ]
-        conn.close()
+            {
+                "id": task.id,
+                "title": task.title,
+                "status": task.status,
+                "priority": str(task.priority),
+            }
+            for task in tasks
+            if task.status not in {"done", "archived"}
+        ][:10]
     except Exception:
         pass  # DB not ready — empty tasks is fine
 
-    # Load unresolved promises
+    # Promise persistence remains empty until it has a canonical owner and
+    # mutation contract.
     open_promises: list[dict[str, str]] = []
-    try:
-        conn = _ensure_db()
-        rows = conn.execute(
-            "SELECT id, text FROM promises WHERE resolved = 0 "
-            "ORDER BY captured_at DESC LIMIT 5"
-        ).fetchall()
-        open_promises = [
-            {"id": r["id"], "text": r["text"]} for r in rows
-        ]
-        conn.close()
-    except Exception:
-        pass
 
     device_summary: dict[str, Any] = {}
     try:
@@ -216,8 +161,8 @@ def build_runtime_context(
         "open_promises": open_promises,
         "self_persistence_enabled": should_inject_self_persistence({}),
         "embodiment": {
-            "body": "desktop" if not jros_up else "droid",
-            "jros_connected": jros_up,
+            "body": "desktop" if not jaeger_up else "droid",
+            "jaeger_connected": jaeger_up,
         },
         "device": device_summary,
     }
@@ -240,15 +185,15 @@ def render_context_prompt(context: dict[str, Any]) -> str:
     if not isinstance(identity, dict):
         identity = {}
     identity_name = str(identity.get("name") or "No runtime selected")
-    jros_up = context.get("capabilities", {}).get("jros", {}).get("available", False)
+    jaeger_up = context.get("capabilities", {}).get("jaeger", {}).get("available", False)
     lines = [
         f"Projected identity: {identity_name}. Backend: {backend}.",
     ]
 
-    if jros_up:
-        lines.append("JROS embodiment connected: speech, hearing, vision, motor control available.")
+    if jaeger_up:
+        lines.append("JaegerAI embodiment connected: speech, hearing, vision, motor control available.")
     else:
-        lines.append("No JROS embodiment — desktop mode.")
+        lines.append("No JaegerAI embodiment — desktop mode.")
 
     device = context.get("device") or {}
     if isinstance(device, dict) and device.get("role"):

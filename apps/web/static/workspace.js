@@ -2,7 +2,11 @@ async function api(path,opts={}){
   // Strip leading slash so URL resolves relative to location.href (supports subpath mounts)
   const rel = path.startsWith('/') ? path.slice(1) : path;
   const url=new URL(rel,document.baseURI||location.href);
-  const timeoutMs=Object.prototype.hasOwnProperty.call(opts,'timeoutMs')?opts.timeoutMs:30000;
+  let defaultTimeout = 120000;
+  if (path.includes('/api/chat/') || path.includes('/api/dispatch') || path.includes('/api/companion') || path.includes('/api/kanban')) {
+    defaultTimeout = 300000;
+  }
+  const timeoutMs=Object.prototype.hasOwnProperty.call(opts,'timeoutMs')?opts.timeoutMs:defaultTimeout;
   const timeoutToast=opts.timeoutToast!==false;
   const redirect401=opts.redirect401!==false;
   const maxAttempts=Object.prototype.hasOwnProperty.call(opts,'retries')?Math.max(0,Number(opts.retries)||0)+1:3;
@@ -44,7 +48,7 @@ async function api(path,opts={}){
         if(!res.ok){
           // 401 means the auth session expired. Redirect to login so the user can
           // re-authenticate. This is especially important for iOS PWA (standalone mode)
-          // and for subpath mounts like /hermes/, where /login escapes to the site root.
+          // and for subpath mounts like /ares/, where /login escapes to the site root.
           if(res.status===401){
             // #5578: if we're ALREADY on the login page, appending
             // window.location.pathname+search (which contains ?next=…) into a
@@ -143,7 +147,7 @@ function recordClientSSEError(source, details={}){
 // Persist/restore expanded directory state per workspace in localStorage
 function _wsExpandKey(){
   const ws=S.session&&S.session.workspace;
-  return ws?'hermes-webui-expanded:'+ws:null;
+  return ws?'ares-webui-expanded:'+ws:null;
 }
 function _saveExpandedDirs(){
   const key=_wsExpandKey();if(!key)return;
@@ -245,7 +249,7 @@ function _workspaceRouteForPath(path, kind, opts={}){
   // Resolve the app-relative "/api/…" route against document.baseURI so the
   // URLs that are consumed OUTSIDE api() — previewImg.src, the media/pdf/html
   // frame src, the download anchor, window.open — keep working under a subpath
-  // mount like /hermes/. A bare "/api/…" string resolves to the server root
+  // mount like /ares/. A bare "/api/…" string resolves to the server root
   // there and 404s. (api() strips the leading slash and re-resolves against
   // baseURI itself, so routes passed through it are unaffected by already
   // being absolute.)
@@ -420,7 +424,7 @@ function _escHtml(s){
 }
 
 const ARTIFACT_IGNORE_RE = /(^|\/)(?:\.git|\.hg|\.svn|node_modules|\.venv|venv|__pycache__|dist|build|\.next|\.cache)(?:\/|$)/;
-// Canonical Hermes mutators plus MCP filesystem aliases that can create/edit files.
+// Canonical ARES mutators plus MCP filesystem aliases that can create/edit files.
 const ARTIFACT_MUTATION_TOOLS = new Set(['write_file','patch','edit_file','create_file','mcp_filesystem_write_file','mcp_filesystem_edit_file']);
 
 function _normalizeArtifactPath(path){
@@ -431,7 +435,7 @@ function _normalizeArtifactPath(path){
   // tool arg recorded as "./foo.md" or "~/foo.md" compare equal for mutation
   // tracking; otherwise an agent edit via a ./-prefixed path leaves the open
   // preview stale (#3262 / pre-release regression-gate finding).
-  path = path.replace(/^~\//,'').replace(/^(?:\.\/)+/,'');
+  path = path.replace(/^~\//,'').replace(/^(?:\.\/)+/,'').replace(/^workspace\//,'');
   if(!path) return '';
   if(ARTIFACT_IGNORE_RE.test(path)) return '';
   if(!/[./]/.test(path)) return '';

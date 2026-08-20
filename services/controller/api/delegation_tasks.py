@@ -1,7 +1,7 @@
 """Profile-scoped durable storage for delegated tasks owned by ARES.
 
 A delegated task is a discrete unit of work handed to an execution backend
-(Hermes, Gemini/Antigravity, Ollama, a CLI backend) and awaited asynchronously.
+(Jaeger, Gemini/Antigravity, Ollama, a CLI backend) and awaited asynchronously.
 The caller creates a task, gets an id back immediately, and polls status until
 it reaches a terminal Run state. Storage mirrors `schedule_jobs.py`: an atomic
 JSON file with 0600 perms under the active profile's ARES home.
@@ -55,12 +55,18 @@ def _read_tasks() -> list[dict[str, Any]]:
     except (OSError, json.JSONDecodeError):
         return []
     rows = payload.get("tasks", []) if isinstance(payload, dict) else payload
-    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    return (
+        [dict(row) for row in rows if isinstance(row, dict)]
+        if isinstance(rows, list)
+        else []
+    )
 
 
 def _write_tasks(tasks: list[dict[str, Any]]) -> None:
     _ensure_storage()
-    fd, temporary = tempfile.mkstemp(prefix="tasks-", suffix=".json", dir=DELEGATION_DIR)
+    fd, temporary = tempfile.mkstemp(
+        prefix="tasks-", suffix=".json", dir=DELEGATION_DIR
+    )
     path = Path(temporary)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -76,7 +82,9 @@ def _write_tasks(tasks: list[dict[str, Any]]) -> None:
             path.unlink(missing_ok=True)
 
 
-def create_task(*, prompt: str, backend: str, model: str | None = None, provider: str | None = None) -> dict[str, Any]:
+def create_task(
+    *, prompt: str, backend: str, model: str | None = None, provider: str | None = None
+) -> dict[str, Any]:
     """Persist a new delegated task in the Queued state and return it."""
     task = {
         "id": uuid.uuid4().hex,
@@ -145,3 +153,15 @@ def update_status(
 
 def is_terminal(status: str) -> bool:
     return status in _TERMINAL
+
+
+def cancel_task(task_id: str) -> dict[str, Any] | None:
+    """Idempotently mark a queued or running delegation as canceled.
+
+    Backends may not support interrupting an in-flight turn. Terminal-state
+    immutability guarantees that a late worker result cannot resurrect it.
+    """
+    task = get_task(task_id)
+    if task is None or is_terminal(str(task.get("status") or "")):
+        return task
+    return update_status(task_id, STATUS_CANCELED, error="Canceled by user")

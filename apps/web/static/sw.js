@@ -1,13 +1,14 @@
 /**
- * Hermes WebUI Service Worker
+ * ARES WebUI Service Worker
  * Minimal PWA service worker — enables "Add to Home Screen".
  * No offline caching of API responses (the UI requires a live backend).
  * Caches only static shell assets so the app shell loads fast on repeat visits.
  */
 
-// Cache version is injected by the server at request time (routes.py /sw.js handler).
-// Bumps automatically whenever the git commit changes — no manual edits needed.
-const CACHE_NAME = 'hermes-shell-__WEBUI_VERSION__';
+// Cache version is injected by the server at request time -- see the /sw.js
+// handler in fastapi_app/frontend.py. Bumps automatically whenever the git
+// commit changes, so a new release always builds a new cache.
+const CACHE_NAME = 'ares-shell-__WEBUI_VERSION__';
 
 // Static assets that form the app shell.
 //
@@ -39,9 +40,14 @@ const SHELL_ASSETS = [
   './static/vendor/smd.min.js' + VQ,
   './static/vendor/katex/0.16.22/katex.min.css' + VQ,
   './static/vendor/katex/0.16.22/katex.min.js' + VQ,
+  // manifest.json lists these icons without a version query while index.html
+  // links favicon-32 with one, so both request forms must be listed or the
+  // lookup misses. Unversioned entries are safe now that CACHE_NAME carries
+  // the version: a new release builds a new cache and drops the old one.
   './static/favicon.svg',
+  './static/favicon-32.png' + VQ,
   './static/favicon-32.png',
-  './manifest.json',
+  './manifest.json' + VQ,
 ];
 
 function deleteOldShellCaches() {
@@ -103,8 +109,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   // API and streaming endpoints — always go to network.
-  // The WebUI may be mounted under a subpath such as /hermes/, so API
-  // requests can look like /hermes/api/sessions rather than /api/sessions.
+  // The WebUI may be mounted under a subpath such as /ares/, so API
+  // requests can look like /ares/api/sessions rather than /api/sessions.
   if (
     url.pathname.startsWith('/api/') ||
     url.pathname.includes('/api/') ||
@@ -134,7 +140,7 @@ self.addEventListener('fetch', (event) => {
         return caches.match('./').then((cached) => cached || new Response(
           '<html><body style="font-family:sans-serif;padding:2rem;background:#1a1a1a;color:#ccc">' +
           '<h2>You are offline</h2>' +
-          '<p>Hermes requires a server connection. Please check your network and try again.</p>' +
+          '<p>ARES requires a server connection. Please check your network and try again.</p>' +
           '</body></html>',
           { headers: { 'Content-Type': 'text/html' } }
         ));

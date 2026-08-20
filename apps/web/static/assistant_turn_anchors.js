@@ -302,6 +302,7 @@
         ?normalizeAssistantTurnAnchorTerminalState(explicit,sourceType)||explicit
         :explicit;
     }
+    if(sourceType==='interim_assistant') return 'completed'; // interim prose is a complete semantic boundary, unlike token deltas.
     if(kind==='tool_started') return 'running';
     if(kind==='tool_completed') return _own(payload,'is_error')?'error':'completed';
     if(kind==='terminal_status'){
@@ -1685,7 +1686,7 @@
     return registry;
   }
 
-  ROOT.HermesAssistantTurnAnchors=Object.freeze({
+  ROOT.ARESAssistantTurnAnchors=Object.freeze({
     version:'slice8-renderer-snapshot-adapter',
     activityEventKinds:ACTIVITY_EVENT_KINDS,
     stateLayers:STATE_LAYERS,

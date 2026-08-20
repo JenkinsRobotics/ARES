@@ -18,21 +18,21 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ARES">
 <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png?v=__WEBUI_VERSION__">
-<script>(function(){try{var themes={light:1,dark:1,system:1},skins={codex:1,terracotta:1,default:1,ares:1,mono:1,graphite:1,github:1,slate:1,poseidon:1,sisyphus:1,charizard:1,sienna:1,catppuccin:1,hepburn:1,nous:1,'geist-contrast':1,neon:1,'neon-soft':1,'neon-paint':1,zeus:1,'verdigris':1},legacy={slate:['dark','slate'],solarized:['dark','poseidon'],monokai:['dark','sisyphus'],nord:['dark','slate'],oled:['dark','default']},t=(localStorage.getItem('hermes-theme')||'dark').toLowerCase(),s=(localStorage.getItem('hermes-skin')||'').toLowerCase(),m=legacy[t],theme=m?m[0]:(themes[t]?t:'dark');var pendingExt=s&&s!=='default'&&!skins[s]&&!legacy[s];var skin=skins[s]?s:(pendingExt?s:(m?m[1]:'default'));localStorage.setItem('hermes-theme',theme);localStorage.setItem('hermes-skin',skin);if(theme==='system')theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';if(theme==='dark')document.documentElement.classList.add('dark');if(skin!=='default')document.documentElement.dataset.skin=skin;}catch(e){document.documentElement.classList.add('dark');}})()</script>
-<script>(function(){try{var fs=localStorage.getItem('hermes-font-size');if(fs&&fs!=='default')document.documentElement.dataset.fontSize=fs;}catch(e){}})()</script>
+<script>(function(){try{var themes={light:1,dark:1,system:1},skins={codex:1,terracotta:1,default:1,ares:1,mono:1,graphite:1,github:1,slate:1,poseidon:1,sisyphus:1,charizard:1,sienna:1,catppuccin:1,hepburn:1,nous:1,'geist-contrast':1,neon:1,'neon-soft':1,'neon-paint':1,zeus:1,'verdigris':1},legacy={slate:['dark','slate'],solarized:['dark','poseidon'],monokai:['dark','sisyphus'],nord:['dark','slate'],oled:['dark','default']},t=(localStorage.getItem('ares-theme')||'dark').toLowerCase(),s=(localStorage.getItem('ares-skin')||'').toLowerCase(),m=legacy[t],theme=m?m[0]:(themes[t]?t:'dark');var pendingExt=s&&s!=='default'&&!skins[s]&&!legacy[s];var skin=skins[s]?s:(pendingExt?s:(m?m[1]:'default'));localStorage.setItem('ares-theme',theme);localStorage.setItem('ares-skin',skin);if(theme==='system')theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';if(theme==='dark')document.documentElement.classList.add('dark');if(skin!=='default')document.documentElement.dataset.skin=skin;}catch(e){document.documentElement.classList.add('dark');}})()</script>
+<script>(function(){try{var fs=localStorage.getItem('ares-font-size');if(fs&&fs!=='default')document.documentElement.dataset.fontSize=fs;}catch(e){}})()</script>
 <!-- theme-color: surfaces the active app chrome color to native status bars (Safari status bar, PWA, native WKWebView wrappers). Updated dynamically by boot.js when theme/skin changes. The light/dark default values match style.css :root --sidebar / :root.dark --sidebar. -->
 <meta name="theme-color" content="#FAF7F0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141425" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" id="hermes-theme-color" content="#0D0D1A">
-<script>(function(){try{var t=localStorage.getItem('hermes-theme')||'dark';if(t==='system')t=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';var c=t==='dark'?'#141425':'#FAF7F0';document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',c);m.removeAttribute('media');});}catch(e){}})()</script>
-<script>(function(){try{document.documentElement.dataset.workspacePanel=localStorage.getItem('hermes-webui-workspace-panel')==='open'?'open':'closed';}catch(e){document.documentElement.dataset.workspacePanel='closed';}})()</script>
-<script>(function(){try{if(localStorage.getItem('hermes-webui-sidebar-collapsed')==='1')document.documentElement.dataset.sidebarCollapsed='1';}catch(e){}})()</script>
+<meta name="theme-color" id="ares-theme-color" content="#0D0D1A">
+<script>(function(){try{var t=localStorage.getItem('ares-theme')||'dark';if(t==='system')t=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';var c=t==='dark'?'#141425':'#FAF7F0';document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',c);m.removeAttribute('media');});}catch(e){}})()</script>
+<script>(function(){try{document.documentElement.dataset.workspacePanel=localStorage.getItem('ares-webui-workspace-panel')==='open'?'open':'closed';}catch(e){document.documentElement.dataset.workspacePanel='closed';}})()</script>
+<script>(function(){try{if(localStorage.getItem('ares-webui-sidebar-collapsed')==='1')document.documentElement.dataset.sidebarCollapsed='1';}catch(e){}})()</script>
 <link rel="preload" href="static/pwa-startup.js?v=__WEBUI_VERSION__" as="script">
 <script src="static/pwa-startup.js?v=__WEBUI_VERSION__"></script>
-<script>window.__HERMES_CONFIG__={maxUploadBytes:__MAX_UPLOAD_BYTES__,csrfToken:__CSRF_TOKEN_JSON__};</script>
-<script>window.__HERMES_WEBUI_BUNDLE_VERSION__='__WEBUI_VERSION__';</script>
+<script>window.__ARES_CONFIG__={maxUploadBytes:__MAX_UPLOAD_BYTES__,csrfToken:__CSRF_TOKEN_JSON__};</script>
+<script>window.__ARES_WEBUI_BUNDLE_VERSION__='__WEBUI_VERSION__';</script>
 <script>(function(){
-  var cfg=window.__HERMES_CONFIG__||{},token=cfg.csrfToken||'';
+  var cfg=window.__ARES_CONFIG__||{},token=cfg.csrfToken||'';
   if(!token||!window.fetch)return;
   var originalFetch=window.fetch.bind(window);
   function sameOriginUnsafe(input,init){
@@ -49,7 +49,7 @@
     if(sameOriginUnsafe(input,init)){
       var opts=init?Object.assign({},init):{};
       var headers=new Headers(opts.headers!==undefined?opts.headers:((input&&input.headers)||{}));
-      if(!headers.has('X-Hermes-CSRF-Token'))headers.set('X-Hermes-CSRF-Token',token);
+      if(!headers.has('X-ARES-CSRF-Token'))headers.set('X-ARES-CSRF-Token',token);
       opts.headers=headers;
       return originalFetch(input,opts);
     }
@@ -60,7 +60,7 @@
     navigator.sendBeacon=function(url,data){
       try{
         if(sameOriginUnsafe(url,{method:'POST'})){
-          var headers={'X-Hermes-CSRF-Token':token};
+          var headers={'X-ARES-CSRF-Token':token};
           if(data&&data.type)headers['Content-Type']=data.type;
           originalFetch(url,{method:'POST',credentials:'include',headers:headers,body:data,keepalive:true});
           return true;
@@ -111,7 +111,7 @@
     // RTL users don't see an LTR flash on initial load.
     (function(){
       try{
-        if(localStorage.getItem('hermes-rtl')==='true'){
+        if(localStorage.getItem('ares-rtl')==='true'){
           document.documentElement.classList.add('chat-content-rtl');
         }
       }catch(_){}
@@ -154,15 +154,18 @@
 <div class="layout">
   <nav class="rail" aria-label="Primary navigation">
     <button class="rail-btn nav-tab active has-tooltip" data-panel="chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat" aria-label="Chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban" aria-label="Kanban"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills" aria-label="Skills"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="avatar" onclick="switchPanel('avatar',{fromRailClick:true})" data-tooltip="Avatar" data-i18n-title="tab_avatar" aria-label="Avatar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="12" cy="12" r="10"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="kanban" data-requires-capability="kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban" aria-label="Kanban"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="modelLab" data-requires-capability="model_compare" onclick="switchPanel('modelLab',{fromRailClick:true})" data-tooltip="Model Lab" aria-label="Model Lab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M8 15h8"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="content" data-capability-domain="knowledge_media" data-requires-any-capability="deep_research,youtube_ingest,pdf_forms,image_gallery,image_editor,visual_reports" onclick="switchPanel('content',{fromRailClick:true})" data-tooltip="Content Studio" aria-label="Content Studio"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3h16v18H4z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="skills" data-requires-capability="skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills" aria-label="Skills"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory" aria-label="Memory"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="workspaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces" aria-label="Spaces"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles" aria-label="Agent profiles"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos" aria-label="Todos"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights" aria-label="Insights"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
-    <button class="rail-btn nav-tab dashboard-link has-tooltip" id="dashboardRailBtn" data-dashboard-link style="display:none" onclick="openHermesDashboard(event)" data-tooltip="Hermes Dashboard" data-i18n-title="tab_dashboard" aria-label="Hermes Dashboard"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
+    <button class="rail-btn nav-tab dashboard-link has-tooltip" id="dashboardRailBtn" data-dashboard-link style="display:none" onclick="openExternalDashboard(event)" data-tooltip="External Dashboard" data-i18n-title="tab_dashboard" aria-label="External Dashboard"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="logs" onclick="switchPanel('logs',{fromRailClick:true})" data-tooltip="Logs" data-i18n-title="tab_logs" aria-label="Logs"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg></button>
     <div class="rail-spacer"></div>
     <button class="rail-btn nav-tab has-tooltip" data-panel="settings" onclick="switchPanel('settings',{fromRailClick:true})" data-tooltip="Settings" data-i18n-title="tab_settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="auth-warning-badge" id="authWarningBadgeDesktop" style="display:none;position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#e05"></span></button>
@@ -173,15 +176,18 @@
     </button>
     <div class="sidebar-nav">
       <button class="nav-tab active has-tooltip has-tooltip--bottom" data-panel="chat" data-label="Chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="kanban" data-label="Kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="skills" data-label="Skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="avatar" data-label="Avatar" onclick="switchPanel('avatar',{fromRailClick:true})" data-tooltip="Avatar" data-i18n-title="tab_avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="12" cy="12" r="10"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="kanban" data-requires-capability="kanban" data-label="Kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="modelLab" data-requires-capability="model_compare" data-label="Model Lab" onclick="switchPanel('modelLab',{fromRailClick:true})" data-tooltip="Model Lab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M8 15h8"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="content" data-capability-domain="knowledge_media" data-requires-any-capability="deep_research,youtube_ingest,pdf_forms,image_gallery,image_editor,visual_reports" data-label="Content" onclick="switchPanel('content',{fromRailClick:true})" data-tooltip="Content Studio"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3h16v18H4z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="skills" data-requires-capability="skills" data-label="Skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="memory" data-label="Memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="workspaces" data-label="Spaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="profiles" data-label="Profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="todos" data-label="Todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="insights" data-label="Insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
-      <button class="nav-tab dashboard-link has-tooltip has-tooltip--bottom" id="dashboardMobileBtn" data-dashboard-link data-label="Dashboard" style="display:none" onclick="openHermesDashboard(event)" data-tooltip="Hermes Dashboard" data-i18n-title="tab_dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
+      <button class="nav-tab dashboard-link has-tooltip has-tooltip--bottom" id="dashboardMobileBtn" data-dashboard-link data-label="Dashboard" style="display:none" onclick="openExternalDashboard(event)" data-tooltip="External Dashboard" data-i18n-title="tab_dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="logs" data-label="Logs" onclick="switchPanel('logs',{fromRailClick:true})" data-tooltip="Logs" data-i18n-title="tab_logs"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg></button>
       <!-- Settings button mirrored here for mobile (rail is desktop-only via @media >=768px). Keep in sync with rail entry. -->
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="settings" onclick="switchPanel('settings',{fromRailClick:true})" data-tooltip="Settings" data-i18n-title="tab_settings" style="position:relative"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="auth-warning-badge" id="authWarningBadgeMobile" style="display:none;position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#e05"></span></button>
@@ -190,7 +196,7 @@
          before any paint. Mirrors the theme/skin/font-size inline scripts in <head>.
          The boot.js _restoreTabVisibility IIFE is a secondary fallback that also
          handles the active-tab switch. -->
-    <script>(function(){try{var fixed=new Set(['chat','settings']);var clean=function(v){var o=[];if(!Array.isArray(v))return o;v.forEach(function(id){if(typeof id!=='string')return;id=id.trim();if(!id||fixed.has(id)||o.indexOf(id)!==-1)return;o.push(id);});return o;};var reorder=function(order){order=clean(order);if(!order.length)return;['.rail','.sidebar-nav'].forEach(function(sel){var c=document.querySelector(sel);if(!c)return;var available=[];c.querySelectorAll('.nav-tab[data-panel]').forEach(function(el){var id=el.dataset.panel;if(!id||fixed.has(id)||el.classList.contains('dashboard-link')||el.hasAttribute('data-dashboard-link'))return;if(available.indexOf(id)===-1)available.push(id);});var final=[];order.forEach(function(id){if(available.indexOf(id)!==-1&&final.indexOf(id)===-1)final.push(id);});available.forEach(function(id){if(final.indexOf(id)===-1)final.push(id);});var anchor=Array.prototype.find.call(c.children,function(el){if(el.classList&&el.classList.contains('rail-spacer'))return true;if(el.classList&&el.classList.contains('dashboard-link'))return true;if(el.hasAttribute&&el.hasAttribute('data-dashboard-link'))return true;return el.dataset&&el.dataset.panel==='settings';});final.forEach(function(id){var el=c.querySelector('.nav-tab[data-panel="'+id+'"]');if(el)c.insertBefore(el,anchor||null);});});};var o=localStorage.getItem('hermes-webui-tab-order');if(o)reorder(JSON.parse(o));var h=localStorage.getItem('hermes-webui-hidden-tabs');if(!h)return;var p=clean(JSON.parse(h));p.forEach(function(id){document.querySelectorAll('[data-panel="'+id+'"]').forEach(function(el){el.classList.add('nav-tab-hidden');});});try{var ac=document.querySelector('.rail .rail-btn.nav-tab.active[data-panel]')||document.querySelector('.sidebar-nav .nav-tab.active[data-panel]');if(ac&&ac.classList.contains('nav-tab-hidden')){ac.classList.remove('active');var c=document.querySelector('.rail .rail-btn.nav-tab[data-panel="chat"]')||document.querySelector('.sidebar-nav .nav-tab[data-panel="chat"]');if(c)c.classList.add('active');}}catch(_){}}catch(e){}})();</script>
+    <script>(function(){try{var fixed=new Set(['chat','settings']);var clean=function(v){var o=[];if(!Array.isArray(v))return o;v.forEach(function(id){if(typeof id!=='string')return;id=id.trim();if(!id||fixed.has(id)||o.indexOf(id)!==-1)return;o.push(id);});return o;};var reorder=function(order){order=clean(order);if(!order.length)return;['.rail','.sidebar-nav'].forEach(function(sel){var c=document.querySelector(sel);if(!c)return;var available=[];c.querySelectorAll('.nav-tab[data-panel]').forEach(function(el){var id=el.dataset.panel;if(!id||fixed.has(id)||el.classList.contains('dashboard-link')||el.hasAttribute('data-dashboard-link'))return;if(available.indexOf(id)===-1)available.push(id);});var final=[];order.forEach(function(id){if(available.indexOf(id)!==-1&&final.indexOf(id)===-1)final.push(id);});available.forEach(function(id){if(final.indexOf(id)===-1)final.push(id);});var anchor=Array.prototype.find.call(c.children,function(el){if(el.classList&&el.classList.contains('rail-spacer'))return true;if(el.classList&&el.classList.contains('dashboard-link'))return true;if(el.hasAttribute&&el.hasAttribute('data-dashboard-link'))return true;return el.dataset&&el.dataset.panel==='settings';});final.forEach(function(id){var el=c.querySelector('.nav-tab[data-panel="'+id+'"]');if(el)c.insertBefore(el,anchor||null);});});};var o=localStorage.getItem('ares-webui-tab-order');if(o)reorder(JSON.parse(o));var h=localStorage.getItem('ares-webui-hidden-tabs');if(!h)return;var p=clean(JSON.parse(h));p.forEach(function(id){document.querySelectorAll('[data-panel="'+id+'"]').forEach(function(el){el.classList.add('nav-tab-hidden');});});try{var ac=document.querySelector('.rail .rail-btn.nav-tab.active[data-panel]')||document.querySelector('.sidebar-nav .nav-tab.active[data-panel]');if(ac&&ac.classList.contains('nav-tab-hidden')){ac.classList.remove('active');var c=document.querySelector('.rail .rail-btn.nav-tab[data-panel="chat"]')||document.querySelector('.sidebar-nav .nav-tab[data-panel="chat"]');if(c)c.classList.add('active');}}catch(_){}}catch(e){}})();</script>
     <!-- Chat panel -->
     <div class="panel-view active" id="panelChat">
       <div class="panel-head">
@@ -205,15 +211,25 @@
       <div class="session-list" id="sessionList"></div>
     </div>
     <!-- Tasks (cron) panel -->
+    <!-- Avatar panel: who the Companion is, and who else it could be -->
+    <div class="panel-view" id="panelAvatar">
+      <div class="panel-head">
+        <span data-i18n="tab_avatar">Avatar</span>
+        <div class="panel-head-actions">
+          <button class="panel-head-btn has-tooltip has-tooltip--bottom" onclick="loadAvatarPanel(true)" data-tooltip="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+        </div>
+      </div>
+      <div class="avatar-roster" id="avatarRoster"><div class="avatar-roster-empty" data-i18n="loading">Loading...</div></div>
+    </div>
     <div class="panel-view" id="panelTasks">
       <div class="panel-head">
         <span data-i18n="scheduled_jobs">Scheduled jobs</span>
         <div class="panel-head-actions">
+          <button class="panel-head-btn has-tooltip has-tooltip--bottom" id="caldavOpenBtn" data-requires-capability="caldav" onclick="openCalDav()" data-tooltip="CalDAV calendar" aria-label="CalDAV calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></button>
           <button class="panel-head-btn has-tooltip has-tooltip--bottom" id="cronRefreshBtn" onclick="loadCrons(true)" data-tooltip="Refresh job list" aria-label="Refresh job list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
           <button class="panel-head-btn has-tooltip has-tooltip--bottom" onclick="openCronCreate()" data-tooltip="New job" data-i18n-title="new_job" aria-label="New job"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
         </div>
       </div>
-      <div id="cronGatewayNotice" class="detail-alert cron-gateway-notice" style="display:none"></div>
       <div class="cron-list" id="cronList"><div style="padding:12px;color:var(--muted);font-size:12px" data-i18n="loading">Loading...</div></div>
     </div>
     <!-- Kanban panel -->
@@ -245,6 +261,14 @@
       </div>
       <div class="kanban-summary" id="kanbanSummary"></div>
       <div class="kanban-list" id="kanbanList"><div style="padding:12px;color:var(--muted);font-size:12px" data-i18n="loading">Loading...</div></div>
+    </div>
+    <div class="panel-view" id="panelModelLab">
+      <div class="panel-head"><span>Model Lab</span></div>
+      <div style="padding:12px;color:var(--muted);font-size:12px">Compare available runtimes, escalate weak answers, and use safe model-serving recipes.</div>
+    </div>
+    <div class="panel-view" id="panelContent">
+      <div class="panel-head"><span>Content Studio</span></div>
+      <div style="padding:12px;color:var(--muted);font-size:12px">Research, ingest source material, and create workspace artifacts.</div>
     </div>
     <!-- Skills panel -->
     <div class="panel-view" id="panelSkills">
@@ -372,13 +396,9 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
             <span data-i18n="settings_tab_preferences">Preferences</span>
           </button>
-          <button type="button" class="side-menu-item" data-settings-section="providers" onclick="switchSettingsSection('providers',{fromSidebarItem:true})">
+          <button type="button" class="side-menu-item" data-settings-section="providers" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings" onclick="switchSettingsSection('providers',{fromSidebarItem:true})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
             <span data-i18n="providers_tab_title">Providers</span>
-          </button>
-          <button type="button" class="side-menu-item" data-settings-section="plugins" onclick="switchSettingsSection('plugins',{fromSidebarItem:true})">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.3 2.1 7L12 16.2 5.4 20.3l2.1-7L2 9h7z"/></svg>
-            <span data-i18n="settings_tab_plugins">Plugins</span>
           </button>
           <button type="button" class="side-menu-item" data-settings-section="extensions" onclick="switchSettingsSection('extensions',{fromSidebarItem:true})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M7 8h10v4a5 5 0 0 1-10 0V8z"/><path d="M12 17v5"/></svg>
@@ -429,6 +449,13 @@
         <button class="update-btn update-primary" id="btnStaleClientRefresh" type="button" onclick="hardRefreshWebUIClient()" data-i18n="update_hard_refresh_now">Hard refresh now</button>
       </div>
     </div>
+    <div class="runtime-capability-banner" id="runtimeCapabilityBanner" role="status" aria-live="polite" hidden>
+      <div>
+        <strong id="runtimeCapabilityTitle">Selected runtime unavailable</strong>
+        <span id="runtimeCapabilityDetail">Runtime-owned features are unavailable until capability negotiation succeeds.</span>
+      </div>
+      <button type="button" onclick="refreshAresCapabilities()">Retry</button>
+    </div>
     <div id="mainChat" class="main-view">
     <div class="messages-shell">
       <button id="jumpToSessionStartBtn" class="session-jump-btn session-jump-btn--start" aria-label="Jump to beginning of session" data-i18n-aria-label="session_jump_start_label" data-i18n-title="session_jump_start_label" onclick="jumpToSessionStart()" style="display:none"><span aria-hidden="true">↑</span><span data-i18n="session_jump_start">Start</span></button>
@@ -469,18 +496,18 @@
       <div class="offline-copy">
         <strong id="offlineTitle" data-i18n="offline_title">Connection lost</strong>
         <span id="offlineDetails" data-i18n="offline_browser_detail">Your browser reports that this device is offline.</span>
-        <span id="offlineAutorefresh" data-i18n="offline_autorefresh">I will refresh this page automatically when Hermes is reachable again.</span>
+        <span id="offlineAutorefresh" data-i18n="offline_autorefresh">I will refresh this page automatically when ARES is reachable again.</span>
       </div>
       <button class="offline-action" id="offlineCheckNow" type="button" onclick="checkOfflineRecoveryNow()" data-i18n="offline_check_now">Check now</button>
     </div>
     <div class="agent-health-banner" id="agentHealthBanner" role="alert" aria-live="assertive" hidden>
       <div class="agent-health-copy">
-        <strong id="agentHealthTitle">Hermes agent is not responding</strong>
+        <strong id="agentHealthTitle">ARES messaging gateway is not responding</strong>
         <span id="agentHealthDetails">The gateway heartbeat failed. Messages may not be delivered until it comes back.</span>
       </div>
       <div class="agent-health-actions">
         <button class="agent-health-restart" id="btnRestartGateway" type="button" onclick="restartGatewayService()">Restart Service</button>
-        <button class="agent-health-dismiss" id="agentHealthDismiss" type="button" onclick="dismissAgentHealthAlert()" aria-label="Dismiss Hermes agent heartbeat alert">Dismiss</button>
+        <button class="agent-health-dismiss" id="agentHealthDismiss" type="button" onclick="dismissAgentHealthAlert()" aria-label="Dismiss ARES messaging gateway alert">Dismiss</button>
       </div>
     </div>
     <div class="composer-wrap" id="composerWrap">
@@ -595,7 +622,7 @@
           <span class="voice-mode-indicator" id="voiceModeIndicator"></span>
           <span class="voice-mode-label" id="voiceModeLabel"></span>
         </div>
-        <textarea id="msg" rows="1" placeholder="Message Hermes…"></textarea>
+        <textarea id="msg" rows="1" placeholder="Message ARES…"></textarea>
         <div id="composerWorkspaceContext" class="sr-only"></div>
         <div class="composer-footer">
           <div class="composer-left">
@@ -821,6 +848,7 @@
       <div class="main-view-header">
         <div class="main-view-title" id="taskDetailTitle"></div>
         <div class="main-view-actions">
+          <button id="btnOpenCalDav" class="panel-head-btn has-tooltip has-tooltip--bottom" data-requires-capability="caldav" data-tooltip="CalDAV calendar" aria-label="CalDAV calendar" onclick="openCalDav()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></button>
           <button id="btnRunTaskDetail" class="panel-head-btn has-tooltip has-tooltip--bottom" data-tooltip="Run now" data-i18n-title="cron_run_now" onclick="runCurrentCron()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
           <button id="btnPauseTaskDetail" class="panel-head-btn has-tooltip has-tooltip--bottom" data-tooltip="Pause" data-i18n-title="cron_pause" onclick="pauseCurrentCron()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
           <button id="btnResumeTaskDetail" class="panel-head-btn has-tooltip has-tooltip--bottom" data-tooltip="Resume" data-i18n-title="cron_resume" onclick="resumeCurrentCron()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/><line x1="22" y1="4" x2="22" y2="20"/></svg></button>
@@ -884,6 +912,12 @@
         <div class="main-view-empty-sub" data-i18n="workspaces_empty_sub">Pick a space from the sidebar to view its files and settings, or add a new one.</div>
       </div>
     </div>
+    <div id="mainAvatar" class="main-view">
+      <div class="main-view-header">
+        <div class="main-view-title" data-i18n="tab_avatar">Avatar</div>
+      </div>
+      <div class="main-view-body" id="avatarStage"></div>
+    </div>
     <div id="mainProfiles" class="main-view">
       <div class="main-view-header">
         <div class="main-view-title" id="profileDetailTitle"></div>
@@ -935,16 +969,24 @@
         <div id="pluginPageContainer"></div>
       </div>
     </div>
+    <div id="mainModelLab" class="main-view" data-requires-capability="model_compare">
+      <div class="main-view-header"><div class="main-view-title">Model Lab</div></div>
+      <div class="main-view-body" id="modelLabBody"><div class="settings-loading">Loading model intelligence…</div></div>
+    </div>
+    <div id="mainContent" class="main-view" data-requires-any-capability="deep_research,youtube_ingest,pdf_forms,image_gallery,image_editor,visual_reports">
+      <div class="main-view-header"><div class="main-view-title">Content Studio</div></div>
+      <div class="main-view-body" id="contentStudioBody"><div class="settings-loading">Loading content tools…</div></div>
+    </div>
     <div id="mainSettings" class="main-view">
       <div class="settings-main">
           <div class="settings-pane active" id="settingsPaneConversation">
             <div class="settings-section-head">
               <div>
                 <div class="settings-section-title" data-i18n="settings_section_conversation_title">Conversation</div>
-                <div class="settings-section-meta" id="hermesSessionMeta" data-i18n="active_conversation_none">No active conversation selected.</div>
+                <div class="settings-section-meta" id="aresSessionMeta" data-i18n="active_conversation_none">No active conversation selected.</div>
               </div>
             </div>
-            <div class="hermes-action-grid">
+            <div class="ares-action-grid">
               <button class="settings-action-btn" id="btnDownload" title="Download as Markdown" data-i18n-title="download_transcript"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> <span data-i18n="transcript">Transcript</span></button>
               <button class="settings-action-btn" id="btnExportJSON" title="Export full session as JSON" data-i18n-title="export_session_json_tooltip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/></svg> <span data-i18n="export_session_json">JSON</span></button>
               <button class="settings-action-btn" id="btnShareSession" title="Create a public read-only share link" data-i18n-title="share_session_tooltip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4"/><path d="M15.4 6.5 8.6 10.5"/></svg> <span data-i18n="share_session">Share</span></button>
@@ -1165,10 +1207,10 @@
             <div class="settings-section-head">
               <div>
                 <div class="settings-section-title" data-i18n="settings_section_preferences_title">Preferences</div>
-                <div class="settings-section-meta" data-i18n="settings_section_preferences_meta">Defaults and UI behavior for Hermes Web UI.</div>
+                <div class="settings-section-meta" data-i18n="settings_section_preferences_meta">Defaults and UI behavior for ARES.</div>
               </div>
             </div>
-            <div class="settings-field">
+            <div class="settings-field" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings">
               <label for="settingsModelChip" data-i18n="settings_label_model">Default Model</label>
               <div class="model-advanced-row">
                 <button type="button" id="settingsModelChip" class="settings-model-chip" aria-haspopup="listbox" aria-expanded="false">Default Model</button>
@@ -1178,7 +1220,7 @@
               </div>
               <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_model">Used for new conversations. Existing conversations keep their selected model.</div>
             </div>
-            <div class="settings-field">
+            <div class="settings-field" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings">
               <label data-i18n="settings_label_auxiliary_models">Auxiliary Models</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:10px" data-i18n="settings_desc_auxiliary_models">Side-task routing for vision, compression, title generation, etc. "Auto" uses your main chat model.</div>
               <div id="auxModelsContainer"></div>
@@ -1193,6 +1235,13 @@
                 <span data-i18n="settings_label_hide_suggestions">Hide new-chat suggestions</span>
               </label>
               <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_hide_suggestions">Hide the three default suggestion buttons on the empty new-chat screen to avoid accidental taps.</div>
+            </div>
+            <div class="settings-field">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" id="settingsHideUnavailableFeatures" style="width:15px;height:15px;accent-color:var(--accent)">
+                <span>Hide unavailable features</span>
+              </label>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Unavailable tabs and controls remain visible by default with their current status. Enable this only if you prefer a simplified interface.</div>
             </div>
             <div class="settings-field">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -1253,7 +1302,7 @@
                 <input type="checkbox" id="settingsVoiceModeEnabled" style="width:15px;height:15px;accent-color:var(--accent)">
                 <span data-i18n="settings_label_voice_mode">Hands-free voice mode button</span>
               </label>
-              <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_voice_mode">Show the voice-mode button (audio waveform) next to the dictation mic. Lets you speak naturally — Hermes auto-sends after a pause and reads replies aloud. Requires a browser that supports both speech recognition and TTS.</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_voice_mode">Show the voice-mode button (audio waveform) next to the dictation mic. ARES auto-sends after a pause and reads replies aloud. Requires a browser that supports both speech recognition and TTS.</div>
             </div>
             <div class="settings-field">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -1300,7 +1349,7 @@
                 <span id="notificationPermissionButtonWrap" style="display:inline-flex">
                   <button type="button" class="sm-btn" id="notificationPermissionButton" onclick="requestNotificationPermission()" style="padding:5px 10px;font-size:12px" data-i18n="notifications_enable_btn">Enable notifications</button>
                 </span>
-                <button type="button" class="sm-btn" onclick="sendBrowserNotification('Hermes test','Notifications are ready.',{force:true});" style="padding:5px 10px;font-size:12px" data-i18n="notifications_test_btn">Send test</button>
+                <button type="button" class="sm-btn" onclick="sendBrowserNotification('ARES test','Notifications are ready.',{force:true});" style="padding:5px 10px;font-size:12px" data-i18n="notifications_test_btn">Send test</button>
                 <span id="notificationPermissionStatus" style="font-size:11px;color:var(--muted)"></span>
               </div>
             </div>
@@ -1441,13 +1490,6 @@
             </div>
             <div class="settings-field">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" id="settingsSyncInsights" style="width:15px;height:15px;accent-color:var(--accent)">
-                <span data-i18n="settings_label_sync_insights">Sync usage to /insights</span>
-              </label>
-              <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_sync_insights">Mirrors WebUI token usage to state.db so <code>hermes /insights</code> includes browser session data. Off by default.</div>
-            </div>
-            <div class="settings-field">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" id="settingsCheckUpdates" style="width:15px;height:15px;accent-color:var(--accent)">
                 <span data-i18n="settings_label_check_updates">Check for updates</span>
               </label>
@@ -1478,12 +1520,12 @@
             <div class="settings-field">
               <label for="settingsBotName" data-i18n="settings_label_bot_name">Default assistant name</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:6px" data-i18n="settings_desc_bot_name">Used for the default profile only. Other profiles use their own profile names.</div>
-              <input type="text" id="settingsBotName" placeholder="Hermes" maxlength="64" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px;font-size:13px">
+              <input type="text" id="settingsBotName" placeholder="ARES" maxlength="64" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px;font-size:13px">
             </div>
             <button class="sm-btn" onclick="saveSettings()" style="margin-top:12px;width:100%;padding:8px;font-weight:600" data-i18n="settings_save_btn">Save Settings</button>
             <div id="settingsPreferencesAutosaveStatus" class="settings-autosave-status" aria-live="polite"></div>
           </div>
-          <div class="settings-pane" id="settingsPaneProviders">
+          <div class="settings-pane" id="settingsPaneProviders" data-capability-domain="agent_runtime" data-requires-capability="cloud_provider_model_settings">
             <div class="settings-section-head">
               <div>
                 <div class="settings-section-title" data-i18n="providers_section_title">Providers</div>
@@ -1495,20 +1537,6 @@
             </div>
             <div id="providersEmpty" style="display:none;text-align:center;padding:32px 0;color:var(--muted);font-size:13px" data-i18n="providers_empty">
               No configurable providers found.
-            </div>
-          </div>
-          <div class="settings-pane" id="settingsPanePlugins">
-            <div class="settings-section-head">
-              <div>
-                <div class="settings-section-title" data-i18n="settings_plugins_title">Plugins</div>
-                <div class="settings-section-meta" data-i18n="settings_plugins_meta">View installed Hermes plugins and the lifecycle hooks they register. This panel is read-only.</div>
-              </div>
-            </div>
-            <div id="pluginsList" style="display:flex;flex-direction:column;margin-top:4px">
-              <!-- Populated dynamically by loadPluginsPanel() -->
-            </div>
-            <div id="pluginsEmpty" style="display:none;text-align:center;padding:32px 0;color:var(--muted);font-size:13px" data-i18n="settings_plugins_empty">
-              No Hermes plugins are currently visible. Install or enable plugins from the Hermes CLI/config to see them here.
             </div>
           </div>
           <div class="settings-pane" id="settingsPaneExtensions">
@@ -1587,7 +1615,7 @@
                 <input type="password" id="settingsCurrentPassword" autocomplete="current-password" placeholder="Enter current password…" data-i18n-placeholder="current_password_placeholder" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px;font-size:13px">
               </div>
               </form>
-              <div id="settingsPasswordEnvLock" data-i18n="password_env_var_locked" style="display:none;margin-top:6px;padding:8px 10px;font-size:11px;color:var(--muted);background:var(--code-bg);border:1px solid var(--border2);border-radius:6px;line-height:1.45">The HERMES_WEBUI_PASSWORD environment variable is currently set and takes precedence. Unset it and restart the server to manage the password from here.</div>
+              <div id="settingsPasswordEnvLock" data-i18n="password_env_var_locked" style="display:none;margin-top:6px;padding:8px 10px;font-size:11px;color:var(--muted);background:var(--code-bg);border:1px solid var(--border2);border-radius:6px;line-height:1.45">The ARES_WEBUI_PASSWORD environment variable is currently set and takes precedence. Unset it and restart the server to manage the password from here.</div>
             </div>
             <div id="settingsAuthDisabledWarning" style="display:none;margin-top:8px;padding:10px 12px;border-radius:8px;border:1px solid rgba(220,80,80,.35);background:rgba(220,80,80,.08)">
               <div style="font-size:12px;font-weight:700;color:rgba(220,80,80,.95);margin-bottom:6px" data-i18n="auth_status_unauthenticated">Unauthenticated</div>
@@ -1600,7 +1628,7 @@
             <button class="sm-btn" id="btnDisableAuth" onclick="disableAuth()" style="margin-top:6px;width:100%;padding:8px;font-weight:600;color:#e8a030;border-color:rgba(232,160,48,.3);display:none" data-i18n="disable_auth">Disable Auth</button>
             <button class="sm-btn" id="btnSignOut" onclick="signOut()" style="margin-top:6px;width:100%;padding:8px;font-weight:600;color:var(--accent);border-color:rgba(233,69,96,.3);display:none" data-i18n="sign_out">Sign Out</button>
             <div class="settings-field" id="shutdownServerBlock" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
-              <label data-i18n="settings_label_shutdown">Stop the Hermes WebUI server</label>
+              <label data-i18n="settings_label_shutdown">Stop the ARES server</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:8px"><span data-i18n="settings_desc_shutdown_before_cmd">Gracefully stops the local WebUI server. Useful if you launched via </span><code>./ctl.sh start</code><span data-i18n="settings_desc_shutdown_between_cmds"> and want to stop without switching to a terminal. You'll need to relaunch the server (</span><code>./ctl.sh start</code><span data-i18n="settings_desc_shutdown_after_cmd"> or the native app) before the WebUI is reachable again.</span></div>
               <button class="sm-btn" id="btnShutdownServer" onclick="shutdownServer()" style="width:100%;padding:8px;font-weight:600;color:#e74c3c;border-color:rgba(231,76,60,.3)" data-i18n="settings_btn_shutdown">Stop server</button>
             </div>
@@ -1612,8 +1640,8 @@
               <div id="passkeyList" style="margin-top:8px;font-size:12px;color:var(--muted)">No passkeys registered.</div>
             </div>
             <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
-              <label for="settingsDashboardMode" data-i18n="settings_label_dashboard_mode">Official Hermes Dashboard</label>
-              <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="settings_desc_dashboard_mode">Show a nav-rail link when the official <code>hermes dashboard</code> is reachable. Public reverse-proxy URLs are stored as browser-only links and are never server-probed.</div>
+              <label for="settingsDashboardMode" data-i18n="settings_label_dashboard_mode">External Dashboard</label>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="settings_desc_dashboard_mode">Show a nav-rail link when the configured companion dashboard is reachable. Public reverse-proxy URLs are stored as browser-only links and are never server-probed.</div>
               <select id="settingsDashboardMode" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px">
                 <option value="auto" data-i18n="settings_dashboard_mode_auto">Auto-detect</option>
                 <option value="always" data-i18n="settings_dashboard_mode_always">Always show</option>
@@ -1624,20 +1652,20 @@
               <div id="settingsDashboardStatus" class="settings-autosave-status" aria-live="polite"></div>
             </div>
             <!-- Gateway Status Section -->
-            <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="settings-field" data-requires-capability="messaging_gateway" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
               <label data-i18n="settings_label_gateway_status">Gateway Status</label>
-              <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="settings_desc_gateway_status">Status of the Hermes gateway (Telegram, Discord, Slack, etc.)</div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="settings_desc_gateway_status">Status of the optional ARES messaging gateway (Telegram, Discord, Slack, etc.). It is not required for Jaeger chat or scheduled execution.</div>
               <div id="gatewayStatusCard"><span style="color:var(--muted);font-size:12px">Loading…</span></div>
             </div>
             <!-- MCP Servers Section -->
-            <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="settings-field" data-capability-domain="extensibility" data-requires-capability="mcp_server_config" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
               <label data-i18n="mcp_servers_title">MCP Servers</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="mcp_servers_desc">View Model Context Protocol servers configured in config.yaml.</div>
               <div id="mcpServerList"></div>
-              <div class="mcp-restart-hint" data-i18n="mcp_restart_hint">Server changes are read-only here for now. Edit config.yaml and restart Hermes for changes to take effect.</div>
+              <div class="mcp-restart-hint" data-i18n="mcp_restart_hint">Server changes are sent to Jaeger through its validated MCP commands.</div>
             </div>
             <!-- MCP Tools Section -->
-            <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="settings-field" data-capability-domain="extensibility" data-requires-capability="tool_inventory" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
               <label data-i18n="mcp_tools_title">MCP Tools</label>
               <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="mcp_tools_desc">Search known tools across active MCP servers.</div>
               <input type="search" id="mcpToolSearch" class="mcp-tool-search" data-i18n-placeholder="mcp_tools_search_placeholder" placeholder="Search tools by name, server, or description…" oninput="filterMcpTools()" autocomplete="off">
@@ -1652,7 +1680,7 @@
             <div class="settings-section-head">
               <div>
                 <div class="settings-section-title" data-i18n="settings_tab_help">Help</div>
-                <div class="settings-section-meta" data-i18n="settings_help_meta">Resources and support for Hermes WebUI.</div>
+                <div class="settings-section-meta" data-i18n="settings_help_meta">Resources and support for ARES.</div>
               </div>
             </div>
             <div class="help-cards">
@@ -1662,8 +1690,8 @@
                 </div>
                 <div class="help-card-body">
                   <div class="help-card-title" data-i18n="settings_help_docs_label">Documentation</div>
-                  <div class="help-card-desc" data-i18n="settings_help_docs_desc">Guides, configuration reference, and the full Hermes WebUI README.</div>
-                  <a href="https://get-hermes.ai/" target="_blank" rel="noopener noreferrer" class="help-card-link">
+                  <div class="help-card-desc" data-i18n="settings_help_docs_desc">Guides, configuration reference, and the ARES README.</div>
+                  <a href="https://github.com/JenkinsRobotics/ARES" target="_blank" rel="noopener noreferrer" class="help-card-link">
                     <span data-i18n="settings_help_docs_link">Open Documentation</span>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
                   </a>
@@ -1676,7 +1704,7 @@
                 <div class="help-card-body">
                   <div class="help-card-title" data-i18n="settings_help_issue_label">Having an issue?</div>
                   <div class="help-card-desc" data-i18n="settings_help_issue_desc">Search existing reports or open a new one on GitHub.</div>
-                  <a href="https://github.com/nesquena/hermes-webui/issues" target="_blank" rel="noopener noreferrer" class="help-card-link">
+                  <a href="https://github.com/JenkinsRobotics/ARES/issues" target="_blank" rel="noopener noreferrer" class="help-card-link">
                     <span data-i18n="settings_help_issue_link">Open GitHub Issues</span>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
                   </a>
@@ -1745,8 +1773,8 @@
     <div class="onboarding-shell">
       <div class="onboarding-sidebar">
         <div class="onboarding-badge" data-i18n="onboarding_badge">FIRST RUN</div>
-        <h2 id="onboardingTitle" data-i18n="onboarding_title">Welcome to Hermes Web UI</h2>
-        <p id="onboardingLead" data-i18n="onboarding_lead">A quick guided setup will check your Hermes install, choose a workspace and model, and optionally protect the app with a password.</p>
+        <h2 id="onboardingTitle" data-i18n="onboarding_title">Welcome to ARES</h2>
+        <p id="onboardingLead" data-i18n="onboarding_lead">A quick guided setup will check your Jaeger runtime, choose a workspace and model, and optionally protect the app with a password.</p>
         <div class="onboarding-steps" id="onboardingSteps"></div>
       </div>
       <div class="onboarding-main">
@@ -1790,7 +1818,9 @@
 <script src="static/commands.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/messages.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/extension_settings.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/knowledge_graph.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/panels.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/avatar.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/onboarding.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/boot.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/outline.js?v=__WEBUI_VERSION__" defer></script>
@@ -1863,7 +1893,7 @@
       <select id="kanbanTaskModalAssignee">
         <!-- Options populated by _kanbanPopulateAssigneeSelect() at modal open time. -->
       </select>
-      <div class="kanban-modal-hint" id="kanbanTaskModalAssigneeHint" data-i18n="kanban_assignee_hint">Pick a Hermes profile so the dispatcher can claim and run this task. Tasks left as <em>Unassigned</em> will sit in Ready forever.</div>
+      <div class="kanban-modal-hint" id="kanbanTaskModalAssigneeHint" data-i18n="kanban_assignee_hint">Pick an ARES profile so the dispatcher can claim and run this task. Tasks left as <em>Unassigned</em> will sit in Ready forever.</div>
     </div>
     <div class="kanban-modal-row">
       <label for="kanbanTaskModalTenant" data-i18n="kanban_tenant">Tenant</label>

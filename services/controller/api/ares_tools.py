@@ -1,77 +1,17 @@
 """ARES Tools — callable tool implementations owned by ARES.
 
 These are the actual functions the agent can call to interact with
-ARES's persistence layer: tasks, self-audit, continuity.
+ARES's runtime context and canonical task store.
 
-Each tool returns a JSON string (matching both Ares and JROS tool
-result conventions). They are backend-agnostic — they operate on the
-ARES continuity DB, not on Ares or JROS internals.
+Each tool returns a JSON string (matching both Ares and JaegerAI tool
+result conventions). They are backend-agnostic and never write worker stores.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Optional
-
+from typing import Any
 from pydantic import BaseModel, Field
-
-# ── ARES Continuity DB ────────────────────────────────────────────
-
-_ARES_DB_DIR = Path(os.environ.get("ARES_HOME", str(Path.home() / ".ares")))
-_ARES_DB_PATH = _ARES_DB_DIR / "ares_continuity.db"
-
-
-def _db_path() -> Path:
-    """Resolve the ARES continuity DB path."""
-    home = Path(os.environ.get("ARES_HOME", str(Path.home() / ".ares")))
-    # ARES_HOME can point to the .ares dir itself or its parent
-    if home.name == ".ares":
-        return home / "ares_continuity.db"
-    return home / ".ares" / "ares_continuity.db"
-
-
-def _get_conn() -> sqlite3.Connection:
-    """Open the continuity DB, creating tables if needed."""
-    db_path = _db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            priority TEXT DEFAULT 'medium',
-            status TEXT DEFAULT 'open',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS promises (
-            id TEXT PRIMARY KEY,
-            text TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            captured_at TEXT NOT NULL,
-            resolved INTEGER DEFAULT 0
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            turn_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            checks TEXT DEFAULT '{}',
-            timestamp TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    return conn
 
 
 # ── Tool Argument Models ──────────────────────────────────────────
@@ -88,16 +28,51 @@ class CreateTaskArgs(BaseModel):
     priority: str = Field(default="medium", description="Priority: low, medium, high")
 
 
-class SelfAuditArgs(BaseModel):
-    """Run a self-audit on the current turn."""
-    turn_id: str = Field(default="", description="Turn identifier for audit")
-    claims: str = Field(default="", description="Comma-separated claims to verify")
-
-
 class UpdateTaskArgs(BaseModel):
     """Update an existing ARES task's status."""
     task_id: str = Field(description="The task ID to update")
     status: str = Field(description="New status: open, in_progress, blocked, done")
+
+
+class WorkspacePathArgs(BaseModel):
+    session_id: str = Field(min_length=1, max_length=256)
+    path: str = Field(min_length=1, max_length=2048)
+
+
+class PdfFormArgs(WorkspacePathArgs):
+    fields: dict[str, Any] = Field(min_length=1, max_length=200)
+
+
+class YouTubeArgs(BaseModel):
+    session_id: str = Field(min_length=1, max_length=256)
+    url: str = Field(min_length=1, max_length=2048)
+    languages: list[str] = Field(default_factory=lambda: ["en.*", "en"], max_length=5)
+
+
+class ImageEditArgs(WorkspacePathArgs):
+    operations: list[dict[str, Any]] = Field(min_length=1, max_length=10)
+
+
+class VisualReportArgs(BaseModel):
+    session_id: str = Field(min_length=1, max_length=256)
+    title: str = Field(min_length=1, max_length=200)
+    summary: str = Field(default="", max_length=20_000)
+    sections: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+
+
+class SessionArtifactsArgs(BaseModel):
+    session_id: str = Field(min_length=1, max_length=256)
+
+
+class ResearchStartArgs(BaseModel):
+    session_id: str = Field(min_length=1, max_length=256)
+    query: str = Field(min_length=1, max_length=20_000)
+    max_time: int = Field(default=300, ge=30, le=600)
+    category: str | None = Field(default=None, max_length=80)
+
+
+class ResearchStatusArgs(BaseModel):
+    session_id: str = Field(min_length=1, max_length=256)
 
 
 # ── Tool Implementations ──────────────────────────────────────────
@@ -133,18 +108,22 @@ def ares_create_task(
     if not title:
         return json.dumps({"status": "error", "error": "title is required"})
 
-    task_id = str(uuid.uuid4())[:8]
-    now = datetime.now(timezone.utc).isoformat()
-
     try:
-        conn = _get_conn()
-        conn.execute(
-            "INSERT INTO tasks (id, title, description, priority, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 'open', ?, ?)",
-            (task_id, title, description, priority, now, now),
-        )
-        conn.commit()
-        conn.close()
+        from api import kanban_store
+
+        priority_value = {"low": 0, "medium": 50, "high": 100}.get(priority.lower())
+        if priority_value is None:
+            return json.dumps({"status": "error", "error": "priority must be low, medium, or high"})
+        kanban_store.init_db()
+        with kanban_store.connect_closing() as conn:
+            task_id = kanban_store.create_task(
+                conn,
+                title=title,
+                body=description or None,
+                priority=priority_value,
+                created_by="ares-agent-tool",
+            )
+            task = kanban_store.get_task(conn, task_id)
     except Exception as exc:
         return json.dumps({"status": "error", "error": str(exc)})
 
@@ -153,49 +132,7 @@ def ares_create_task(
         "id": task_id,
         "title": title,
         "priority": priority,
-    })
-
-
-def ares_self_audit(
-    turn_id: str = "",
-    claims: str = "",
-    **kwargs,
-) -> str:
-    """Run a self-audit on the current turn.
-
-    Checks whether the agent's claims are backed by tool execution
-    evidence. Returns a structured audit result.
-    """
-    now = datetime.now(timezone.utc).isoformat()
-
-    # Audit checks — these will be expanded as ARES grows
-    checks = {
-        "tools_actually_called": False,  # Will be populated by lifecycle hooks
-        "verification_attempted": False,    # Did the agent verify results?
-        "claims_backed_by_evidence": False,  # Are claims traceable to tool output?
-        "no_false_completion": True,         # Did agent claim done without running tools?
-    }
-
-    status = "pass" if all(checks.values()) else "review"
-
-    # Persist audit event
-    try:
-        conn = _get_conn()
-        conn.execute(
-            "INSERT INTO audit_events (turn_id, status, checks, timestamp) "
-            "VALUES (?, ?, ?, ?)",
-            (turn_id or "unknown", status, json.dumps(checks), now),
-        )
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass  # Audit persistence is best-effort
-
-    return json.dumps({
-        "status": status,
-        "turn_id": turn_id or "unknown",
-        "checks": checks,
-        "timestamp": now,
+        "task": task.__dict__ if task is not None else None,
     })
 
 
@@ -208,50 +145,115 @@ def ares_update_task(
     if not task_id:
         return json.dumps({"status": "error", "error": "task_id is required"})
 
-    now = datetime.now(timezone.utc).isoformat()
-
     try:
-        conn = _get_conn()
-        row = conn.execute(
-            "SELECT id FROM tasks WHERE id = ?", (task_id,)
-        ).fetchone()
-        if not row:
-            conn.close()
-            return json.dumps({"status": "error", "error": f"task {task_id} not found"})
+        from api import kanban_store
 
-        conn.execute(
-            "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-            (status, now, task_id),
-        )
-        conn.commit()
-        conn.close()
+        normalized = {"open": "ready", "in_progress": "running"}.get(status, status)
+        kanban_store.init_db()
+        with kanban_store.connect_closing() as conn:
+            updated = kanban_store.set_task_status(conn, task_id, normalized)
+        if not updated:
+            return json.dumps({"status": "error", "error": f"task {task_id} not found"})
     except Exception as exc:
         return json.dumps({"status": "error", "error": str(exc)})
 
     return json.dumps({
         "status": "updated",
         "id": task_id,
-        "new_status": status,
+        "new_status": normalized,
     })
 
 
-class DelegateToHermesArgs(BaseModel):
-    """Arguments for delegating a task to Hermes."""
-    task_description: str = Field(description="The highly detailed task to execute in the terminal or browser.")
+def _tool_result(operation, *args, **kwargs) -> str:
+    try:
+        return json.dumps(operation(*args, **kwargs), ensure_ascii=False, default=str)
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)})
 
 
-def ares_delegate_to_hermes(task_description: str = "", **kwargs) -> str:
-    """Delegate a task to the Hermes Execution Agent."""
-    if not task_description:
-        return json.dumps({"status": "error", "error": "task_description is required"})
-    
-    # Bridge to the Hermes execution environment
-    # In production this streams to the frontend, but for the tool return we provide the synchronous ack.
+def ares_extract_pdf(session_id: str, path: str, **_kwargs) -> str:
+    from api.ingestion import extract_pdf
+    return _tool_result(extract_pdf, session_id, path)
+
+
+def ares_fill_pdf_form(
+    session_id: str, path: str, fields: dict[str, Any], **_kwargs
+) -> str:
+    from api.ingestion import fill_pdf_form
+    return _tool_result(fill_pdf_form, session_id, path, fields)
+
+
+def ares_ingest_youtube(
+    session_id: str, url: str, languages: list[str] | None = None, **_kwargs
+) -> str:
+    from api.ingestion import ingest_youtube
+    return _tool_result(ingest_youtube, session_id, url, languages)
+
+
+def ares_edit_image(
+    session_id: str, path: str, operations: list[dict[str, Any]], **_kwargs
+) -> str:
+    from api.generated_artifacts import edit_image
+    return _tool_result(edit_image, session_id, path, operations)
+
+
+def ares_create_visual_report(
+    session_id: str,
+    title: str,
+    summary: str = "",
+    sections: list[dict[str, Any]] | None = None,
+    **_kwargs,
+) -> str:
+    from api.generated_artifacts import create_visual_report
+    return _tool_result(
+        create_visual_report,
+        session_id,
+        title=title,
+        summary=summary,
+        sections=sections or [],
+    )
+
+
+def ares_list_artifacts(session_id: str, **_kwargs) -> str:
+    from api.workspace_artifacts import list_artifacts
+    return _tool_result(list_artifacts, session_id)
+
+
+_RESEARCH_HANDLER = None
+
+
+def _research_handler():
+    global _RESEARCH_HANDLER
+    if _RESEARCH_HANDLER is None:
+        from api.research.handler import ResearchHandler
+        _RESEARCH_HANDLER = ResearchHandler()
+    return _RESEARCH_HANDLER
+
+
+def ares_start_research(
+    session_id: str,
+    query: str,
+    max_time: int = 300,
+    category: str | None = None,
+    **_kwargs,
+) -> str:
+    return _tool_result(
+        _research_handler().start_research,
+        session_id,
+        query,
+        max_time,
+        category,
+    )
+
+
+def ares_get_research(session_id: str, **_kwargs) -> str:
+    handler = _research_handler()
     return json.dumps({
-        "status": "delegated",
-        "message": f"Task delegated to Hermes successfully. Execution: {task_description}",
-        "target_agent": "hermes"
-    })
+        "session_id": session_id,
+        "status": handler.get_status(session_id),
+        "result": handler.get_result(session_id),
+        "sources": handler.get_sources(session_id) or [],
+    }, ensure_ascii=False, default=str)
 
 
 # ── Tool Definitions Catalog ──────────────────────────────────────
@@ -277,15 +279,6 @@ ARES_TOOL_DEFS = [
         "args_model": CreateTaskArgs,
     },
     {
-        "name": "ares_self_audit",
-        "description": (
-            "Run a self-audit on the current turn. Checks whether claims "
-            "are backed by tool execution evidence."
-        ),
-        "fn": ares_self_audit,
-        "args_model": SelfAuditArgs,
-    },
-    {
         "name": "ares_update_task",
         "description": (
             "Update an ARES task's status (e.g. mark as done, blocked, "
@@ -295,12 +288,51 @@ ARES_TOOL_DEFS = [
         "args_model": UpdateTaskArgs,
     },
     {
-        "name": "ares_delegate_to_hermes",
-        "description": (
-            "Delegate a task to the Hermes Execution Agent. Use this tool whenever "
-            "you need to run terminal commands, manipulate files, or automate the browser."
-        ),
-        "fn": ares_delegate_to_hermes,
-        "args_model": DelegateToHermesArgs,
+        "name": "ares_start_research",
+        "description": "Start an ARES deep-research job using the selected runtime and configured search backend.",
+        "fn": ares_start_research,
+        "args_model": ResearchStartArgs,
+    },
+    {
+        "name": "ares_get_research",
+        "description": "Read the status, sources, and result of an ARES deep-research job.",
+        "fn": ares_get_research,
+        "args_model": ResearchStatusArgs,
+    },
+    {
+        "name": "ares_extract_pdf",
+        "description": "Extract text and form-field names from a PDF in the active session workspace.",
+        "fn": ares_extract_pdf,
+        "args_model": WorkspacePathArgs,
+    },
+    {
+        "name": "ares_fill_pdf_form",
+        "description": "Fill known fields in a workspace PDF and save the result as an ARES artifact.",
+        "fn": ares_fill_pdf_form,
+        "args_model": PdfFormArgs,
+    },
+    {
+        "name": "ares_ingest_youtube",
+        "description": "Acquire a YouTube transcript and save it in the active session workspace.",
+        "fn": ares_ingest_youtube,
+        "args_model": YouTubeArgs,
+    },
+    {
+        "name": "ares_edit_image",
+        "description": "Apply validated image operations and save the output as an ARES artifact.",
+        "fn": ares_edit_image,
+        "args_model": ImageEditArgs,
+    },
+    {
+        "name": "ares_create_visual_report",
+        "description": "Create a self-contained visual HTML report in the active session workspace.",
+        "fn": ares_create_visual_report,
+        "args_model": VisualReportArgs,
+    },
+    {
+        "name": "ares_list_artifacts",
+        "description": "List generated artifacts for an ARES session workspace.",
+        "fn": ares_list_artifacts,
+        "args_model": SessionArtifactsArgs,
     },
 ]

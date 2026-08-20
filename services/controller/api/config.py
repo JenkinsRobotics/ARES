@@ -174,15 +174,6 @@ def _discover_agent_dir() -> Path:
     for sys_prefix in ("/opt", "/usr/local", "/usr/local/share"):
         candidates.append(Path(sys_prefix) / "ares-agent")
 
-    # 9. Fallback to legacy hermes-agent paths since we just forked
-    candidates.append(Path(ares_home).expanduser() / "hermes-agent")
-    candidates.append(REPO_ROOT.parent / "hermes-agent")
-    candidates.append(_DEFAULT_ARES_HOME / "hermes-agent")
-    candidates.append(HOME / "hermes-agent")
-    candidates.append(xdg_data.expanduser() / "hermes-agent")
-    for sys_prefix in ("/opt", "/usr/local", "/usr/local/share"):
-        candidates.append(Path(sys_prefix) / "hermes-agent")
-
     # Prefer real source checkouts before pip-style roots so lookalikes cannot preempt them.
     for path in candidates:
         if path.exists() and (path / "run_agent.py").exists():
@@ -948,13 +939,20 @@ def print_startup_config() -> None:
     """Print detected configuration at startup so the user can verify what was found."""
     ok = "\033[32m[ok]\033[0m"
     warn = "\033[33m[!!]\033[0m"
+    try:
+        from api.backend_selector import get_active_backend
+
+        selected_runtime = get_active_backend(get_config())
+    except Exception:
+        selected_runtime = "unknown"
 
     lines = [
         "",
         "  ARES Web UI -- startup config",
         "  -------------------------------",
         f"  repo root   : {REPO_ROOT}",
-        f"  ares dir  : {_AGENT_DIR if _AGENT_DIR else 'NOT FOUND'}  {ok if _AGENT_DIR else warn}",
+        f"  runtime     : {selected_runtime}",
+        f"  legacy worker: {_AGENT_DIR if _AGENT_DIR else 'not configured'}",
         f"  server python: {sys.executable}",
         f"  tool python  : {PYTHON_EXE}",
         f"  state dir   : {STATE_DIR}",
@@ -970,20 +968,11 @@ def print_startup_config() -> None:
     except Exception:
         pass
 
-    if not _ARES_FOUND:
+    if not _ARES_FOUND and selected_runtime != "jaeger_local":
         print(
-            f"{warn}  Ares Agent was not found.\n"
-            "      The ARES Web UI server can still start. Ares-specific coding,\n"
-            "      cron, profile, and tool features will not work until Ares is\n"
-            "      installed/configured. Jaeger AI requires a reachable gateway\n"
-            "      or local Jaeger AI installation.\n"
-            "\n"
-            "      To enable Ares mode, set one of:\n"
-            "        export ARES_WEBUI_AGENT_DIR=/path/to/ares-agent\n"
-            "        export ARES_HOME=/path/to/.ares\n"
-            "\n"
-            "      Or clone ares-agent as a sibling of this repo:\n"
-            "        git clone <ares-agent-repo> ../ares-agent\n",
+            f"{warn}  The selected legacy worker runtime is not installed.\n"
+            "      Select Jaeger AI in ARES, or configure an explicitly supported\n"
+            "      worker integration. No source checkout is installed implicitly.\n",
             flush=True,
         )
 
@@ -8908,6 +8897,7 @@ _SETTINGS_DEFAULTS = {
     "show_conversation_outline": False,  # show opt-in desktop jump-to-question outline panel
     "show_busy_placeholder_hint": False,  # opt-in busy composer placeholder hint
     "hide_empty_state_suggestions": False,  # hide the default new-chat suggestion buttons
+    "hide_unavailable_features": False,  # keep unavailable surfaces visible unless explicitly hidden
     "new_chat_on_workspace_switch": False,  # #5473 opt-in: switching to a DIFFERENT workspace starts a new chat (leaving the current conversation on its original workspace) instead of mutating the current session's workspace in place. Default OFF preserves the shipped in-place-switch behavior.
     "virtualize_transcript": False,  # #4343: virtualize long (>80 msg) transcripts. EXPERIMENTAL, opt-IN (default OFF). Was opt-out/default-on in #4325 but caused scroll-up flicker on long sessions with tall tool-call rows (variable-height anchor oscillation) — flipped off for everyone in #4343; re-enabling requires an explicit opt-in (see virtualize_transcript_optin migration in load_settings).
     "virtualize_transcript_optin": False,  # #4343 migration marker: True only once the user explicitly enables virtualize_transcript AFTER the default-off flip. A stored virtualize_transcript=True WITHOUT this marker is a stale pre-flip value and is reset to False on load (force-off-for-everyone migration).
@@ -9222,6 +9212,7 @@ _SETTINGS_BOOL_KEYS = {
     "show_conversation_outline",
     "show_busy_placeholder_hint",
     "hide_empty_state_suggestions",
+    "hide_unavailable_features",
     "new_chat_on_workspace_switch",
     "virtualize_transcript",
     "virtualize_transcript_optin",
@@ -9543,7 +9534,7 @@ def save_settings(settings: dict) -> dict:
     if "default_workspace" in current:
         DEFAULT_WORKSPACE = resolve_default_workspace(current["default_workspace"])
 
-    # ARES: Auto-sync provider changes to Ares and JROS configs
+    # ARES: Auto-sync provider changes to Ares and JaegerAI configs
     # This ensures both backends use the same providers and fallbacks
     _sync_providers_on_settings_save(current)
 
@@ -9552,7 +9543,7 @@ def save_settings(settings: dict) -> dict:
 
 
 def _sync_providers_on_settings_save(settings: dict) -> None:
-    """Sync provider changes to Ares and JROS configs automatically.
+    """Sync provider changes to Ares and JaegerAI configs automatically.
     
     Called after save_settings() to ensure both backends stay in sync.
     Only syncs when provider-related settings actually changed.
@@ -9570,7 +9561,7 @@ def _sync_providers_on_settings_save(settings: dict) -> None:
         if not model:
             return
         
-        # Trigger async sync to Ares + JROS configs
+        # Trigger async sync to Ares + JaegerAI configs
         _trigger_provider_sync(provider, model)
     except Exception:
         # Never block settings save on sync failure
@@ -9586,11 +9577,11 @@ def _trigger_provider_sync(provider: str, model: str) -> None:
             from api.ares_provider_sync import sync_provider
             from api.config import _get_config_path
             
-            # Sync to both Ares and JROS
+            # Sync to both Ares and JaegerAI
             sync_provider(
                 provider=provider,
                 model=model,
-                targets=["ares", "jros"],
+                targets=["ares", "jaeger"],
                 ares_config_path=_get_config_path(),
                 dry_run=False,
             )

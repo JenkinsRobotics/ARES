@@ -54,17 +54,12 @@ final class AlphaBackendContractTests: XCTestCase {
         XCTAssertGreaterThan(context.confidence, 0)
     }
 
-    func testExecutionBackendRouterTreatsHermesAndJaegerAsPeerFrameworks() throws {
+    func testExecutionBackendRouterCombinesJaegerAndARESNativeCapabilities() throws {
         let router = ExecutionBackendRouter(backends: [
             ExecutionBackendDescriptor(
-                kind: .hermes,
-                displayName: "Hermes Agent",
-                capabilities: [.agentTurn, .toolUse, .memory, .scheduling, .verification]
-            ),
-            ExecutionBackendDescriptor(
                 kind: .jaeger,
-                displayName: "JROS",
-                capabilities: [.agentTurn, .toolUse, .voiceInput, .voiceOutput, .robotics, .eventBus, .hardwareSafety]
+                displayName: "JaegerAI",
+                capabilities: [.agentTurn, .toolUse, .memory, .scheduling, .verification, .robotics, .hardwareSafety]
             ),
             ExecutionBackendDescriptor(
                 kind: .aresNative,
@@ -75,15 +70,15 @@ final class AlphaBackendContractTests: XCTestCase {
 
         let route = router.route(for: ExecutionBackendRequest(
             userIntent: "Use agent tools and robot hardware from one natural request",
-            requiredCapabilities: [.scheduling, .robotics, .hardwareSafety]
+            requiredCapabilities: [.scheduling, .hardwareSafety, .uiPresentation]
         ))
 
         if case .hybrid(let backends) = route.mode {
-            XCTAssertEqual(Set(backends), Set([.hermes, .jaeger]))
+            XCTAssertEqual(Set(backends), Set([.jaeger, .aresNative]))
         } else {
             XCTFail("Expected hybrid route, got \(route.mode)")
         }
-        XCTAssertEqual(Set(route.selectedBackends), Set([.hermes, .jaeger]))
+        XCTAssertEqual(Set(route.selectedBackends), Set([.jaeger, .aresNative]))
         XCTAssertTrue(route.isRoutable)
         XCTAssertTrue(route.rationale.contains { $0.contains("Hybrid route") })
     }
@@ -96,13 +91,8 @@ final class AlphaBackendContractTests: XCTestCase {
                 capabilities: [.naturalLanguageInterface, .uiPresentation, .automationFlow]
             ),
             ExecutionBackendDescriptor(
-                kind: .hermes,
-                displayName: "Hermes Agent",
-                capabilities: [.agentTurn, .toolUse, .memory]
-            ),
-            ExecutionBackendDescriptor(
                 kind: .jaeger,
-                displayName: "JROS",
+                displayName: "JaegerAI",
                 capabilities: [.agentTurn, .voiceInput, .voiceOutput, .robotics]
             )
         ])

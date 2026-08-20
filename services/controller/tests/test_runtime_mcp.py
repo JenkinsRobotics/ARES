@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+import pytest
+
+
+def _contract(available=True):
+    return {"negotiated": True, "error": None,
+            "runtime_contract": {"features": {"mcp_server_config": {"available": available}}}}
+
+
+def test_runtime_mcp_queries_and_commands(monkeypatch):
+    from api import ares_capabilities, runtime_mcp
+    from api.providers.jaeger import streaming
+    calls = []
+    monkeypatch.setattr(ares_capabilities, "capability_contract_for_backend", lambda _backend: _contract())
+    monkeypatch.setattr(streaming, "query_local_companion",
+                        lambda what, args: {"tools": [], "total": 0, "unavailable_servers": []})
+    monkeypatch.setattr(streaming, "command_local_companion",
+                        lambda cmd, args: calls.append((cmd, args)) or {"ok": True})
+
+    assert runtime_mcp.list_runtime_tools()["total"] == 0
+    runtime_mcp.configure_runtime_server("web", {
+        "url": "https://mcp.example.test/v1",
+        "headers": {"Authorization": "Bearer secret"},
+    })
+    runtime_mcp.toggle_runtime_server("web", False)
+    runtime_mcp.toggle_runtime_server("web", True)
+    runtime_mcp.remove_runtime_server("web")
+    runtime_mcp.reload_runtime_tools()
+    assert [row[0] for row in calls] == ["configure_mcp_server", "disable_mcp_server",
+                                         "enable_mcp_server", "remove_mcp_server", "reload_tools"]
+    assert calls[0][1] == {
+        "name": "web",
+        "config": {
+            "url": "https://mcp.example.test/v1",
+            "headers": {"Authorization": "Bearer secret"},
+        },
+    }
+
+
+def test_runtime_mcp_fails_closed(monkeypatch):
+    from api import ares_capabilities, runtime_mcp
+    monkeypatch.setattr(ares_capabilities, "capability_contract_for_backend",
+                        lambda _backend: {"negotiated": False, "error": "contract mismatch",
+                                          "runtime_contract": None})
+    with pytest.raises(runtime_mcp.RuntimeMCPError, match="contract mismatch") as caught:
+        runtime_mcp.list_runtime_servers()
+    assert caught.value.status_code == 503
+
+
+def test_runtime_mcp_redacts_bridge_errors(monkeypatch):
+    from api import ares_capabilities, runtime_mcp
+    from api.providers.jaeger import streaming
+
+    secret = "ghp_TestFakeCredential1234567890ab"
+    monkeypatch.setattr(
+        ares_capabilities,
+        "capability_contract_for_backend",
+        lambda _backend: _contract(),
+    )
+    monkeypatch.setattr(
+        streaming,
+        "command_local_companion",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError(f"rejected token={secret}")
+        ),
+    )
+    with pytest.raises(runtime_mcp.RuntimeMCPError) as caught:
+        runtime_mcp.reload_runtime_tools()
+    assert secret not in str(caught.value)
+    assert caught.value.status_code == 502

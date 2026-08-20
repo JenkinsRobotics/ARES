@@ -6088,18 +6088,45 @@ def _materialize_pending_user_turn_before_error(session) -> bool:
     pending_text = str(getattr(session, 'pending_user_message', None) or '')
     if not pending_text:
         return False
+    # Timestamp of the turn this pending field represents. Every writer that
+    # could already hold a durable copy of it stamps that copy with exactly
+    # this value: the eager-save checkpoint
+    # (chat_runtime._checkpoint_eager_user_message) and any earlier run of
+    # this function. That makes the timestamp — not the text — the thing that
+    # identifies the turn.
+    recovered_ts = int(time.time())
+    pending_started_at = getattr(session, 'pending_started_at', None)
+    pending_turn_ts: int | None = None
+    if isinstance(pending_started_at, (int, float)) and pending_started_at > 0:
+        recovered_ts = int(pending_started_at)
+        pending_turn_ts = recovered_ts
     normalized_pending = " ".join(pending_text.split())
     if normalized_pending:
         for existing in reversed(list(getattr(session, 'messages', None) or [])[-8:]):
             if not isinstance(existing, dict) or existing.get('role') != 'user':
                 continue
             existing_text = " ".join(str(existing.get('content') or '').split())
-            if existing_text == normalized_pending:
+            if existing_text != normalized_pending:
+                continue
+            # Matching text alone does NOT mean this turn is already stored.
+            # When a turn hangs, the overwhelmingly common user action is to
+            # send the same words again — and treating that resend as an
+            # already-materialized duplicate silently discards it, which is
+            # the precise data loss this function exists to prevent. But the
+            # reverse mistake is just as real: a row this turn's own
+            # checkpoint already wrote can lack a timestamp altogether (legacy
+            # rows, or rows written before timestamp-stamping existed), and
+            # treating "no exact match" as proof of a distinct turn duplicates
+            # it instead. Only a row PROVABLY STAMPED BEFORE this turn started
+            # is evidence of a genuinely earlier turn being resent.
+            existing_ts = existing.get('timestamp')
+            if pending_turn_ts is None or not isinstance(existing_ts, (int, float)):
                 return False
-    recovered_ts = int(time.time())
-    pending_started_at = getattr(session, 'pending_started_at', None)
-    if isinstance(pending_started_at, (int, float)) and pending_started_at > 0:
-        recovered_ts = int(pending_started_at)
+            if int(existing_ts) < pending_turn_ts:
+                # Provably an earlier turn with the same text — a real
+                # resend. Keep scanning older rows for an exact-turn match.
+                continue
+            return False
     recovered = {
         'role': 'user',
         'content': pending_text,
@@ -8394,7 +8421,7 @@ def _run_agent_streaming(
             # through interim_assistant_callback instead of frontend guesses.
 
             # ARES: inject self-persistence contract into system prompt.
-            # This is ARES-owned product behavior above Ares/JROS, not a backend
+            # This is ARES-owned product behavior above Ares/JaegerAI, not a backend
             # implementation detail. It stays adapter-first so backends remain swappable.
             _self_persistence_prompt = ""
             try:
@@ -9384,6 +9411,15 @@ def _run_agent_streaming(
                     _history = list(getattr(s, 'gateway_routing_history', None) or [])
                     _history.append(_gateway_routing)
                     s.gateway_routing_history = _history[-50:]
+                    from api.model_resolution import reconcile_session_provider_after_turn
+
+                    reconcile_session_provider_after_turn(
+                        s,
+                        _gateway_routing,
+                        turn_owns_model=_turn_owns_persisted_model,
+                        last_persisted_model=_last_persisted_model,
+                        last_persisted_provider=_last_persisted_provider,
+                    )
                 if s.messages:
                     for _dm in reversed(s.messages):
                         if isinstance(_dm, dict) and _dm.get('role') == 'assistant':

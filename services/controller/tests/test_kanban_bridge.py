@@ -1,12 +1,7 @@
-"""Kanban read-only bridge tests.
+"""Browser-contract tests for the ARES-owned Kanban bridge.
 
-The first upstream WebUI Kanban integration is intentionally read-only: it
-surfaces Ares Agent Kanban data under /api/kanban/* while keeping the Agent
-kanban database as the only source of truth.
-
-CI for ares-webui does not install ares-agent, so these tests inject a tiny
-fake ``ares_cli.kanban_db`` module and verify the bridge contract without
-requiring the external package.
+These use a small store-compatible fake so contract translation is tested
+independently from the native SQLite implementation.
 """
 
 from __future__ import annotations
@@ -364,8 +359,9 @@ def _load_bridge(monkeypatch):
     monkeypatch.setitem(sys.modules, "ares_cli", fake_ares_cli)
     monkeypatch.setitem(sys.modules, "ares_cli.kanban_db", fake_kanban)
     import api.kanban_bridge as bridge
-
-    return importlib.reload(bridge)
+    bridge = importlib.reload(bridge)
+    monkeypatch.setattr(bridge, "_kb", lambda: fake_kanban)
+    return bridge
 
 
 def _parsed(path="/api/kanban/board", query=""):
@@ -731,6 +727,7 @@ def test_board_counts_returns_empty_for_nonexistent_board(monkeypatch):
     monkeypatch.setitem(sys.modules, "ares_cli.kanban_db", fake_kanban)
     import api.kanban_bridge as bridge
     bridge = importlib.reload(bridge)
+    monkeypatch.setattr(bridge, "_kb", lambda: fake_kanban)
 
     counts = bridge._board_counts_for_slug("no-such-board")
     assert counts == {}
@@ -749,6 +746,7 @@ def test_board_counts_returns_real_counts_for_populated_board(monkeypatch):
     monkeypatch.setitem(sys.modules, "ares_cli.kanban_db", fake_kanban)
     import api.kanban_bridge as bridge
     bridge = importlib.reload(bridge)
+    monkeypatch.setattr(bridge, "_kb", lambda: fake_kanban)
 
     # Patch FakeConn.execute to handle the board-counts SQL:
     #   SELECT status, COUNT(*) AS n FROM tasks WHERE status != 'archived' GROUP BY status

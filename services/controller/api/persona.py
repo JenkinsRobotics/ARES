@@ -1,244 +1,73 @@
-"""JROS persona/character injection — loads YAML from JROS and builds system prompt prefix.
-
-Supports two JROS schema versions:
-  - character/v1 (JROS 0.5+): jaeger_os/personality/characters/<id>/character.yaml
-    Uses prompt.custom_instructions, prompt.soul, identity.role, identity.voice_tone
-  - persona/v1 (legacy): jaeger_os/agent/personas/<id>.yaml
-    Uses soul_md, identity.display_name, identity.personality
-
-Scans both directories, merges results. Zero coupling to JROS runtime —
-this only reads YAML files. The JROS daemon doesn't need to be running.
-The persona is pure prompt text.
-"""
-
+"""Jaeger character projection through the owner bridge."""
 from __future__ import annotations
 
-import logging
-from pathlib import Path
 from typing import Any, Optional
 
-import yaml
 
-from api.providers.jaeger.paths import character_dir, legacy_persona_dir
+def _query(what: str, args: dict[str, Any] | None = None) -> Any:
+    from api.providers.jaeger.streaming import query_local_companion
 
-logger = logging.getLogger(__name__)
-
-def _character_dir() -> Path:
-    return character_dir()
-
-
-def _legacy_persona_dir() -> Path:
-    return legacy_persona_dir()
-
-
-def _parse_character_v1(data: dict, yml_path: Path) -> Optional[dict[str, Any]]:
-    """Parse a character/v1 YAML into a normalized persona dict."""
-    identity = data.get("identity", {})
-    if not isinstance(identity, dict):
-        identity = {}
-    prompt = data.get("prompt", {})
-    if not isinstance(prompt, dict):
-        prompt = {}
-    return {
-        "schema": "character/v1",
-        "id": str(data.get("id", yml_path.parent.name)),
-        "name": str(data.get("name", yml_path.parent.name)),
-        "description": str(data.get("description", ""))[:120],
-        "identity": {
-            "display_name": str(data.get("name", "")),
-            "role": str(identity.get("role", "")),
-            "voice_tone": str(identity.get("voice_tone", "")),
-            "voice_id": str(identity.get("voice_id", "")),
-        },
-        "custom_instructions": str(prompt.get("custom_instructions", "")),
-        "soul": str(prompt.get("soul", "")),
-        "backstory": str(prompt.get("backstory", "")),
-        "speech_patterns": prompt.get("speech_patterns", []),
-    }
-
-
-def _parse_persona_v1(data: dict, yml_path: Path) -> Optional[dict[str, Any]]:
-    """Parse a legacy persona/v1 YAML into a normalized persona dict."""
-    identity = data.get("identity", {})
-    if not isinstance(identity, dict):
-        identity = {}
-    return {
-        "schema": "persona/v1",
-        "id": str(data.get("id", yml_path.stem)),
-        "name": str(data.get("name", yml_path.stem)),
-        "description": str(data.get("description", ""))[:120],
-        "identity": {
-            "display_name": str(identity.get("display_name", "")),
-            "role": str(identity.get("role", "")),
-            "personality": str(identity.get("personality", "")),
-            "voice_tone": str(identity.get("voice_tone", "")),
-            "voice_id": str(identity.get("voice_id", "")),
-        },
-        "soul_md": str(data.get("soul_md", "")),
-    }
+    return query_local_companion(what, args or {})
 
 
 def list_personas() -> list[dict[str, str]]:
-    """Return all available personas as [{id, name, description, schema}, ...].
-
-    Scans both character/v1 and legacy persona/v1 directories.
-    """
-    personas: list[dict[str, str]] = []
-    seen_ids: set[str] = set()
-
-    # character/v1 — each subdirectory has a character.yaml
-    cdir = _character_dir()
-    if cdir.is_dir():
-        for yml in sorted(cdir.glob("*/character.yaml")):
-            try:
-                data = yaml.safe_load(yml.read_text(encoding="utf-8"))
-                if not isinstance(data, dict):
-                    continue
-                schema = str(data.get("schema", ""))
-                if "character/v1" not in schema:
-                    continue
-                parsed = _parse_character_v1(data, yml)
-                if parsed and parsed["id"] not in seen_ids:
-                    seen_ids.add(parsed["id"])
-                    personas.append({
-                        "id": parsed["id"],
-                        "name": parsed["name"],
-                        "description": parsed["description"],
-                        "schema": "character/v1",
-                    })
-            except Exception as exc:
-                logger.warning("Failed to parse character %s: %s", yml, exc)
-
-    # legacy persona/v1 — flat directory of *.yaml files
-    pdir = _legacy_persona_dir()
-    if pdir.is_dir():
-        for yml in sorted(pdir.glob("*.yaml")):
-            try:
-                data = yaml.safe_load(yml.read_text(encoding="utf-8"))
-                if not isinstance(data, dict):
-                    continue
-                schema = str(data.get("schema", ""))
-                if "persona/v1" not in schema:
-                    continue
-                parsed = _parse_persona_v1(data, yml)
-                if parsed and parsed["id"] not in seen_ids:
-                    seen_ids.add(parsed["id"])
-                    personas.append({
-                        "id": parsed["id"],
-                        "name": parsed["name"],
-                        "description": parsed["description"],
-                        "schema": "persona/v1",
-                    })
-            except Exception as exc:
-                logger.warning("Failed to parse persona %s: %s", yml, exc)
-
-    return personas
+    try:
+        rows = _query("characters")
+    except Exception:
+        return []
+    return [
+        {
+            "id": str(row.get("id") or ""),
+            "name": str(row.get("name") or row.get("id") or ""),
+            "description": str(row.get("role") or "")[:120],
+            "schema": "jaeger/character",
+        }
+        for row in rows if isinstance(row, dict) and row.get("id")
+    ] if isinstance(rows, list) else []
 
 
 def load_persona(persona_id: str) -> Optional[dict[str, Any]]:
-    """Load a full persona by ID. Checks character/v1 first, then legacy.
-
-    Returns the normalized dict (with a 'schema' field) or None if not found.
-    """
-    # Try character/v1 first
-    cdir = _character_dir()
-    char_yml = cdir / persona_id / "character.yaml"
-    if char_yml.is_file():
-        try:
-            data = yaml.safe_load(char_yml.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and "character/v1" in str(data.get("schema", "")):
-                return _parse_character_v1(data, char_yml)
-        except Exception as exc:
-            logger.warning("Failed to load character %s: %s", persona_id, exc)
-
-    # Fall back to legacy persona/v1
-    pdir = _legacy_persona_dir()
-    legacy_yml = pdir / f"{persona_id}.yaml"
-    if legacy_yml.is_file():
-        try:
-            data = yaml.safe_load(legacy_yml.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and "persona/v1" in str(data.get("schema", "")):
-                return _parse_persona_v1(data, legacy_yml)
-        except Exception as exc:
-            logger.warning("Failed to load persona %s: %s", persona_id, exc)
-
-    return None
+    try:
+        row = _query("character", {"id": str(persona_id or "").strip()})
+    except Exception:
+        return None
+    if not isinstance(row, dict):
+        return None
+    return {
+        "schema": "jaeger/character",
+        "id": str(row.get("id") or persona_id),
+        "name": str(row.get("name") or persona_id),
+        "description": str(row.get("role") or "")[:120],
+        "identity": {
+            "display_name": str(row.get("name") or ""),
+            "role": str(row.get("role") or ""),
+            "voice_tone": str(row.get("voice_tone") or ""),
+            "voice_id": str(row.get("voice_id") or ""),
+        },
+        "custom_instructions": str(row.get("custom_instructions") or ""),
+        "soul": str(row.get("soul") or ""),
+        "backstory": str(row.get("backstory") or ""),
+        "speech_patterns": list(row.get("speech_patterns") or []),
+    }
 
 
 def render_persona_prompt(persona: dict[str, Any]) -> str:
-    """Render a normalized persona dict into a system prompt section.
-
-    Handles both character/v1 and persona/v1 schemas. Produces a markdown
-    block prepended to the agent's system prompt.
-    """
-    schema = persona.get("schema", "")
-    identity = persona.get("identity", {})
-    if not isinstance(identity, dict):
-        identity = {}
-
-    parts = []
-
-    if schema == "character/v1":
-        # Character/v1: custom_instructions is the main prompt, soul is supplementary
-        display_name = str(identity.get("display_name", "")).strip()
-        role = str(identity.get("role", "")).strip()
-        voice_tone = str(identity.get("voice_tone", "")).strip()
-        custom_instructions = str(persona.get("custom_instructions", "")).strip()
-        soul = str(persona.get("soul", "")).strip()
-        speech_patterns = persona.get("speech_patterns", [])
-
-        if custom_instructions:
-            parts.append(custom_instructions)
-        elif display_name:
-            parts.append(f"You are {display_name}.")
-            if role:
-                parts.append(f"Your role: {role}")
-
-        if voice_tone:
-            parts.append(f"Voice tone: {voice_tone}")
-
-        if speech_patterns and isinstance(speech_patterns, list):
-            patterns = "; ".join(str(p) for p in speech_patterns[:5] if p)
-            if patterns:
-                parts.append(f"Speech patterns: {patterns}")
-
-        if soul:
-            parts.append(soul)
-
-    else:
-        # Legacy persona/v1
-        display_name = str(identity.get("display_name", "")).strip()
-        role = str(identity.get("role", "")).strip()
-        personality = str(identity.get("personality", "")).strip()
-        voice_tone = str(identity.get("voice_tone", "")).strip()
-
-        if display_name:
-            parts.append(f"You are {display_name}.")
-        if role:
-            parts.append(f"Your role: {role}")
-        if personality:
-            parts.append(f"Personality: {personality}")
-        if voice_tone:
-            parts.append(f"Voice tone: {voice_tone}")
-
-        soul_md = str(persona.get("soul_md", "")).strip()
-        if soul_md:
-            parts.append(soul_md)
-
-    return "\n\n".join(p for p in parts if p)
+    identity = persona.get("identity") if isinstance(persona.get("identity"), dict) else {}
+    parts = [str(persona.get("custom_instructions") or "").strip()]
+    if not parts[0] and identity.get("display_name"):
+        parts[0] = f"You are {identity['display_name']}."
+    if identity.get("role"):
+        parts.append(f"Your role: {identity['role']}")
+    if identity.get("voice_tone"):
+        parts.append(f"Voice tone: {identity['voice_tone']}")
+    patterns = "; ".join(str(value) for value in persona.get("speech_patterns", [])[:5] if value)
+    if patterns:
+        parts.append(f"Speech patterns: {patterns}")
+    if persona.get("soul"):
+        parts.append(str(persona["soul"]))
+    return "\n\n".join(part for part in parts if part)
 
 
 def get_persona_prompt(persona_id: Optional[str]) -> str:
-    """Convenience: load a persona by ID and return its prompt text.
-
-    Returns empty string if persona_id is None, empty, or not found.
-    Never raises — failures log and return "".
-    """
-    if not persona_id or not persona_id.strip():
-        return ""
-
-    persona = load_persona(persona_id.strip())
-    if persona is None:
-        return ""
-
-    return render_persona_prompt(persona)
+    persona = load_persona(str(persona_id or "").strip()) if persona_id else None
+    return render_persona_prompt(persona) if persona else ""

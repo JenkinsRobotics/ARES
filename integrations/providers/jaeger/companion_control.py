@@ -25,16 +25,24 @@ def _character_summary(value: Any) -> dict[str, Any]:
         "role": str(row.get("role") or ""),
         "voice_tone": str(row.get("voice_tone") or ""),
         "voice_id": str(row.get("voice_id") or ""),
+        "soul": str(row.get("soul") or ""),
+        "backstory": str(row.get("backstory") or ""),
+        "custom_instructions": str(row.get("custom_instructions") or ""),
         "active": bool(row.get("active")),
         "bound": bool(row.get("bound")),
+        # ``neutral`` (JaegerAI contract v10) marks the one sheet that is
+        # nobody in particular — the plain assistant. It is the sheet whose
+        # name yields to the instance's own, so a surface showing "who am I
+        # talking to" needs it to decide which name to print.
+        "neutral": bool(row.get("neutral")),
     }
 
 
 def companion_snapshot() -> dict[str, Any]:
     """Return the live identity and character exposed by JaegerAI."""
     try:
-        from api.providers.jaeger.gateway_streaming import query_local_companion
-        from api.providers.jaeger.paths import jaeger_home, jros_instance_name
+        from api.providers.jaeger.streaming import query_local_companion
+        from api.providers.jaeger.paths import jaeger_home, jaeger_instance_name
 
         identity = _as_dict(query_local_companion("identity"))
         character = _as_dict(query_local_companion("character"))
@@ -53,8 +61,19 @@ def companion_snapshot() -> dict[str, Any]:
                 "transport": "bridge",
             },
             "agent": {
-                "id": str(identity.get("instance") or jros_instance_name() or ""),
+                "id": str(identity.get("instance") or jaeger_instance_name() or ""),
+                # ``name`` is the INSTANCE's own name; ``display_name`` is the
+                # one name it answers to right now — the selected character's,
+                # unless that character is the neutral sheet. Surfaces show
+                # display_name. Older runtimes (contract < 10) do not send it;
+                # the fall-back chain reproduces the rule from what they do.
                 "name": str(identity.get("agent_name") or ""),
+                "display_name": str(
+                    identity.get("display_name")
+                    or (identity.get("agent_name")
+                        if character.get("neutral") else identity.get("character"))
+                    or identity.get("agent_name") or ""
+                ),
                 "model": identity.get("model"),
                 "avatar": identity.get("avatar"),
             },
@@ -63,6 +82,8 @@ def companion_snapshot() -> dict[str, Any]:
                 "active": bool(active_summary.get("active", True)),
                 "bound": bool(active_summary.get("bound", False)),
                 "custom_instructions": str(character.get("custom_instructions") or ""),
+                "soul": str(character.get("soul") or ""),
+                "backstory": str(character.get("backstory") or ""),
             },
             "characters": characters,
         }
@@ -70,14 +91,66 @@ def companion_snapshot() -> dict[str, Any]:
         raise CompanionControlError(str(exc)) from exc
 
 
-def update_companion(*, name: str | None = None, character_id: str | None = None) -> dict[str, Any]:
+def companion_card(character_id: str | None = None) -> dict[str, Any] | None:
+    """The card art for a character, as served by JaegerAI itself.
+
+    Returns ``{"mime", "data" (base64), "bytes", "filename", "id"}`` or
+    ``None`` when the peer has no art for that character.
+
+    ARES does not read the image off disk: the path JaegerAI reports
+    points inside its own install, and the ownership contract puts that
+    directory out of bounds. The peer serves the bytes over the bridge
+    instead, so this stays a normal cross-product query.
+
+    Capability-negotiated, never version-sniffed: a runtime that does not
+    declare the ``character_card`` query returns ``None`` here and the UI
+    draws its own placeholder.
+    """
+    try:
+        from api.providers.jaeger.streaming import (
+            local_integration_contract,
+            query_local_companion,
+        )
+
+        contract = local_integration_contract() or {}
+        queries = ((contract.get("operations") or {}).get("queries") or [])
+        if "character_card" not in queries:
+            return None
+        args = {"id": character_id.strip()} if character_id else {}
+        art = query_local_companion("character_card", args)
+    except Exception as exc:
+        raise CompanionControlError(str(exc)) from exc
+    if not isinstance(art, dict) or not art.get("data"):
+        return None
+    return {
+        "id": str(art.get("id") or ""),
+        "mime": str(art.get("mime") or "application/octet-stream"),
+        "bytes": int(art.get("bytes") or 0),
+        "filename": str(art.get("filename") or "card"),
+        "data": str(art.get("data") or ""),
+    }
+
+
+def update_companion(
+    *,
+    name: str | None = None,
+    character_id: str | None = None,
+    custom_instructions: str | None = None,
+    role: str | None = None,
+    voice_tone: str | None = None,
+    soul: str | None = None,
+    backstory: str | None = None,
+) -> dict[str, Any]:
     """Apply supported Companion edits through JaegerAI and read back truth."""
-    clean_name = str(name or "").strip()
-    clean_character = str(character_id or "").strip()
-    if not clean_name and not clean_character:
+    clean_name = str(name or "").strip() if name is not None else None
+    clean_character = str(character_id or "").strip() if character_id is not None else None
+    if not any(
+        v is not None
+        for v in (clean_name, clean_character, custom_instructions, role, voice_tone, soul, backstory)
+    ):
         raise CompanionControlError("No Companion changes were supplied.")
     try:
-        from api.providers.jaeger.gateway_streaming import command_local_companion
+        from api.providers.jaeger.streaming import command_local_companion
 
         if clean_name:
             command_local_companion("save_identity", {"name": clean_name})
@@ -86,6 +159,22 @@ def update_companion(*, name: str | None = None, character_id: str | None = None
             # choice survive the next JaegerAI launch.
             command_local_companion("select_character", {"id": clean_character})
             command_local_companion("make_default", {"id": clean_character})
+
+        profile_patch: dict[str, Any] = {}
+        if custom_instructions is not None:
+            profile_patch["custom_instructions"] = custom_instructions
+        if role is not None:
+            profile_patch["role"] = role
+        if voice_tone is not None:
+            profile_patch["voice_tone"] = voice_tone
+        if soul is not None:
+            profile_patch["soul"] = soul
+        if backstory is not None:
+            profile_patch["backstory"] = backstory
+
+        if profile_patch:
+            command_local_companion("save_profile", profile_patch)
+
         return companion_snapshot()
     except Exception as exc:
         raise CompanionControlError(str(exc)) from exc

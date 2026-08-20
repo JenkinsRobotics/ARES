@@ -1,46 +1,47 @@
 import SwiftUI
-import ARESCore
-import Network
-import CoreImage.CIFilterBuiltins
 import AppKit
-import ApplicationServices
+import Network
 import AVFoundation
+import Speech
 import Contacts
 import EventKit
-import Speech
+import ARESCore
+import CoreImage.CIFilterBuiltins
+
+// MARK: - API Response Types
 
 struct PendingApproval: Identifiable, Codable {
     var id: String { approval_id }
-    let session_id: String
     let approval_id: String
-    let command: String
-    let type: String
-    let created_at: String
-    let tool_name: String
-}
-
-struct AuditLogEntry: Identifiable, Codable {
-    var id: String { timestamp + session_id }
-    let timestamp: String
     let session_id: String
-    let action: String
-    let details: String
-    let status: String
+    let tool_name: String
+    let command: String
+    let justification: String?
+    let timestamp: String
 }
 
 struct ApprovalListResponse: Codable {
     let approvals: [PendingApproval]
 }
 
+struct AuditLogEntry: Identifiable, Codable {
+    var id: String { "\(timestamp)_\(action)" }
+    let timestamp: String
+    let action: String
+    let details: String
+    let status: String
+}
+
 struct AuditLogResponse: Codable {
     let logs: [AuditLogEntry]
 }
 
-struct RuntimeConnectionOption: Codable, Identifiable {
+struct RuntimeConnectionOption: Identifiable, Codable {
     let id: String
     let name: String
     let kind: String
-    let selected: Bool
+    let status: String
+    let description: String?
 }
 
 struct RuntimeConnectionsResponse: Codable {
@@ -52,6 +53,8 @@ struct BackendSetResponse: Codable {
     let ok: Bool?
     let backend: String?
 }
+
+// MARK: - Main Settings View
 
 public struct ARESSettingsView: View {
     @ObservedObject var config = ARESConfiguration.shared
@@ -67,8 +70,6 @@ public struct ARESSettingsView: View {
     @State private var activeBackend = UserDefaults.standard.string(forKey: "ares.backend.selected") ?? ""
     @State private var runtimeOptions: [RuntimeConnectionOption] = []
     @State private var backendSelectionError: String? = nil
-    @State private var jrosLive = false
-    @State private var hermesLive = false
     @State private var checkTimer: Timer? = nil
     
     // Safety & Approvals
@@ -76,43 +77,42 @@ public struct ARESSettingsView: View {
     @State private var auditLogs: [AuditLogEntry] = []
     @State private var pathMonitor: NWPathMonitor? = nil
     @State private var permissionRefresh = 0
+    @State private var copiedText: String? = nil
     
     public init() {}
     
     public var body: some View {
-        TabView(selection: $activeTab) {
-            serverTab
-                .tabItem {
-                    Label("Server & Network", systemImage: "server.rack")
+        VStack(spacing: 0) {
+            // Top Navigation Tab Bar
+            tabHeader
+            
+            Divider()
+            
+            // Tab Content
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 16) {
+                    switch activeTab {
+                    case 0:
+                        serverTab
+                    case 1:
+                        remoteAccessTab
+                    case 2:
+                        backendsTab
+                    case 3:
+                        safetyTab
+                    case 4:
+                        permissionsTab
+                    default:
+                        serverTab
+                    }
                 }
-                .tag(0)
-                
-            backendsTab
-                .tabItem {
-                    Label("Backend Runtimes", systemImage: "cpu")
-                }
-                .tag(1)
-                
-            remoteAccessTab
-                .tabItem {
-                    Label("Remote Access", systemImage: "qrcode")
-                }
-                .tag(2)
-                
-            safetyTab
-                .tabItem {
-                    Label("Safety & Approvals", systemImage: "shield.checkered")
-                }
-                .tag(3)
-
-            permissionsTab
-                .tabItem {
-                    Label("Permissions", systemImage: "lock.shield")
-                }
-                .tag(4)
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
         }
-        .frame(width: 650, height: 480)
-        .padding()
+        .frame(minWidth: 720, minHeight: 560)
+        .background(Color(NSColor.windowBackgroundColor))
+        .preferredColorScheme(.dark)
         .onAppear {
             refreshNetworkIPs()
             refreshBackendSelection()
@@ -134,8 +134,689 @@ public struct ARESSettingsView: View {
             pathMonitor?.cancel()
         }
     }
+    
+    // MARK: - Tab Header Bar
+    
+    private var tabHeader: some View {
+        HStack(spacing: 6) {
+            tabButton(title: "Server & Network", icon: "server.rack", tag: 0)
+            tabButton(title: "Remote Access", icon: "qrcode", tag: 1)
+            tabButton(title: "Runtimes", icon: "cpu", tag: 2)
+            tabButton(title: "Safety & Approvals", icon: "shield.checkered", tag: 3)
+            tabButton(title: "Permissions", icon: "lock.shield", tag: 4)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
+    }
+    
+    private func tabButton(title: String, icon: String, tag: Int) -> some View {
+        let isSelected = activeTab == tag
+        return Button(action: {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                activeTab = tag
+            }
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                Text(title)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .foregroundColor(isSelected ? .white : .secondary)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(isSelected ? Color.accentColor.opacity(0.85) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Card Container Helper
+    
+    private func settingsCard<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(.accentColor)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            
+            content()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
 
-    // MARK: - Native Permissions
+    // MARK: - Server & Network Tab
+    
+    private var serverTab: some View {
+        VStack(spacing: 16) {
+            // Card 1: Server Status & Controls
+            settingsCard(title: "Web UI Server Status", icon: "waveform.path.ecg") {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(serverColor)
+                            .frame(width: 10, height: 10)
+                            .shadow(color: serverColor.opacity(0.6), radius: 4)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Status: \(serverManager.serverHealth)")
+                                .font(.system(size: 13, weight: .semibold))
+                            
+                            let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
+                            Text("Address: http://\(host):\(config.webuiPort)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(8)
+                    
+                    HStack(spacing: 10) {
+                        Button(action: {
+                            Task { await serverManager.start() }
+                        }) {
+                            Label("Start Server", systemImage: "play.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .disabled(serverManager.isRunning || serverManager.conflictingStandaloneInstance)
+
+                        Button(action: {
+                            Task { await serverManager.stop() }
+                        }) {
+                            Label("Stop Server", systemImage: "stop.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+                        .disabled(!serverManager.isRunning)
+
+                        Button(action: {
+                            Task { await serverManager.restart() }
+                        }) {
+                            Label("Restart Server", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(serverManager.conflictingStandaloneInstance)
+
+                        if serverManager.conflictingStandaloneInstance {
+                            Button("Take Control & Restart") {
+                                Task {
+                                    await serverManager.stopConflictingStandaloneInstance()
+                                    if !serverManager.portConflict {
+                                        await serverManager.start()
+                                    }
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                        }
+                        
+                        Spacer()
+                    }
+                }
+            }
+            
+            // Card 2: Network & Tailscale Binding
+            settingsCard(title: "Network & Tailscale Binding", icon: "network") {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Choose which network interfaces the ARES Web UI server listens on:")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 12) {
+                        // Preset 1: Local Only
+                        Button(action: {
+                            config.webuiHost = "127.0.0.1"
+                        }) {
+                            HStack {
+                                Image(systemName: config.webuiHost == "127.0.0.1" ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(config.webuiHost == "127.0.0.1" ? .accentColor : .secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Local Only (127.0.0.1)")
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text("Private to this Mac only")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(config.webuiHost == "127.0.0.1" ? Color.accentColor.opacity(0.15) : Color.black.opacity(0.15))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(config.webuiHost == "127.0.0.1" ? Color.accentColor : Color.white.opacity(0.06), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        
+                        // Preset 2: Tailscale & LAN
+                        Button(action: {
+                            config.webuiHost = "0.0.0.0"
+                            config.allowUnauthenticatedNetwork = true
+                        }) {
+                            HStack {
+                                Image(systemName: config.webuiHost == "0.0.0.0" ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(config.webuiHost == "0.0.0.0" ? .accentColor : .secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Tailscale & LAN (0.0.0.0)")
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text("Accessible across Tailnet & Wi-Fi")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(config.webuiHost == "0.0.0.0" ? Color.accentColor.opacity(0.15) : Color.black.opacity(0.15))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(config.webuiHost == "0.0.0.0" ? Color.accentColor : Color.white.opacity(0.06), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                        GridRow {
+                            Text("Host Address:")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .gridColumnAlignment(.trailing)
+                            TextField("0.0.0.0", text: $config.webuiHost)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 160)
+                        }
+                        GridRow {
+                            Text("Port:")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .gridColumnAlignment(.trailing)
+                            TextField("8788", value: $config.webuiPort, formatter: NumberFormatter())
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 160)
+                        }
+                    }
+                    
+                    Divider().padding(.vertical, 2)
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(isOn: $config.allowUnauthenticatedNetwork) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Allow Unauthenticated Network Access (Tailscale / LAN)")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("Allows connecting from your phones, tablets, or laptops on Tailscale without blocking for password auth.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        
+                        Toggle(isOn: $config.reloadDevMode) {
+                            Text("Enable Live Reload / Dev Mode")
+                                .font(.system(size: 12))
+                        }
+                        .toggleStyle(.checkbox)
+                        .padding(.top, 4)
+                    }
+                }
+            }
+            
+            // Card 3: ARES Device Mesh
+            settingsCard(title: "ARES Device Mesh & Node Role", icon: "circle.grid.cross") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Role", selection: $config.aresRole) {
+                        Text("Primary AI Body").tag("primary")
+                        Text("Joined ARES Device").tag("device")
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                        GridRow {
+                            Text("Device ID:")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .gridColumnAlignment(.trailing)
+                            TextField("Device ID", text: $config.aresDeviceID)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        GridRow {
+                            Text("AI ID:")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .gridColumnAlignment(.trailing)
+                            TextField("AI ID", text: $config.aresAIID)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        if config.aresRole != "primary" {
+                            GridRow {
+                                Text("Primary ARES URL:")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .gridColumnAlignment(.trailing)
+                                TextField("http://...", text: $config.aresPrimaryURL)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        }
+                        GridRow {
+                            Text("Continuity Folder:")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .gridColumnAlignment(.trailing)
+                            TextField("/path/to/folder", text: $config.aresContinuityDir)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                    
+                    Text(config.aresRole == "primary"
+                         ? "This Mac owns the canonical ARES identity and device registry."
+                         : "This Mac joins an existing AI and contributes local tools and compute.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            // Card 4: Paths & Diagnostics
+            settingsCard(title: "Storage Paths & Diagnostics", icon: "folder") {
+                VStack(alignment: .leading, spacing: 10) {
+                    pathRow(label: "Config Directory", path: "~/.ares")
+                    pathRow(label: "State Database", path: "~/.ares/state.db")
+                    pathRow(label: "Logs File", path: "~/.ares/webui.log")
+                }
+            }
+        }
+    }
+    
+    private func pathRow(label: String, path: String) -> some View {
+        HStack {
+            Text("\(label):")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 110, alignment: .leading)
+            
+            Text(path)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.primary)
+            
+            Spacer()
+            
+            Button(action: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(path, forType: .string)
+            }) {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            .help("Copy path to clipboard")
+        }
+        .padding(6)
+        .background(Color.black.opacity(0.15))
+        .cornerRadius(6)
+    }
+    
+    // MARK: - Remote Access Tab
+    
+    private var remoteAccessTab: some View {
+        VStack(spacing: 16) {
+            settingsCard(title: "Mobile & Tablet Connection", icon: "qrcode") {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 24) {
+                        // QR Code
+                        VStack(spacing: 8) {
+                            if let url = qrCodeURL, let qrImage = generateQRCode(from: url) {
+                                Image(nsImage: qrImage)
+                                    .resizable()
+                                    .interpolation(.none)
+                                    .frame(width: 140, height: 140)
+                                    .padding(8)
+                                    .background(Color.white)
+                                    .cornerRadius(10)
+                                    .shadow(radius: 3)
+                                Text("Scan with iPhone/iPad")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.secondary)
+                            } else {
+                                VStack(spacing: 6) {
+                                    Image(systemName: "qrcode.viewfinder")
+                                        .font(.system(size: 64))
+                                        .foregroundColor(.secondary)
+                                    Text("Start server to generate QR")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(width: 156, height: 156)
+                                .background(Color.black.opacity(0.2))
+                                .cornerRadius(10)
+                            }
+                        }
+                        
+                        // Addresses list
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Accessible URLs:")
+                                .font(.system(size: 12, weight: .semibold))
+                            
+                            let localHost = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
+                            urlChip(label: "Localhost", url: "http://\(localHost):\(config.webuiPort)")
+                            
+                            if let lan = lanIP {
+                                urlChip(label: "Wi-Fi / LAN", url: "http://\(lan):\(config.webuiPort)")
+                            } else {
+                                chipPlaceholder(label: "Wi-Fi / LAN", text: "Not connected to local network")
+                            }
+                            
+                            if let ts = tailscaleIP {
+                                urlChip(label: "Tailscale", url: "http://\(ts):\(config.webuiPort)")
+                            } else {
+                                chipPlaceholder(label: "Tailscale", text: "Tailscale IP not detected")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    
+                    Divider()
+                    
+                    // Quick setup
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("One-Click Network Setup")
+                            .font(.system(size: 12, weight: .semibold))
+                        
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                config.webuiHost = "0.0.0.0"
+                                config.allowUnauthenticatedNetwork = true
+                                Task { await serverManager.restart() }
+                            }) {
+                                Label("Enable Tailscale & LAN (0.0.0.0)", systemImage: "network")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(config.webuiHost == "0.0.0.0" ? .green : .accentColor)
+
+                            Button(action: {
+                                config.webuiHost = "127.0.0.1"
+                                Task { await serverManager.restart() }
+                            }) {
+                                Label("Local Only (127.0.0.1)", systemImage: "lock.laptopcomputer")
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(config.webuiHost == "127.0.0.1" ? .green : .secondary)
+                        }
+                    }
+                }
+            }
+            
+            // Microphone warning card
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "mic.slash.fill")
+                        .foregroundColor(.orange)
+                    Text("Microphone Browser Constraint")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.orange)
+                }
+                Text("Modern browsers (iOS Safari, Chrome) block microphone recording on unencrypted HTTP connections. When accessing from mobile over HTTP, voice input is disabled by the browser. To use voice, run locally or use HTTPS.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(nil)
+            }
+            .padding(14)
+            .background(Color.orange.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+            )
+            .cornerRadius(8)
+        }
+    }
+    
+    private func urlChip(label: String, url: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 75, alignment: .leading)
+            
+            Text(url)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.accentColor)
+                .lineLimit(1)
+            
+            Spacer()
+            
+            Button(action: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url, forType: .string)
+            }) {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            .help("Copy URL")
+        }
+        .padding(6)
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(6)
+    }
+    
+    private func chipPlaceholder(label: String, text: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 75, alignment: .leading)
+            
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+            
+            Spacer()
+        }
+        .padding(6)
+        .background(Color.black.opacity(0.1))
+        .cornerRadius(6)
+    }
+
+    // MARK: - Backends Tab
+    
+    private var backendsTab: some View {
+        VStack(spacing: 16) {
+            settingsCard(title: "Default Chat Runtime", icon: "cpu") {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Select the default runtime execution backend for conversation turns:")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    if !serverManager.isRunning {
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.secondary)
+                            Text("Start the server to inspect active runtimes and change backend.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(10)
+                        .background(Color.black.opacity(0.2))
+                        .cornerRadius(6)
+                    } else if runtimeOptions.isEmpty {
+                        Text("No external runtime backends registered.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(runtimeOptions.filter { $0.kind == "runtime" }) { runtime in
+                                Button(action: {
+                                    writeBackendSelection(runtime.id)
+                                }) {
+                                    HStack {
+                                        Image(systemName: activeBackend == runtime.id ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(activeBackend == runtime.id ? .accentColor : .secondary)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(runtime.name)
+                                                .font(.system(size: 12, weight: .semibold))
+                                            if let desc = runtime.description {
+                                                Text(desc)
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                        Spacer()
+                                        Text(runtime.status.capitalized)
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundColor(.green)
+                                    }
+                                    .padding(10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(activeBackend == runtime.id ? Color.accentColor.opacity(0.12) : Color.black.opacity(0.15))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(activeBackend == runtime.id ? Color.accentColor : Color.white.opacity(0.06), lineWidth: 1)
+                                            )
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    
+                    if let backendSelectionError {
+                        Text(backendSelectionError)
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Safety & Approvals Tab
+    
+    private var safetyTab: some View {
+        VStack(spacing: 16) {
+            settingsCard(title: "Pending Risk Approvals", icon: "shield.lefthalf.filled") {
+                VStack(alignment: .leading, spacing: 10) {
+                    if pendingApprovals.isEmpty {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.green)
+                            Text("No pending risk actions requiring approval.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                        .background(Color.black.opacity(0.15))
+                        .cornerRadius(8)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(pendingApprovals) { app in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(app.tool_name.isEmpty ? "System Tool" : app.tool_name)
+                                            .font(.system(size: 12, weight: .semibold))
+                                        Text(app.command)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    HStack(spacing: 8) {
+                                        Button("Approve") {
+                                            respondToApproval(app, choice: "once")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.green)
+                                        
+                                        Button("Deny") {
+                                            respondToApproval(app, choice: "deny")
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .tint(.red)
+                                    }
+                                }
+                                .padding(10)
+                                .background(Color.black.opacity(0.2))
+                                .cornerRadius(6)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            settingsCard(title: "Security Audit Logs", icon: "list.bullet.rectangle") {
+                VStack(alignment: .leading, spacing: 8) {
+                    if auditLogs.isEmpty {
+                        Text("No audit events logged yet.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                    } else {
+                        VStack(spacing: 4) {
+                            ForEach(auditLogs) { entry in
+                                HStack {
+                                    Text(formatTime(entry.timestamp))
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 60, alignment: .leading)
+                                    Text(entry.action)
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text(entry.details)
+                                        .font(.system(size: 11))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(entry.status.uppercased())
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundColor(entry.status == "deny" ? .red : .green)
+                                }
+                                .padding(6)
+                                .background(Color.black.opacity(0.15))
+                                .cornerRadius(4)
+                            }
+                        }
+                    }
+                    
+                    Button(action: {
+                        refreshApprovalsAndLogs()
+                    }) {
+                        Label("Refresh Logs", systemImage: "arrow.clockwise")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.top, 4)
+                }
+            }
+        }
+    }
+
+    // MARK: - Permissions Tab
+    
     private struct PermissionRow: Identifiable {
         let id: String
         let title: String
@@ -146,43 +827,61 @@ public struct ARESSettingsView: View {
 
     private var permissionsTab: some View {
         let rows = nativePermissionRows
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("macOS Capability Permissions").font(.headline)
-                    Text("Status checks are read-only. ARES asks only when you use the corresponding capability.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Button("Refresh") { refreshPermissions() }
-            }
-
-            List(rows) { row in
-                HStack(spacing: 12) {
-                    Image(systemName: permissionSymbol(row.granted))
-                        .foregroundColor(permissionColor(row.granted))
-                        .frame(width: 22)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.title).font(.subheadline).fontWeight(.medium)
-                        Text(row.detail).font(.caption).foregroundColor(.secondary)
+        return settingsCard(title: "macOS Privacy & Capabilities", icon: "lock.shield") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Read-only status of system permissions used by native macOS tools:")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                
+                VStack(spacing: 6) {
+                    ForEach(rows) { row in
+                        HStack(spacing: 12) {
+                            Image(systemName: permissionSymbol(row.granted))
+                                .foregroundColor(permissionColor(row.granted))
+                                .frame(width: 18)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.title)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(row.detail)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Text(permissionLabel(row.granted))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(permissionColor(row.granted))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(permissionColor(row.granted).opacity(0.15))
+                                .cornerRadius(4)
+                            
+                            Button("Settings") {
+                                openPrivacySettings(anchor: row.settingsAnchor)
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.system(size: 11))
+                            .foregroundColor(.accentColor)
+                        }
+                        .padding(8)
+                        .background(Color.black.opacity(0.15))
+                        .cornerRadius(6)
                     }
-                    Spacer()
-                    Text(permissionLabel(row.granted))
-                        .font(.caption).fontWeight(.semibold)
-                        .foregroundColor(permissionColor(row.granted))
-                    Button("Open Settings") { openPrivacySettings(anchor: row.settingsAnchor) }
-                        .buttonStyle(.link)
                 }
-                .padding(.vertical, 3)
+                .id(permissionRefresh)
+                
+                Button(action: {
+                    refreshPermissions()
+                }) {
+                    Label("Refresh Permissions", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.borderless)
+                .padding(.top, 4)
             }
-            .id(permissionRefresh)
-
-            Text("Screen reading additionally requires one-time consent inside the active conversation. Apple Notes automation permission is requested by macOS on first use and appears under Automation.")
-                .font(.caption)
-                .foregroundColor(.secondary)
         }
-        .padding()
     }
 
     private var nativePermissionRows: [PermissionRow] {
@@ -243,328 +942,9 @@ public struct ARESSettingsView: View {
     private func speechAuthorizationGranted(_ status: SFSpeechRecognizerAuthorizationStatus) -> Bool {
         status == .authorized
     }
-    
-    // MARK: - Server Tab
-    private var serverTab: some View {
-        Form {
-            Section(header: Text("Web UI Server Control").font(.headline)) {
-                HStack(spacing: 16) {
-                    Circle()
-                        .fill(serverColor)
-                        .frame(width: 12, height: 12)
-                    Text("Server Status: \(serverManager.serverHealth)")
-                        .foregroundColor(.primary)
-                }
-                .padding(.vertical, 4)
-                
-                HStack {
-                    Button("Start Server") {
-                        Task { await serverManager.start() }
-                    }
-                    .disabled(serverManager.isRunning)
-                    
-                    Button("Stop Server") {
-                        serverManager.stop()
-                    }
-                    .disabled(!serverManager.isRunning)
-                    
-                    Button("Restart Server") {
-                        Task { await serverManager.restart() }
-                    }
-                }
-                .padding(.bottom, 8)
-            }
-            
-            Section(header: Text("Configuration Settings").font(.headline)) {
-                TextField("WebUI Host", text: $config.webuiHost)
-                    .textFieldStyle(.roundedBorder)
-                
-                TextField("WebUI Port", value: $config.webuiPort, formatter: NumberFormatter())
-                    .textFieldStyle(.roundedBorder)
-                    
-                Text("The ARES Mac app owns and starts this controller. Background behavior is configured in Web Settings → System.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Toggle("Enable Live Reload / Dev Mode", isOn: $config.reloadDevMode)
-            }
 
-            Section(header: Text("ARES Device Mesh").font(.headline)) {
-                Picker("This Mac", selection: $config.aresRole) {
-                    Text("Primary AI Body").tag("primary")
-                    Text("Joined ARES Device").tag("device")
-                }
-                .pickerStyle(.segmented)
-
-                TextField("Device ID", text: $config.aresDeviceID)
-                    .textFieldStyle(.roundedBorder)
-
-                TextField("AI ID", text: $config.aresAIID)
-                    .textFieldStyle(.roundedBorder)
-
-                TextField("Primary ARES URL", text: $config.aresPrimaryURL)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(config.aresRole == "primary")
-
-                TextField("Continuity Folder", text: $config.aresContinuityDir)
-                    .textFieldStyle(.roundedBorder)
-
-                Text(config.aresRole == "primary"
-                     ? "This Mac owns the canonical ARES identity and device registry."
-                     : "This Mac joins an existing AI and can contribute app access, local tools, and compute.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Section(header: Text("Paths & Logs").font(.headline)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Config Directory: ~/.ares")
-                    Text("State Database: ~/.ares/state.db")
-                }
-                .font(.footnote)
-                .foregroundColor(.secondary)
-                .padding(.vertical, 2)
-                
-                NavigationLink("View Console Logs") {
-                    ScrollView {
-                        Text(serverManager.recentLogs.isEmpty ? "No recent logs." : serverManager.recentLogs)
-                            .font(.system(.footnote, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                    }
-                    .frame(width: 600, height: 300)
-                }
-            }
-        }
-        .padding()
-    }
-    
-    // MARK: - Backends Tab
-    private var backendsTab: some View {
-        Form {
-            Section(header: Text("Default Runtime Selection").font(.headline)) {
-                Picker("Default Chat Runtime", selection: Binding(
-                    get: { activeBackend },
-                    set: { val in
-                        writeBackendSelection(val)
-                    }
-                )) {
-                    if activeBackend.isEmpty {
-                        Text("Choose a runtime").tag("")
-                    }
-                    ForEach(runtimeOptions.filter { $0.kind == "runtime" }) { runtime in
-                        Text(runtime.name).tag(runtime.id)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .disabled(!serverManager.isRunning || runtimeOptions.isEmpty)
-
-                if !serverManager.isRunning {
-                    Text("Start the Web UI server to change the default runtime.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else if let backendSelectionError {
-                    Text(backendSelectionError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-            }
-            
-            Section(header: Text("Backend Liveness").font(.headline)) {
-                HStack(spacing: 24) {
-                    statusCard(title: "Hermes Gateway", isLive: hermesLive, url: config.hermesURL)
-                    statusCard(title: "Jaeger AI Gateway", isLive: jrosLive, url: config.jrosURL)
-                }
-            }
-            
-            Section(header: Text("Gateway Configurations").font(.headline)) {
-                TextField("Hermes Gateway URL", text: $config.hermesURL)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("Hermes API Key", text: $config.hermesAPIKey)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Jaeger AI Gateway URL", text: $config.jrosURL)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("Jaeger AI Gateway Key", text: $config.jrosAPIKey)
-                    .textFieldStyle(.roundedBorder)
-            }
-        }
-        .padding()
-    }
-    
-    // MARK: - Remote Access Tab
-    private var remoteAccessTab: some View {
-        VStack(spacing: 16) {
-            Text("Access ARES From Mobile / Tablet")
-                .font(.headline)
-            
-            HStack(spacing: 32) {
-                if let url = qrCodeURL, let qrImage = generateQRCode(from: url) {
-                    VStack {
-                        Image(nsImage: qrImage)
-                            .resizable()
-                            .interpolation(.none)
-                            .frame(width: 160, height: 160)
-                            .border(Color.gray.opacity(0.3))
-                        Text("Scan to connect")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    VStack {
-                        Image(systemName: "qrcode.viewfinder")
-                            .font(.system(size: 80))
-                            .foregroundColor(.secondary)
-                        Text("Connect server first")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Connection URLs:")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    
-                    Text("Local: http://\(config.webuiHost):\(config.webuiPort)")
-                        .font(.system(.body, design: .monospaced))
-                    
-                    if let lan = lanIP {
-                        Text("LAN IP: http://\(lan):\(config.webuiPort)")
-                            .font(.system(.body, design: .monospaced))
-                    } else {
-                        Text("LAN IP: Not connected to Wi-Fi/Ethernet")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    if let ts = tailscaleIP {
-                        Text("Tailscale: http://\(ts):\(config.webuiPort)")
-                            .font(.system(.body, design: .monospaced))
-                    } else {
-                        Text("Tailscale IP: Not detected")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            
-            Divider()
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Label("Secure Microphone Constraints", systemImage: "mic.badge.xmark")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.amber)
-                Text("Modern browsers (iOS Safari, Chrome) block microphone access on unencrypted connections. Accessing the Web UI over LAN/Tailscale HTTP will disable voice input. To use voice, run ARES locally or configure HTTPS.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding()
-            .background(Color.yellow.opacity(0.1))
-            .cornerRadius(8)
-        }
-        .padding()
-    }
-    
-    // MARK: - Safety & Approvals Tab
-    private var safetyTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Pending Risk Clearances")
-                .font(.headline)
-            
-            if pendingApprovals.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(.green)
-                    Text("No pending risk actions requiring approval.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 120)
-                .background(Color.secondary.opacity(0.05))
-                .cornerRadius(8)
-            } else {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(pendingApprovals) { app in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(app.tool_name.isEmpty ? "System Tool" : app.tool_name)
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                    Text(app.command)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                HStack {
-                                    Button("Approve") {
-                                        respondToApproval(app, choice: "once")
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(.green)
-                                    
-                                    Button("Deny") {
-                                        respondToApproval(app, choice: "deny")
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .tint(.red)
-                                }
-                            }
-                            .padding(8)
-                            .background(Color.secondary.opacity(0.05))
-                            .cornerRadius(6)
-                        }
-                    }
-                }
-                .frame(maxHeight: 180)
-            }
-            
-            Divider()
-            
-            Text("Audit Logs")
-                .font(.headline)
-            
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    if auditLogs.isEmpty {
-                        Text("No audit events logged yet.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(auditLogs) { entry in
-                            HStack {
-                                Text(formatTime(entry.timestamp))
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                Text(entry.action)
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                Text(entry.details)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text(entry.status.uppercased())
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundColor(entry.status == "deny" ? .red : .green)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
-            }
-            .frame(maxHeight: 120)
-            
-            Button("Refresh Approvals & Logs") {
-                refreshApprovalsAndLogs()
-            }
-        }
-        .padding()
-    }
-    
     // MARK: - Helpers
+    
     private var serverColor: Color {
         switch serverManager.serverHealth {
         case "Running (Healthy)": return .green
@@ -579,28 +959,6 @@ public struct ARESSettingsView: View {
             return "http://\(lan):\(config.webuiPort)"
         }
         return nil
-    }
-    
-    private func statusCard(title: String, isLive: Bool, url: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.bold)
-            HStack {
-                Circle()
-                    .fill(isLive ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-                Text(isLive ? "Online" : "Offline")
-                    .font(.caption)
-            }
-            Text(url)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundColor(.secondary)
-        }
-        .padding(10)
-        .frame(width: 260, alignment: .leading)
-        .background(Color.secondary.opacity(0.05))
-        .cornerRadius(8)
     }
     
     private func generateQRCode(from string: String) -> NSImage? {
@@ -664,57 +1022,11 @@ public struct ARESSettingsView: View {
     private func startLivenessChecks() {
         checkTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true) { _ in
             Task { @MainActor in
-                await performLivenessProbes()
                 refreshBackendSelection()
                 refreshApprovalsAndLogs()
             }
         }
-        Task {
-            await performLivenessProbes()
-        }
-    }
-    
-    private func performLivenessProbes() async {
-        // Probe Hermes
-        if let hermesUrl = endpointURL(base: config.hermesURL, path: "/health") {
-            var request = URLRequest(url: hermesUrl)
-            request.timeoutInterval = 1.0
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
-                    self.hermesLive = true
-                } else {
-                    self.hermesLive = false
-                }
-            } catch {
-                self.hermesLive = false
-            }
-        } else {
-            self.hermesLive = false
-        }
-        
-        // Probe Jaeger AI
-        if let jrosUrl = endpointURL(base: config.jrosURL, path: "/v1/health") {
-            var request = URLRequest(url: jrosUrl)
-            request.timeoutInterval = 1.0
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let ok = json["ok"] as? Bool {
-                        self.jrosLive = ok
-                    } else {
-                        self.jrosLive = false
-                    }
-                } else {
-                    self.jrosLive = false
-                }
-            } catch {
-                self.jrosLive = false
-            }
-        } else {
-            self.jrosLive = false
-        }
+        refreshBackendSelection()
     }
     
     private func refreshApprovalsAndLogs() {
@@ -724,7 +1036,7 @@ public struct ARESSettingsView: View {
             return
         }
         
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         
         // Fetch Approvals
@@ -749,7 +1061,7 @@ public struct ARESSettingsView: View {
     }
     
     private func respondToApproval(_ app: PendingApproval, choice: String) {
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         
         guard let url = URL(string: "http://\(host):\(port)/api/approval/respond") else { return }
@@ -773,7 +1085,7 @@ public struct ARESSettingsView: View {
     }
     
     private func writeBackendSelection(_ val: String) {
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         let previous = activeBackend
         activeBackend = val
@@ -816,7 +1128,7 @@ public struct ARESSettingsView: View {
 
     private func refreshBackendSelection() {
         guard serverManager.isRunning else { return }
-        let host = config.webuiHost
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         let port = config.webuiPort
         guard let url = URL(string: "http://\(host):\(port)/api/connections") else { return }
 
@@ -831,18 +1143,8 @@ public struct ARESSettingsView: View {
             }
         }.resume()
     }
-
-    private func endpointURL(base: String, path: String) -> URL? {
-        var trimmedBase = base.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmedBase.hasSuffix("/") {
-            trimmedBase.removeLast()
-        }
-        let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
-        return URL(string: trimmedBase + normalizedPath)
-    }
     
     private func formatTime(_ raw: String) -> String {
-        // Returns the time part of ISO timestamp
         if let idx = raw.firstIndex(of: "T") {
             let start = raw.index(after: idx)
             let end = raw.index(start, offsetBy: 8, limitedBy: raw.endIndex) ?? raw.endIndex
@@ -850,8 +1152,4 @@ public struct ARESSettingsView: View {
         }
         return raw
     }
-}
-
-fileprivate extension Color {
-    static let amber = Color(red: 0.85, green: 0.65, blue: 0.15)
 }

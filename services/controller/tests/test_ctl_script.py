@@ -49,6 +49,14 @@ def run_ctl(
             "ARES_HOME": str(home / ".ares"),
             "PATH": os.environ.get("PATH", ""),
             "ARES_WEBUI_NO_DOTENV": "0" if load_dotenv else "1",
+            # ctl.sh's start_cmd auto-launches the real ARES.app menu bar icon
+            # on a successful start when one isn't already running (so the
+            # server and the icon can never come apart, however the
+            # controller gets started). HOME is faked above, but repo_root
+            # commonly stays the real checkout, whose apps/macos/ARES.app is
+            # a real, buildable bundle — without this, the test suite would
+            # pop the real app on every `start` it exercises.
+            "ARES_CTL_NO_MENU_BAR": "1",
         }
     )
     if env:
@@ -197,6 +205,38 @@ def assert_process_exits(pid: int, timeout: float = 3.0) -> None:
         time.sleep(0.05)
     _kill_tree(pid)
     raise AssertionError(f"process {pid} did not exit")
+
+
+def test_start_prefers_repository_virtualenv_python(tmp_path):
+    repo_root = tmp_path / "controller"
+    repo_root.mkdir()
+    _seed_ctl_repo(repo_root)
+    fake_python = repo_root / ".venv" / "bin" / "python"
+    fake_python.parent.mkdir(parents=True)
+    fake_log = tmp_path / "fake-python.log"
+    write_fake_python(fake_python)
+
+    result = run_ctl(
+        tmp_path,
+        "start",
+        repo_root=repo_root,
+        env={
+            "FAKE_PYTHON_LOG": str(fake_log),
+            # Without an explicit port this binds the default 8788 and fails
+            # whenever a real controller is running on the developer's machine.
+            "ARES_WEBUI_PORT": "18994",
+            "ARES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT": "1",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    pid = wait_for_pid_file(tmp_path / ".ares" / "webui.pid")
+    try:
+        fake_output = wait_for_file_text(fake_log, contains="bootstrap.py")
+        assert "bootstrap.py --no-browser --foreground" in fake_output
+    finally:
+        run_ctl(tmp_path, "stop", repo_root=repo_root)
+        assert_process_exits(pid)
 
 
 def test_start_writes_pid_under_ares_home_runs_foreground_no_browser_and_logs(tmp_path):

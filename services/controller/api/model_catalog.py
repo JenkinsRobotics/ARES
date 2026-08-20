@@ -11,7 +11,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-JROS_COMPATIBLE_MODEL_PROVIDERS = frozenset(
+JaegerAI_COMPATIBLE_MODEL_PROVIDERS = frozenset(
     {
         "anthropic",
         "gemini",
@@ -136,113 +136,87 @@ def _stamp_ollama_context_lengths(models: list[dict], api_key: str | None = None
     return models
 
 
-def _fetch_ollama_cloud_models(api_key: str | None) -> list[dict]:
-    """Fetch available models from Ollama Cloud."""
-    if not api_key:
-        return []
-    import json
-    import urllib.request
-    try:
-        req = urllib.request.Request(
-            "https://ollama.com/v1/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read())
-        return _stamp_ollama_context_lengths([
+def _ollama_cloud_models(discovered: dict | None = None) -> list[dict]:
+    """Ollama Cloud's real catalog when JaegerAI already fetched it, else a small fallback.
+
+    ARES never receives Jaeger's raw provider secret, so it cannot query
+    Ollama Cloud's model list itself. But JaegerAI's own ``model_catalog``
+    bridge query already performs that live discovery internally (with the
+    key it holds) and returns the full result — ARES was discarding
+    everything from that response except its ``default`` field, which is
+    the same bug B4 fixed for local models: a live, richer catalog sitting
+    one hop away, ignored in favor of a small hardcoded list. Prefer the
+    live rows; fall back to the curated list only when JaegerAI has nothing
+    (bridge unreachable, no cloud key configured yet) so the picker is never
+    left with zero cloud options.
+    """
+    if isinstance(discovered, dict):
+        live = [
             {
-                "id": m.get("id", ""),
-                "label": m.get("id", ""),
+                "id": str(row.get("id") or "").strip(),
+                "label": str(row.get("label") or row.get("id") or "").strip(),
                 "provider": "ollama-cloud",
                 "provider_id": "ollama-cloud",
                 "location": "cloud",
+                "context_length": row.get("context_length"),
             }
-            for m in data.get("data", [])
-            if m.get("id")
-        ], api_key)
-    except Exception:
-        return [
-            {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
-            {"id": "glm-5.1", "label": "glm-5.1", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
-            {"id": "kimi-k2.7-code", "label": "kimi-k2.7-code", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 262144},
-            {"id": "deepseek-v4-pro:0813", "label": "deepseek-v4-pro:0813", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
-            {"id": "gemma4:31b", "label": "gemma4:31b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+            for row in (discovered.get("models") or [])
+            if isinstance(row, dict)
+            and str(row.get("location") or "").strip().lower() == "cloud"
+            and str(row.get("provider") or "").strip().lower() == "ollama-cloud"
+            and str(row.get("id") or "").strip()
         ]
+        if live:
+            return live
+    return [
+        {"id": "qwen3.5:397b", "label": "qwen3.5:397b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+        {"id": "glm-5.1", "label": "glm-5.1", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+        {"id": "kimi-k2.7-code", "label": "kimi-k2.7-code", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 262144},
+        {"id": "deepseek-v4-pro:0813", "label": "deepseek-v4-pro:0813", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+        {"id": "gemma4:31b", "label": "gemma4:31b", "provider": "ollama-cloud", "provider_id": "ollama-cloud", "location": "cloud", "context_length": 131072},
+    ]
 
 
-def _read_jaeger_credential(name: str) -> str:
-    """Read a credential from the Jaeger instance credentials store or process env."""
+def _jaeger_credential_names() -> set[str]:
+    """Return names only through Jaeger's credential bridge contract."""
     try:
-        from api.providers.jaeger.paths import jaeger_home
-        jhome = jaeger_home()
-        candidates = [
-            jhome / ".jaeger_os" / "instances" / "jarvis" / "credentials",
-            jhome / ".jaeger_os" / "credentials",
-            jhome / "instances" / "jarvis" / "credentials",
-            Path.home() / "GitHub" / "JaegerAI" / ".jaeger_os" / "instances" / "jarvis" / "credentials",
-            Path.home() / ".jaeger" / "credentials",
-            Path.home() / ".jaeger_os" / "credentials",
-        ]
-        for cand_dir in candidates:
-            cred_file = cand_dir / name
-            if cred_file.is_file():
-                txt = cred_file.read_text(encoding="utf-8").strip()
-                if txt:
-                    return txt
+        from api.runtime_credentials import list_runtime_credentials
+
+        return list_runtime_credentials()
     except Exception:
-        pass
-    env_map = {
-        "xai_api_key": "XAI_API_KEY",
-        "ollama_cloud_api_key": "OLLAMA_API_KEY",
-        "openai_api_key": "OPENAI_API_KEY",
-        "anthropic_api_key": "ANTHROPIC_API_KEY",
-        "gemini_api_key": "GEMINI_API_KEY",
-    }
-    env_var = env_map.get(name)
-    if env_var:
-        return os.environ.get(env_var, "").strip()
-    return ""
+        logger.debug("Jaeger credential inventory unavailable", exc_info=True)
+        return set()
 
 
-def _fetch_xai_models(api_key: str | None) -> list[dict]:
-    """Fetch live or curated xAI models."""
-    if not api_key:
-        return []
-    import json
-    import urllib.request
-    try:
-        req = urllib.request.Request(
-            "https://api.x.ai/v1/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read())
-        return [
-            {
-                "id": m.get("id", ""),
-                "label": m.get("id", ""),
-                "provider": "xai",
-                "provider_id": "xai",
-                "location": "cloud",
-            }
-            for m in data.get("data", [])
-            if m.get("id")
-        ]
-    except Exception:
-        return [
-            {
-                "id": m["id"],
-                "label": m["label"],
-                "provider": "xai",
-                "provider_id": "xai",
-                "location": "cloud",
-            }
-            for m in XAI_CURATED_MODELS
-        ]
+def _xai_models() -> list[dict]:
+    """Curated catalog; live authentication remains inside Jaeger."""
+    return [
+        {
+            "id": m["id"],
+            "label": m["label"],
+            "provider": "xai",
+            "provider_id": "xai",
+            "location": "cloud",
+        }
+        for m in XAI_CURATED_MODELS
+    ]
 
 
 def _get_jaeger_local_models() -> list[dict]:
-    """Discover installed local MLX / GGUF models for Jaeger."""
+    """Discover installed local MLX / GGUF models for Jaeger.
+
+    JaegerAI's ``location: "local"`` bucket mixes two different kinds of row:
+    raw GGUF/MLX files its own filesystem registry resolves directly, and
+    models reachable through the local Ollama daemon (JaegerAI tags those
+    ``provider: "ollama"``, since it configures them the same way it
+    configures Ollama Cloud — just pointed at localhost). Collapsing both to
+    a single hardcoded ``"local"`` provider sent every Ollama-served local
+    model through JaegerAI's raw-file resolver, which can't find it (it was
+    never a bare file on disk) and rejects the pick outright — even though
+    the model is fully installed and JaegerAI already knows how to reach it.
+    Preserve the row's real provider so the pick routes the same way JaegerAI
+    itself would serve it.
+    """
     try:
         from api.backends.model_discovery import list_jaeger_installed_gguf
         installed = list_jaeger_installed_gguf()
@@ -255,11 +229,13 @@ def _get_jaeger_local_models() -> list[dict]:
         if not mid or mid in seen:
             continue
         seen.add(mid)
+        row_provider = str(m.get("provider") or "").strip().lower()
+        provider = row_provider if row_provider == "ollama" else "local"
         models.append({
             "id": mid,
             "label": m.get("label") or mid,
-            "provider": "local",
-            "provider_id": "local",
+            "provider": provider,
+            "provider_id": provider,
             "location": "local",
         })
     return models
@@ -315,28 +291,38 @@ def active_profile_config_path() -> Path:
         return _get_config_path()
 
 
-def sync_main_model_to_jros(result: dict) -> None:
+def sync_main_model_to_jaeger(result: dict) -> dict[str, Any]:
+    """Push a model pick into JaegerAI's own config, reporting whether it took.
+
+    A caller that only checks "did this raise?" can't tell a real sync from
+    one JaegerAI silently rejected (e.g. an unresolvable local model name) —
+    both looked identical from the outside, which is how a picked model could
+    appear to be selected in ARES while JaegerAI kept serving the old one.
+    The return value makes that distinction visible instead of swallowing it.
+    """
     provider = str((result or {}).get("provider") or "").strip().lower()
     model = str((result or {}).get("model") or "").strip()
     if not provider or not model:
-        return
+        return {"ok": True}
     try:
-        from api.ares_provider_sync import JROS_FALLBACK_PROVIDER_MAP, sync_provider
+        from api.ares_provider_sync import JaegerAI_FALLBACK_PROVIDER_MAP, sync_provider
 
-        mapped = JROS_FALLBACK_PROVIDER_MAP.get(provider)
+        mapped = JaegerAI_FALLBACK_PROVIDER_MAP.get(provider)
         if not mapped:
-            return
+            return {"ok": True}
         sync_provider(
             provider=mapped,
             model=model,
-            targets=["jros"],
+            targets=["jaeger"],
             ares_config_path=active_profile_config_path(),
         )
-        from api.providers.jaeger.gateway_streaming import reset_jros_boot
+        from api.providers.jaeger.streaming import reset_jaeger_runtime
 
-        reset_jros_boot()
-    except Exception:
-        logger.warning("Failed to synchronize the main model with JROS", exc_info=True)
+        reset_jaeger_runtime()
+        return {"ok": True}
+    except Exception as exc:
+        logger.warning("Failed to synchronize the main model with JaegerAI", exc_info=True)
+        return {"ok": False, "error": str(exc)}
 
 
 def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> dict:
@@ -355,7 +341,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
         group
         for group in existing_groups
         if str(group.get("provider_id") or group.get("provider") or "").strip().lower()
-        in JROS_COMPATIBLE_MODEL_PROVIDERS
+        in JaegerAI_COMPATIBLE_MODEL_PROVIDERS
     ]
 
     existing_pids = {
@@ -366,7 +352,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
     if not enrich:
         filtered["groups"] = groups
         filtered["ares_backend"] = BACKEND_JAEGER
-        filtered["compatible_providers"] = sorted(JROS_COMPATIBLE_MODEL_PROVIDERS)
+        filtered["compatible_providers"] = sorted(JaegerAI_COMPATIBLE_MODEL_PROVIDERS)
 
         active_provider = str(filtered.get("active_provider") or "").strip().lower()
         if not active_provider or active_provider not in existing_pids:
@@ -401,19 +387,37 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
 
     # Discover live and installed Jaeger models
     try:
-        from api.backends.model_discovery import discover_jros_models
-        discovered = discover_jros_models()
+        from api.backends.model_discovery import discover_jaeger_models
+        discovered = discover_jaeger_models()
     except Exception:
         discovered = {}
 
     default_info = discovered.get("default") or {}
     configured_default_model = str(default_info.get("model") or "").strip()
     configured_default_provider = str(default_info.get("provider") or "").strip().lower()
+    credential_names = _jaeger_credential_names()
+    # A hosted cloud brain must not list on-device Ollama/MLX/GGUF in the
+    # same picker. Duplicate model ids (qwen3.5:397b) were starting the
+    # local daemon while the UI still said Ollama Cloud.
+    _local_picker = {"local", "ollama", "ollama-local", "ollama-launch", "lmstudio"}
+    hide_local = configured_default_provider in {
+        "ollama-cloud", "openai", "anthropic", "gemini", "xai",
+    }
+    if hide_local:
+        groups = [
+            group
+            for group in groups
+            if str(group.get("provider_id") or group.get("provider") or "").strip().lower()
+            not in _local_picker
+        ]
+        existing_pids = {
+            str(g.get("provider_id") or g.get("provider") or "").strip().lower()
+            for g in groups
+        }
 
     # Append xAI if configured
-    xai_key = _read_jaeger_credential("xai_api_key")
-    if xai_key and "xai" not in existing_pids:
-        xai_models = _fetch_xai_models(xai_key)
+    if "xai_api_key" in credential_names and "xai" not in existing_pids:
+        xai_models = _xai_models()
         if xai_models:
             groups.append({
                 "provider": "xAI (Grok)",
@@ -424,9 +428,8 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             existing_pids.add("xai")
 
     # Append Ollama Cloud if configured
-    ollama_cloud_key = _read_jaeger_credential("ollama_cloud_api_key")
-    if ollama_cloud_key and "ollama-cloud" not in existing_pids:
-        cloud_models = _fetch_ollama_cloud_models(ollama_cloud_key)
+    if "ollama_cloud_api_key" in credential_names and "ollama-cloud" not in existing_pids:
+        cloud_models = _ollama_cloud_models(discovered)
         if cloud_models:
             groups.append({
                 "provider": "Ollama Cloud",
@@ -436,10 +439,13 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             })
             existing_pids.add("ollama-cloud")
 
-    # Append local Ollama daemon if running
-    if "ollama" not in existing_pids:
+    # Append local Ollama daemon if running — never while a hosted cloud
+    # brain is the selected lane.
+    ollama_local_ids: set[str] = set()
+    if not hide_local and "ollama" not in existing_pids:
         ollama_local = _fetch_ollama_local_models()
         if ollama_local:
+            ollama_local_ids = {str(m.get("id") or "").strip() for m in ollama_local}
             groups.append({
                 "provider": "Ollama (Local)",
                 "provider_id": "ollama",
@@ -448,9 +454,16 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             })
             existing_pids.add("ollama")
 
-    # Append local MLX / GGUF models
-    if "local" not in existing_pids:
-        local_models = _get_jaeger_local_models()
+    # Append local MLX / GGUF models. JaegerAI's own catalog discovers the
+    # same local Ollama daemon internally (to know what it can reach), so its
+    # feed can repeat models the "Ollama (Local)" group above already listed
+    # — drop those here rather than showing the same model twice under two
+    # different provider labels.
+    if not hide_local and "local" not in existing_pids:
+        local_models = [
+            m for m in _get_jaeger_local_models()
+            if str(m.get("id") or "").strip() not in ollama_local_ids
+        ]
         if local_models:
             groups.append({
                 "provider": "Local (Jaeger AI / MLX / GGUF)",
@@ -461,8 +474,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
             existing_pids.add("local")
 
     # Append OpenAI if configured
-    openai_key = _read_jaeger_credential("openai_api_key")
-    if openai_key and "openai" not in existing_pids:
+    if "openai_api_key" in credential_names and "openai" not in existing_pids:
         groups.append({
             "provider": "OpenAI",
             "provider_id": "openai",
@@ -481,8 +493,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
         existing_pids.add("openai")
 
     # Append Anthropic if configured
-    anthropic_key = _read_jaeger_credential("anthropic_api_key")
-    if anthropic_key and "anthropic" not in existing_pids:
+    if "anthropic_api_key" in credential_names and "anthropic" not in existing_pids:
         groups.append({
             "provider": "Anthropic",
             "provider_id": "anthropic",
@@ -501,8 +512,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
         existing_pids.add("anthropic")
 
     # Append Gemini if configured
-    gemini_key = _read_jaeger_credential("gemini_api_key")
-    if gemini_key and "gemini" not in existing_pids:
+    if "gemini_api_key" in credential_names and "gemini" not in existing_pids:
         groups.append({
             "provider": "Google Gemini",
             "provider_id": "gemini",
@@ -522,7 +532,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
 
     filtered["groups"] = groups
     filtered["ares_backend"] = BACKEND_JAEGER
-    filtered["compatible_providers"] = sorted(JROS_COMPATIBLE_MODEL_PROVIDERS)
+    filtered["compatible_providers"] = sorted(JaegerAI_COMPATIBLE_MODEL_PROVIDERS)
 
     # Resolve active provider & default model
     active_provider = str(filtered.get("active_provider") or "").strip().lower()

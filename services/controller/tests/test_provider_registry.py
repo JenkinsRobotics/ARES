@@ -14,16 +14,15 @@ from api.provider_registry import (
 def test_missing_registry_is_empty_and_does_not_assume_provider_ports(tmp_path):
     path = tmp_path / "providers.json"
     assert load_provider_registry(path) == empty_registry()
-    assert provider_endpoint("hermes_local", registry=empty_registry()) == ""
-    assert provider_endpoint("jros_local", registry=empty_registry()) == ""
+    assert provider_endpoint("jaeger_local", registry=empty_registry()) == ""
 
 
-def test_legacy_jaeger_provider_id_is_normalized_on_read(tmp_path):
+def test_jaeger_provider_id_is_normalized_on_read(tmp_path):
     path = tmp_path / "providers.json"
     path.write_text(json.dumps({
         "schema_version": 1,
         "providers": {
-            "jros_local": {
+            "jaeger_local": {
                 "enabled": True,
                 "kind": "runtime",
                 "endpoint": "http://jaeger.example:8643",
@@ -34,7 +33,6 @@ def test_legacy_jaeger_provider_id_is_normalized_on_read(tmp_path):
     registry = load_provider_registry(path)
     assert set(registry["providers"]) == {"jaeger_local"}
     assert provider_endpoint("jaeger_local", registry=registry) == "http://jaeger.example:8643"
-    assert provider_endpoint("jros_local", registry=registry) == "http://jaeger.example:8643"
 
 
 def test_registry_keeps_only_normalized_non_secret_connection_metadata(tmp_path):
@@ -42,13 +40,13 @@ def test_registry_keeps_only_normalized_non_secret_connection_metadata(tmp_path)
     path.write_text(json.dumps({
         "schema_version": 1,
         "providers": {
-            "Hermes_Local": {
+            "Jaeger_Local": {
                 "enabled": True,
                 "kind": "runtime",
-                "endpoint": "http://hermes-owned.example:9999/",
-                "credential_env": "HERMES_API_KEY",
+                "endpoint": "http://jaeger-owned.example:9999/",
+                "credential_env": "JAEGER_API_KEY",
                 "capabilities": ["conversation", "conversation", "tools"],
-                "metadata": {"managed_by": "hermes"},
+                "metadata": {"managed_by": "jaeger"},
                 "api_key": "must-not-be-copied",
             },
             "invalid": {"enabled": True, "endpoint": "file:///tmp/socket"},
@@ -56,18 +54,18 @@ def test_registry_keeps_only_normalized_non_secret_connection_metadata(tmp_path)
     }), encoding="utf-8")
 
     registry = load_provider_registry(path)
-    hermes = configured_provider("hermes_local", registry=registry)
-    assert hermes == {
-        "id": "hermes_local",
+    jaeger = configured_provider("jaeger_local", registry=registry)
+    assert jaeger == {
+        "id": "jaeger_local",
         "enabled": True,
         "kind": "runtime",
-        "endpoint": "http://hermes-owned.example:9999",
-        "credential_env": "HERMES_API_KEY",
+        "endpoint": "http://jaeger-owned.example:9999",
+        "credential_env": "JAEGER_API_KEY",
         "capabilities": ["conversation", "tools"],
-        "metadata": {"managed_by": "hermes"},
+        "metadata": {"managed_by": "jaeger"},
     }
     assert provider_endpoint("invalid", registry=registry) == ""
-    assert "api_key" not in hermes
+    assert "api_key" not in jaeger
 
 
 def test_disabled_provider_is_not_connected():

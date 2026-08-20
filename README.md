@@ -1,49 +1,31 @@
 # ARES
 
-**Artificial Reasoning & Execution System**
+ARES is the Jenkins Robotics assistant product UI and controller. It presents
+one consistent workspace while JaegerAI supplies the canonical agent runtime.
 
-One assistant. Persistent memory. Verified action.
-
-You talk to one thing — one conversation, one memory, one place that knows you. ARES remembers everything, verifies before acting, and uses whatever model or agent is best for the task. The agents are replaceable hands. Swap any model underneath and nothing is lost.
-
-## Quick Start
+## Quick start
 
 ```bash
 git clone https://github.com/JenkinsRobotics/ARES.git
 cd ARES
 bash install.sh
 ./start.sh
-# → http://localhost:8788
 ```
 
-Or run the native macOS app:
-```bash
-swift run ARES
-```
+Open `http://127.0.0.1:8788`. Network exposure is opt-in and requires
+authentication.
 
-## Documentation
+## Repository map
 
-- **[Vision](docs/vision.md)** — what ARES is, the problem it solves, and how it works
-- **[Architecture](docs/architecture.md)** — dispatch, guard, memory, runtime, boundaries
-- **[Development](docs/development.md)** — install, run, Docker, troubleshooting, contributing
-- **[API Reference](docs/api.md)** — endpoints and contracts
+- `apps/web/static/` — browser UI
+- `apps/macos/` — Swift macOS shell and native tools
+- `services/controller/` — FastAPI controller and tests
+- `integrations/` — versioned runtime/provider adapters
+- `core/` — ARES-owned authority, memory, and orchestration
+- `docs/` — current architecture, API, security, and decisions
 
-## Repository
+Runtime inventory and capability status are calculated dynamically. Query the
+authenticated `/api/inventory` endpoint instead of relying on documented counts.
 
-```
-ARES/
-├── apps/macos/            # Native macOS app (SwiftUI/WKWebView → :8788)
-├── apps/web/              # React UI
-│   └── src/
-│       ├── features/chat/           # Chat page
-│       ├── components/shell/        # Session list + frame
-│       └── styles/chat-layout.css   # Phone/desktop chat padding
-├── services/controller/   # FastAPI backend + API + tests
-├── core/                  # Planner, orchestrator, trust, verification
-├── integrations/          # Worker adapters (Jaeger, Hermes, Claude, Codex, Ollama)
-└── docs/                  # Documentation (+ rfcs/, decisions/)
-```
-
-## Owner
-
-Matthew Jenkins (shuwalker) · Jenkins Robotics
+See `docs/vision.md`, `docs/architecture.md`, `docs/development.md`, and
+`docs/api.md`.

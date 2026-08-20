@@ -146,17 +146,13 @@ def test_api_health_alias_preserves_namespaced_contract(app):
     assert response.json()["status"] == "ok"
 
 
-def test_legacy_adapter_inventory_handles_app_automation_backends(app, monkeypatch):
-    # A configured instance without an optional JROS source checkout used to
-    # abort the entire inventory while resolving its identity projection.
-    monkeypatch.setenv("ARES_JROS_INSTANCE", "inventory-test")
-    monkeypatch.delenv("ARES_JROS_DIR", raising=False)
-    # jros_local availability comes from the gateway, not the source checkout,
-    # so point it at an unreachable port. Without this the test asserted
-    # "unavailable" while passing only on machines with no JaegerAI running.
-    monkeypatch.setenv("ARES_JROS_GATEWAY_URL", "http://127.0.0.1:1")
-    from api.providers.jaeger.status import reset_cache
-    reset_cache()
+def test_adapter_inventory_handles_unavailable_jaeger(app, monkeypatch):
+    from api.providers.status_contract import offline
+
+    monkeypatch.setattr(
+        "api.providers.jaeger.status.check_status",
+        lambda **_kwargs: offline("JaegerAI is unavailable for this test."),
+    )
     response = request(app, "GET", "/api/ares/adapters")
 
     assert response.status_code == 200, response.text
@@ -296,7 +292,10 @@ def test_workspace_upload_routes_all_files_through_scoped_service(app, monkeypat
 
     def save_workspace(session_id, path, files):
         captured.update(session_id=session_id, path=path, files=files)
-        return {"files": [{"filename": value[0]} for value in files.values()], "count": len(files)}
+        return {
+            "files": [{"filename": value[0]} for value in files.values()],
+            "count": len(files),
+        }
 
     monkeypatch.setattr("api.upload.save_workspace_upload", save_workspace)
 
@@ -318,6 +317,9 @@ def test_workspace_upload_routes_all_files_through_scoped_service(app, monkeypat
 
 
 def test_skills_routes_use_profile_scoped_service_contracts(app, monkeypatch):
+    # This contract test intentionally exercises ARES's profile-scoped store,
+    # independent of whichever runtime is selected in the developer's profile.
+    monkeypatch.setattr("api.runtime_skills.selected_runtime_owns_skills", lambda: False)
     calls = []
     monkeypatch.setattr(
         "api.skills_store.list_skills",
@@ -325,8 +327,10 @@ def test_skills_routes_use_profile_scoped_service_contracts(app, monkeypatch):
     )
     monkeypatch.setattr(
         "api.skills_store.save_skill",
-        lambda name, content, category="": calls.append((name, content, category))
-        or {"ok": True, "name": name, "path": "/tmp/SKILL.md"},
+        lambda name, content, category="": (
+            calls.append((name, content, category))
+            or {"ok": True, "name": name, "path": "/tmp/SKILL.md"}
+        ),
     )
 
     listed = request(app, "GET", "/api/skills?category=engineering")
@@ -389,14 +393,19 @@ def test_schedule_routes_keep_profile_scope_inside_worker_thread(app, monkeypatc
     assert response.json()["active_profile"] == "default"
 
 
-def test_schedule_output_and_recent_routes_preserve_legacy_query_defaults(app, monkeypatch):
+def test_schedule_output_and_recent_routes_preserve_legacy_query_defaults(
+    app, monkeypatch
+):
     monkeypatch.setattr(
         "api.schedules_store.schedule_outputs",
         lambda job_id, limit: {"job_id": job_id, "limit": limit, "outputs": []},
     )
     monkeypatch.setattr(
         "api.schedules_store.recent_schedules",
-        lambda since: {"since": float(since) if str(since).isdigit() else 0.0, "completions": []},
+        lambda since: {
+            "since": float(since) if str(since).isdigit() else 0.0,
+            "completions": [],
+        },
     )
 
     output = request(app, "GET", "/api/crons/output?job_id=job-1&limit=notanint")
@@ -429,9 +438,79 @@ def test_kanban_routes_use_shared_service_with_worker_profile_scope(app, monkeyp
     assert response.json()["query"] == "include_archived=1"
 
 
+def test_caldav_routes_are_profile_scoped_and_keep_secrets_server_side(
+    app, monkeypatch
+):
+    seen = {}
+
+    def configure(profile, **values):
+        seen.update({"profile": profile, **values})
+        return {
+            "configured": True,
+            "calendar_url": values["calendar_url"],
+            "username": values["username"],
+            "credential_provider": "os_keychain",
+            "secret_ref": "caldav.password",
+        }
+
+    monkeypatch.setattr("api.caldav_service.configure", configure)
+    response = request(
+        app,
+        "PUT",
+        "/api/caldav/config",
+        json={
+            "calendar_url": "https://calendar.example.test/work/",
+            "username": "ares",
+            "password": "secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["credential_provider"] == "os_keychain"
+    assert "password" not in response.json()
+    assert seen == {
+        "profile": "default",
+        "calendar_url": "https://calendar.example.test/work/",
+        "username": "ares",
+        "password": "secret",
+    }
+
+
+def test_model_compare_route_uses_profile_owned_service(app, monkeypatch):
+    seen = {}
+
+    def compare(profile, **values):
+        seen.update({"profile": profile, **values})
+        return {"id": "comparison-1", "results": [], "winner": None}
+
+    monkeypatch.setattr("api.model_intelligence.compare", compare)
+    response = request(
+        app,
+        "POST",
+        "/api/model-intelligence/compare",
+        json={
+            "prompt": "Explain this",
+            "targets": [
+                {"backend": "jaeger_local"},
+                {"backend": "ollama_local"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "comparison-1"
+    assert seen["profile"] == "default"
+    assert [target["backend"] for target in seen["targets"]] == [
+        "jaeger_local",
+        "ollama_local",
+    ]
+
+
 def test_session_list_and_message_window_contracts(app):
     listed = request(app, "GET", "/api/sessions?exclude_hidden=1")
-    loaded = request(app, "GET", "/api/session?session_id=session-1&messages=1&msg_limit=200")
+    loaded = request(
+        app, "GET", "/api/session?session_id=session-1&messages=1&msg_limit=200"
+    )
 
     assert listed.status_code == 200
     assert listed.json()["sessions"][0]["active_stream_id"] is None
@@ -505,12 +584,16 @@ def test_session_lifecycle_mutations_use_typed_fastapi_contracts(app, monkeypatc
         "api.session_mutations.set_session_archived",
         lambda session_id, archived=True: Session("Archived"),
     )
-    monkeypatch.setattr("api.session_mutations.worktree_retained_payload", lambda session: {})
+    monkeypatch.setattr(
+        "api.session_mutations.worktree_retained_payload", lambda session: {}
+    )
     monkeypatch.setattr(
         "api.session_mutations.move_session_to_project",
         lambda session_id, project_id: Session("Moved"),
     )
-    monkeypatch.setattr("api.models.count_conversation_rounds", lambda session_id, since=None: 7)
+    monkeypatch.setattr(
+        "api.models.count_conversation_rounds", lambda session_id, since=None: 7
+    )
     monkeypatch.setattr(
         "api.session_mutations.regenerate_session_title",
         lambda session_id, prefer_latest=False: (Session("Generated"), "ok", "raw"),
@@ -578,7 +661,9 @@ def test_session_lifecycle_mutations_use_typed_fastapi_contracts(app, monkeypatc
     assert regenerated.json()["title"] == "Generated"
 
 
-def test_interaction_mutations_preserve_approval_and_stale_clarify_shapes(app, monkeypatch):
+def test_interaction_mutations_preserve_approval_and_stale_clarify_shapes(
+    app, monkeypatch
+):
     monkeypatch.setattr(
         "api.route_approvals.respond_approval",
         lambda session_id, approval_id, choice: (

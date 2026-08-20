@@ -25,7 +25,7 @@ def tasks_mod(tmp_path, monkeypatch):
 
 
 def test_create_task_is_queued(tasks_mod):
-    task = tasks_mod.create_task(prompt="hello", backend="hermes_local")
+    task = tasks_mod.create_task(prompt="hello", backend="jaeger_local")
     assert task["status"] == tasks_mod.STATUS_QUEUED
     assert task["id"]
     assert tasks_mod.get_task(task["id"])["prompt"] == "hello"
@@ -40,6 +40,17 @@ def test_terminal_status_is_immutable(tasks_mod):
     assert final["status"] == tasks_mod.STATUS_COMPLETED
     assert final["result"] == "done"
     assert final["error"] is None
+
+
+def test_cancel_is_idempotent_and_blocks_late_completion(tasks_mod):
+    task = tasks_mod.create_task(prompt="p", backend="b")
+    first = tasks_mod.cancel_task(task["id"])
+    second = tasks_mod.cancel_task(task["id"])
+    tasks_mod.update_status(task["id"], tasks_mod.STATUS_COMPLETED, result="late")
+
+    assert first["status"] == tasks_mod.STATUS_CANCELED
+    assert second == first
+    assert tasks_mod.get_task(task["id"])["status"] == tasks_mod.STATUS_CANCELED
 
 
 class _FakeBackend:
@@ -70,9 +81,11 @@ def test_delegate_completes(tmp_path, monkeypatch):
     importlib.reload(delegation_tasks)
     importlib.reload(delegation_runner)
 
-    _patch_router(monkeypatch, {"hermes_local": _FakeBackend({"text": "42", "error": None})})
+    _patch_router(
+        monkeypatch, {"jaeger_local": _FakeBackend({"text": "42", "error": None})}
+    )
 
-    task = delegation_runner.delegate(prompt="what is 6*7", backend="hermes_local")
+    task = delegation_runner.delegate(prompt="what is 6*7", backend="jaeger_local")
     result = _await_terminal(delegation_tasks, task["id"])
     assert result["status"] == delegation_tasks.STATUS_COMPLETED
     assert result["result"] == "42"
@@ -85,9 +98,11 @@ def test_delegate_failed_backend_error(tmp_path, monkeypatch):
     importlib.reload(delegation_tasks)
     importlib.reload(delegation_runner)
 
-    _patch_router(monkeypatch, {"hermes_local": _FakeBackend({"text": "", "error": "boom"})})
+    _patch_router(
+        monkeypatch, {"jaeger_local": _FakeBackend({"text": "", "error": "boom"})}
+    )
 
-    task = delegation_runner.delegate(prompt="x", backend="hermes_local")
+    task = delegation_runner.delegate(prompt="x", backend="jaeger_local")
     result = _await_terminal(delegation_tasks, task["id"])
     assert result["status"] == delegation_tasks.STATUS_FAILED
     assert result["error"] == "boom"

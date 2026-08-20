@@ -247,6 +247,55 @@ class AresCoreService:
                 for row in deduped.values()
                 if _profiles_match(row.get("profile"), active_profile)
             ]
+            try:
+                from api.backend_catalog import JAEGER_BACKEND_ID
+                from api.session_contract import (
+                    SESSION_CONTRACT_VERSION,
+                    backend_for_session,
+                    require_operation,
+                    runtime_owns_transcript,
+                    runtime_query,
+                )
+
+                jaeger_rows = [
+                    row
+                    for row in rows
+                    if backend_for_session(row) == JAEGER_BACKEND_ID
+                    and runtime_owns_transcript(row)
+                ]
+                if jaeger_rows:
+                    require_operation("list", backend=JAEGER_BACKEND_ID)
+                    runtime_rows = runtime_query("list", limit=10_000)
+                    runtime_by_id = {
+                        str(item.get("id")): item
+                        for item in (runtime_rows or [])
+                        if isinstance(item, dict) and item.get("id")
+                    }
+                    for row in jaeger_rows:
+                        runtime = runtime_by_id.get(str(row.get("session_id") or ""))
+                        if runtime is None:
+                            row["transcript_owner"] = "jaeger"
+                            row["session_contract_version"] = SESSION_CONTRACT_VERSION
+                            row["message_count"] = 0
+                            row["runtime_missing"] = True
+                            continue
+                        row["transcript_owner"] = "jaeger"
+                        row["session_contract_version"] = SESSION_CONTRACT_VERSION
+                        row["message_count"] = int(runtime.get("messages") or 0)
+                        row["last_message_at"] = runtime.get("last_active")
+                        row["runtime_execution_state"] = runtime.get("execution_state") or "idle"
+                        if runtime.get("model"):
+                            row["model"] = runtime["model"]
+                        if runtime.get("provider"):
+                            row["model_provider"] = runtime["provider"]
+            except Exception as exc:
+                from api.session_contract import SessionCapabilityError
+
+                if isinstance(exc, SessionCapabilityError):
+                    raise CoreApiError(
+                        503, str(exc), code="session_operation_unavailable"
+                    ) from exc
+                raise
             archived_count = sum(1 for row in rows if row.get("archived"))
             if not include_archived:
                 rows = [row for row in rows if not row.get("archived")]
@@ -311,13 +360,22 @@ class AresCoreService:
                 )
             from api.session_projection import project_session_detail
 
-            payload = project_session_detail(
-                session,
-                load_messages=load_messages,
-                message_limit=message_limit,
-                message_before=message_before,
-                resolve_model=resolve_model,
-            )
+            try:
+                payload = project_session_detail(
+                    session,
+                    load_messages=load_messages,
+                    message_limit=message_limit,
+                    message_before=message_before,
+                    resolve_model=resolve_model,
+                )
+            except Exception as exc:
+                from api.session_contract import SessionCapabilityError
+
+                if isinstance(exc, SessionCapabilityError):
+                    raise CoreApiError(
+                        503, str(exc), code="session_operation_unavailable"
+                    ) from exc
+                raise
             from api.helpers import redact_session_data
 
             return {"session": redact_session_data(payload)}
@@ -379,6 +437,30 @@ class AresCoreService:
                 enabled_toolsets=request.enabled_toolsets,
                 worktree_info=worktree_info,
             )
+            try:
+                from api.session_contract import (
+                    backend_for_session,
+                    require_operation,
+                    runtime_command,
+                    runtime_owns_transcript,
+                )
+
+                selected_backend = backend_for_session(session)
+                require_operation("create", session=session, backend=selected_backend)
+                if runtime_owns_transcript(backend=selected_backend):
+                    runtime_command("create", session.session_id)
+                    session.transcript_owner = "jaeger"
+                    session.runtime_message_count = 0
+            except Exception as exc:
+                from api.config import LOCK, SESSIONS
+
+                with LOCK:
+                    SESSIONS.pop(session.session_id, None)
+                raise CoreApiError(
+                    503,
+                    f"The selected runtime could not create the conversation: {exc}",
+                    code="session_operation_unavailable",
+                ) from exc
             return {"session": session.compact() | {"messages": list(session.messages)}}
 
     @staticmethod

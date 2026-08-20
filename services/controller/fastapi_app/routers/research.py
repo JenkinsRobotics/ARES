@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
+import uuid
 
 from fastapi import APIRouter, Depends, Query
 
@@ -40,21 +41,25 @@ async def start_research(
 
     max_time = min(600, max(30, int(payload.get("max_time", 300))))
     category = payload.get("category")  # optional: product, comparison, howto, factcheck
-    session_id = payload.get("session_id") or f"research-{id(payload)}"
+    session_id = payload.get("session_id") or f"research-{uuid.uuid4().hex}"
 
     handler = _get_handler()
-    return handler.start_research(
-        session_id=session_id,
-        query=query,
-        max_time=max_time,
-        category=category,
-    )
+    try:
+        return handler.start_research(
+            session_id=session_id,
+            query=query,
+            max_time=max_time,
+            category=category,
+        )
+    except ValueError as exc:
+        from ..errors import CoreApiError
+        raise CoreApiError(400, str(exc)) from exc
 
 
 @router.get("/status")
 def research_status(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
-    session_id: str = Query(min_length=1),
+    session_id: str = Query(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_-]+$"),
 ):
     """Get current research progress for a session."""
     handler = _get_handler()
@@ -67,7 +72,7 @@ def research_status(
 @router.get("/result")
 def research_result(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
-    session_id: str = Query(min_length=1),
+    session_id: str = Query(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_-]+$"),
 ):
     """Get the completed research report."""
     handler = _get_handler()
@@ -95,14 +100,18 @@ def cancel_research(
         raise CoreApiError(400, "session_id is required")
 
     handler = _get_handler()
-    success = handler.cancel_research(session_id)
+    try:
+        success = handler.cancel_research(session_id)
+    except ValueError as exc:
+        from ..errors import CoreApiError
+        raise CoreApiError(400, str(exc)) from exc
     return {"cancelled": success}
 
 
 @router.delete("/result")
 def clear_research_result(
     _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
-    session_id: str = Query(min_length=1),
+    session_id: str = Query(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_-]+$"),
 ):
     """Clear a persisted research result."""
     handler = _get_handler()

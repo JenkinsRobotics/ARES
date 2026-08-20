@@ -152,7 +152,7 @@ def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None, b
     from api.provider_registry import provider_endpoint
 
     # Use the explicitly selected backend ID when provided (gateway bridge path),
-    # otherwise fall back to the legacy hermes_local hardcoded behavior.
+    # otherwise fall back to the legacy jaeger_local hardcoded behavior.
     selected_backend = backend_id or "jaeger_local"
     raw = str(
         provider_endpoint(selected_backend, environ=source)
@@ -170,14 +170,6 @@ def _gateway_api_key(environ: dict[str, str] | None = None) -> str:
         or source.get("API_SERVER_KEY")
         or ""
     ).strip()
-
-
-def hermes_gateway_connection_configured(
-    config_data=None,
-    environ: dict[str, str] | None = None,
-) -> bool:
-    """Return whether ARES can authenticate to the configured Hermes Gateway."""
-    return bool(_gateway_base_url(config_data, environ) and _gateway_api_key(environ))
 
 
 def _gateway_use_runs_api_enabled(config_data=None, environ: dict[str, str] | None = None) -> bool:
@@ -387,7 +379,7 @@ def _run_gateway_runs_api_streaming(
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-        headers["X-Ares-Session-Key"] = f"webui:{session_id}"
+        headers["X-Ares-Session-Key"] = session_id
     message_content: Any = str(msg_text or "")
     if attachments:
         try:
@@ -791,7 +783,7 @@ def _run_gateway_chat_streaming(
                 headers["Authorization"] = f"Bearer {api_key}"
                 # Scope Gateway long-term continuity to this WebUI conversation
                 # without exposing the browser's auth cookie or CSRF material.
-                headers["X-Ares-Session-Key"] = f"webui:{session_id}"
+                headers["X-Ares-Session-Key"] = session_id
             message_content: Any = str(msg_text or "")
             if attachments:
                 try:

@@ -24,7 +24,7 @@ jq_py() { python3 -c "import json,sys;d=json.load(sys.stdin);$1" 2>/dev/null; }
 echo "=== ARES smoke test — $BASE ==="
 
 # ── 1. controller answers ────────────────────────────────────────────────────
-echo "[1/6] Health"
+echo "[1/5] Health"
 HEALTH="$(curl -sS --max-time 10 "$BASE/api/health" 2>/dev/null || true)"
 if [ -z "$HEALTH" ]; then
   bad "controller not reachable at $BASE — is it running? (see AGENTS.md → Restart / recovery)"
@@ -39,7 +39,7 @@ fi
 
 # ── 2. exactly one listener ──────────────────────────────────────────────────
 # Two listeners on 8788 means phone and Mac can reach different servers.
-echo "[2/6] Bind"
+echo "[2/5] Bind"
 LISTENERS="$(lsof -nP -iTCP:8788 -sTCP:LISTEN -t 2>/dev/null | sort -u | wc -l | tr -d ' ')"
 if [ "$LISTENERS" = "1" ]; then
   ok "one listener on 8788"
@@ -50,12 +50,12 @@ else
 fi
 
 # ── 3. workers ───────────────────────────────────────────────────────────────
-echo "[3/6] Connections"
+echo "[3/5] Connections"
 CONNS="$(curl -sS --max-time 15 "$BASE/api/connections" 2>/dev/null || true)"
 SELECTED="$(printf '%s' "$CONNS" | jq_py 'print(d.get("selected") or "")')"
 [ -n "$SELECTED" ] && ok "selected runtime: $SELECTED" || bad "no runtime selected"
 
-for backend in jaeger_local hermes_local; do
+for backend in jaeger_local; do
   STATE="$(printf '%s' "$CONNS" | jq_py "print(next((c['health']['state'] for c in d.get('connections',[]) if c['id']=='$backend'), 'absent'))")"
   case "$STATE" in
     connected|needs_attention) ok "$backend: $STATE" ;;
@@ -65,7 +65,7 @@ for backend in jaeger_local hermes_local; do
 done
 
 # ── 4. directives ────────────────────────────────────────────────────────────
-echo "[4/6] Directives"
+echo "[4/5] Directives"
 DIRS="$(curl -sS --max-time 10 "$BASE/api/ares/directives" 2>/dev/null || true)"
 DIRS_ON="$(printf '%s' "$DIRS" | jq_py 'print("yes" if d.get("enabled") else "no")')"
 if [ "$DIRS_ON" = "yes" ]; then
@@ -76,7 +76,16 @@ else
   bad "directives endpoint did not respond"
 fi
 
-# ── 5 & 6. real turns ────────────────────────────────────────────────────────
+# ── 5. real turn ─────────────────────────────────────────────────────────────
+cleanup_turn_session() {
+  local sid="$1"
+  if ! curl -fsS --max-time 15 -X POST "$BASE/api/session/delete" \
+    -H 'Content-Type: application/json' \
+    -d "{\"session_id\":\"$sid\"}" >/dev/null; then
+    bad "could not remove smoke-test session $sid"
+  fi
+}
+
 run_turn() {
   local backend="$1" label="$2"
   local sid resp stream elapsed=0 status
@@ -101,6 +110,7 @@ run_turn() {
     else
       bad "$label: no stream_id and no reason given"
     fi
+    cleanup_turn_session "$sid"
     return
   fi
 
@@ -122,10 +132,10 @@ run_turn() {
   else
     bad "$label produced no terminal state in ${elapsed}s — possible hang"
   fi
+  cleanup_turn_session "$sid"
 }
 
-echo "[5/6] Hermes turn";  run_turn hermes_local "hermes_local"
-echo "[6/6] Jaeger turn";  run_turn jaeger_local "jaeger_local"
+echo "[5/5] Jaeger turn";  run_turn jaeger_local "jaeger_local"
 
 echo
 echo "=== $pass passed, $fail failed, $skip skipped ==="

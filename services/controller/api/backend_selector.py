@@ -40,7 +40,7 @@ def get_active_backend(config: dict) -> str:
         return elected
 
     try:
-        if is_jros_available():
+        if is_jaeger_available():
             return BACKEND_JAEGER
     except Exception:
         logger.debug("JaegerAI availability probe failed during election", exc_info=True)
@@ -52,26 +52,18 @@ def get_session_backend(session: object, config: dict) -> str:
     return normalize_backend(getattr(session, "ares_backend", None), fallback=default_backend)
 
 
-def is_jros_available() -> bool:
-    """Whether JaegerAI can run a turn right now, by any of its transports.
-
-    Thin wrapper over :func:`api.providers.jaeger.status.check_status` so legacy
-    boolean callers keep working. It used to probe only the HTTP gateway and
-    treat a local install as "detected, not available" — but the local bridge is
-    the path ``gateway_streaming`` actually executes through when no gateway URL
-    is set, so a working bridge-only install was reported as not installed.
-    """
+def is_jaeger_available() -> bool:
+    """Whether JaegerAI can run a turn through its supported bridge."""
 
     from api.providers.jaeger.status import check_status
 
     return check_status().available
 
 
-def jros_gateway_details() -> dict:
+def jaeger_connection_details() -> dict:
     """Non-secret details from the last JaegerAI status probe.
 
-    Includes ``mode`` (``gateway`` or ``bridge``) so callers can tell which
-    transport answered.
+    Includes the negotiated transport mode and owner-provided runtime details.
     """
 
     from api.providers.jaeger.status import check_status
@@ -83,7 +75,7 @@ def backend_status() -> dict:
     """Return current backend availability for UI display.
 
     Note: this probes *every* registered backend and is intentionally not used
-    on the chat start hot path (use :func:`is_jros_available` /
+    on the chat start hot path (use :func:`is_jaeger_available` /
     per-backend ``is_available`` instead).
     """
     router = get_router()
@@ -92,10 +84,10 @@ def backend_status() -> dict:
         for name, backend in router.list_all().items()
         if normalize_backend(name) != JAEGER_BACKEND_ID
     }
-    jros_available = is_jros_available()
-    status[JAEGER_BACKEND_ID] = jros_available
-    if jros_available:
-        for key, value in jros_gateway_details().items():
+    jaeger_available = is_jaeger_available()
+    status[JAEGER_BACKEND_ID] = jaeger_available
+    if jaeger_available:
+        for key, value in jaeger_connection_details().items():
             status[f"jaeger_{key}"] = value
     return status
 

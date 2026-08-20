@@ -4,15 +4,15 @@ Stdlib only: no JaegerAI package is imported into ARES. The client drives an
 existing JaegerAI install by spawning its
 ``jaeger bridge`` and speaking the v1 NDJSON client protocol over stdio.
 
-    from api.providers.jaeger.bridge_client import JrosClient
+    from api.providers.jaeger.bridge_client import JaegerClient
 
-    with JrosClient() as companion:
+    with JaegerClient() as companion:
         reply = companion.turn("hello", session="myapp")
         print(reply["text"])
 
-Pick an agent:       JrosClient(instance="jarvis")
-Non-default install: JrosClient(jaeger_home="/opt/jaeger")
-Full control:        JrosClient(command=["/path/to/jaeger", "bridge"])
+Pick an agent:       JaegerClient(instance="my-agent")
+Non-default install: JaegerClient(jaeger_home="/opt/jaeger")
+Full control:        JaegerClient(command=["/path/to/jaeger", "bridge"])
 
 The wire contract is jaeger_os/interfaces/protocol.py (v1); this file is
 tested against the same protocol_v1_fixtures.json that pins the Swift
@@ -25,24 +25,57 @@ import json
 import os
 import subprocess
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-from api.providers.jaeger.paths import jaeger_home as resolve_jaeger_home
-from api.providers.jaeger.paths import jaeger_launcher as resolve_jaeger_launcher
-from api.providers.jaeger.paths import jros_instance_name as resolve_jros_instance_name
+from api.providers.jaeger.paths import (
+    jaeger_home as resolve_jaeger_home,
+)
+from api.providers.jaeger.paths import (
+    jaeger_instance_name as resolve_jaeger_instance_name,
+)
+from api.providers.jaeger.paths import (
+    jaeger_launcher as resolve_jaeger_launcher,
+)
+from api.contracts import (
+    CURRENT_INTEGRATION_CONTRACT_VERSION as INTEGRATION_CONTRACT_VERSION,
+    MIN_SUPPORTED_INTEGRATION_CONTRACT_VERSION,
+    PROTOCOL_VERSION,
+    has_capability,
+    validate_contract_compatibility,
+)
 
-PROTOCOL_VERSION = "1"
+_BRIDGE_ENVIRONMENT_NAMES = {
+    "HOME", "LANG", "LC_ALL", "LOGNAME", "PATH", "SHELL",
+    "SSL_CERT_DIR", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "TMPDIR",
+    "USER", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+}
 
 
-class JrosError(RuntimeError):
+def minimal_bridge_environment(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Return only host settings needed to launch JaegerAI.
+
+    Provider credentials belong to Jaeger's credential service. Inheriting the
+    controller's complete environment would expose unrelated ARES secrets to
+    the runtime subprocess.
+    """
+    values = os.environ if source is None else source
+    return {
+        key: value
+        for key, value in values.items()
+        if key in _BRIDGE_ENVIRONMENT_NAMES or key.startswith("LC_")
+    }
+
+
+class JaegerError(RuntimeError):
     """The bridge failed to boot, died mid-turn, or returned a fatal."""
 
 
 def _default_command(jaeger_home: str | None, instance: str | None = None) -> list[str]:
     """Resolve the installed launcher command: <home>/jaeger bridge [instance].
 
-    JROS 0.7's implicit default bridge can emit ``ready`` and still stall on
+    JaegerAI 0.7's implicit default bridge can emit ``ready`` and still stall on
     the first real turn. ARES therefore passes the resolved instance as a
     positional bridge argument whenever it knows one.
     """
@@ -50,7 +83,7 @@ def _default_command(jaeger_home: str | None, instance: str | None = None) -> li
     launcher = resolve_jaeger_launcher() if jaeger_home is None else Path(str(raw_home)).expanduser() / "jaeger"
     home = launcher.parent
     if not launcher.exists():
-        raise JrosError(
+        raise JaegerError(
             f"no JaegerAI install at {home} — install first "
             "(https://github.com/JenkinsRobotics/JaegerAI) or pass "
             "jaeger_home=/path/to/install")
@@ -89,8 +122,18 @@ def _encode(frame: dict[str, Any]) -> str:
     return json.dumps(frame, ensure_ascii=False) + "\n"
 
 
-def send_op(text: str, session: str = "") -> dict[str, Any]:
-    return {"op": "send", "text": text, "session": session}
+def send_op(
+    text: str,
+    session: str = "",
+    workspace: str = "",
+    display_text: str = "",
+) -> dict[str, Any]:
+    frame = {"op": "send", "text": text, "session": session}
+    if workspace:
+        frame["workspace"] = workspace
+    if display_text:
+        frame["display_text"] = display_text
+    return frame
 
 
 def respond_op(id: str, answer: str) -> dict[str, Any]:
@@ -101,8 +144,8 @@ def quit_op() -> dict[str, Any]:
     return {"op": "quit"}
 
 
-class JrosClient:
-    """Drive a JROS agent over the v1 client protocol.
+class JaegerClient:
+    """Drive a JaegerAI agent over the v1 client protocol.
 
     Synchronous, one turn at a time (one local model). Tool/state events
     and mid-turn requests surface via the ``turn()`` callbacks.
@@ -112,26 +155,111 @@ class JrosClient:
                  instance: str | None = None,
                  command: list[str] | None = None,
                  env: dict | None = None, cwd: str | None = None) -> None:
-        resolved_instance = instance or resolve_jros_instance_name()
+        resolved_instance = instance or resolve_jaeger_instance_name()
+        self._jaeger_home = jaeger_home
+        self._instance = resolved_instance
         self._command = (
             _append_instance_arg_if_bridge(command, resolved_instance)
             if command is not None else _default_command(jaeger_home, resolved_instance)
         )
-        self._env = dict(env) if env is not None else os.environ.copy()
+        self._env = dict(env) if env is not None else minimal_bridge_environment()
         if resolved_instance:
             self._env["JAEGER_INSTANCE_NAME"] = resolved_instance
         self._cwd = cwd
         self._proc: subprocess.Popen | None = None
+        self._sock = None
+        self._rx = None
+        self._attached = False
         self._stderr_lines: list[str] = []
         self._stderr_thread: threading.Thread | None = None
         self.ready: dict[str, Any] | None = None
         self._io_lock = threading.RLock()
+        self._write_lock = threading.Lock()
         self._request_counter = 0
 
     # ── lifecycle ─────────────────────────────────────────────────
+    def _handshake(self, lines) -> dict[str, Any]:
+        for line in lines:
+            frame = _parse(line)
+            if frame is None:
+                continue
+            if frame.get("type") == "ready":
+                received_protocol = str(frame.get("proto") or "")
+                if received_protocol != PROTOCOL_VERSION:
+                    raise JaegerError(
+                        "incompatible Jaeger bridge protocol: "
+                        f"expected {PROTOCOL_VERSION}, received {received_protocol or 'missing'}"
+                    )
+                capabilities = frame.get("capabilities")
+                if not isinstance(capabilities, list):
+                    raise JaegerError("invalid Jaeger bridge handshake: capabilities must be a list")
+                self.ready = {
+                    "instance": frame.get("instance"),
+                    "model": frame.get("model"),
+                    "protocol_version": received_protocol,
+                    "capabilities": [str(item) for item in capabilities],
+                    "attached": self._attached,
+                }
+                return self.ready
+            if frame.get("type") == "fatal":
+                stderr_tail = "\n".join(self._stderr_lines[-10:]) if self._stderr_lines else ""
+                msg = str(frame.get("error", "boot failed"))
+                if stderr_tail:
+                    msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
+                raise JaegerError(msg)
+        stderr_tail = "\n".join(self._stderr_lines[-10:]) if self._stderr_lines else ""
+        msg = "bridge exited before ready"
+        if stderr_tail:
+            msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
+        raise JaegerError(msg)
+
+    def _try_attach(self) -> dict[str, Any] | None:
+        """Connect to a live ``jaeger bridge`` socket if one is listening."""
+        import socket as _socket
+        from api.providers.jaeger.paths import jaeger_bridge_socket_candidates
+
+        home = self._jaeger_home
+        if not home:
+            try:
+                home = str(resolve_jaeger_home())
+            except Exception:
+                home = None
+        for path in jaeger_bridge_socket_candidates(home, self._instance):
+            if not path.exists():
+                continue
+            sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            sock.settimeout(2.0)
+            try:
+                sock.connect(str(path))
+            except OSError:
+                sock.close()
+                continue
+            sock.settimeout(None)
+            rx = sock.makefile("rw", buffering=1, encoding="utf-8", newline="\n")
+            self._sock = sock
+            self._rx = rx
+            self._attached = True
+            try:
+                return self._handshake(rx)
+            except Exception:
+                self._attached = False
+                try:
+                    rx.close()
+                except Exception:
+                    pass
+                sock.close()
+                self._sock = None
+                self._rx = None
+                raise
+        return None
+
     def start(self) -> dict[str, Any]:
-        """Spawn the bridge and await its ``ready`` handshake. Returns
-        ``{"instance": ..., "model": ...}``. Raises :class:`JrosError`."""
+        """Attach to a live bridge if one is up; otherwise spawn one.
+
+        Returns ``{"instance": ..., "model": ...}``. Raises :class:`JaegerError`."""
+        attached = self._try_attach()
+        if attached is not None:
+            return attached
         self._proc = subprocess.Popen(
             self._command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -149,34 +277,43 @@ class JrosClient:
                     pass
             self._stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
             self._stderr_thread.start()
-        for line in self._proc.stdout:        # type: ignore[union-attr]
-            frame = _parse(line)
-            if frame is None:
-                continue
-            if frame.get("type") == "ready":
-                self.ready = {"instance": frame.get("instance"),
-                              "model": frame.get("model")}
-                return self.ready
-            if frame.get("type") == "fatal":
-                # Surface stderr in the error message for diagnostics
-                stderr_tail = "\n".join(self._stderr_lines[-10:]) if self._stderr_lines else ""
-                msg = str(frame.get("error", "boot failed"))
-                if stderr_tail:
-                    msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
-                raise JrosError(msg)
-        # Bridge exited before ready — include stderr for diagnostics
-        stderr_tail = "\n".join(self._stderr_lines[-10:]) if self._stderr_lines else ""
-        msg = "bridge exited before ready"
-        if stderr_tail:
-            msg = f"{msg}\nBridge stderr:\n{stderr_tail}"
-        raise JrosError(msg)
+        self._rx = self._proc.stdout
+        return self._handshake(self._proc.stdout)
 
     def is_alive(self) -> bool:
-        """True while the ``jaeger bridge`` child is still running."""
+        """True while the ``jaeger bridge`` child (or attach socket) is up."""
+        if self._attached:
+            sock = self._sock
+            if sock is None:
+                return False
+            try:
+                sock.getpeername()
+                return True
+            except Exception:
+                return False
         proc = self._proc
         return proc is not None and proc.poll() is None
 
     def close(self) -> None:
+        if self._attached:
+            try:
+                self._write(quit_op())  # detach — owner ignores this as shutdown
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                if self._rx is not None:
+                    self._rx.close()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                if self._sock is not None:
+                    self._sock.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._sock = None
+            self._rx = None
+            self._attached = False
+            return
         proc = self._proc
         if proc is not None and proc.poll() is None:
             try:
@@ -197,7 +334,7 @@ class JrosClient:
                         pass
         self._proc = None
 
-    def __enter__(self) -> "JrosClient":
+    def __enter__(self) -> JaegerClient:
         self.start()
         return self
 
@@ -205,19 +342,22 @@ class JrosClient:
         self.close()
 
     # ── turns ─────────────────────────────────────────────────────
-    def turn(self, text: str, session: str = "", *,
+    def turn(self, text: str, session: str = "", *, workspace: str = "",
+             display_text: str = "",
              on_event: Callable[[dict], None] | None = None,
              on_request: Callable[[dict], str] | None = None) -> dict[str, Any]:
         """Run one turn; return ``{"text": ..., "error": ...}``.
 
-        ``on_event(frame)`` fires for each tool/state frame; ``on_request``
-        is called for a mid-turn prompt (approval/clarify/secret) and must
-        return the answer (default "deny")."""
+        ``on_event(frame)`` fires for each tool/state/delta frame;
+        ``on_request`` is called for a mid-turn prompt
+        (approval/clarify/secret) and must return the answer (default
+        "deny"). The returned ``text`` is always the complete answer —
+        deltas are a live preview of it, not a replacement for it."""
         with self._io_lock:
-            if self._proc is None:
-                raise JrosError("not started")
-            self._write(send_op(text, session))
-            for line in self._proc.stdout:        # type: ignore[union-attr]
+            if self._rx is None:
+                raise JaegerError("not started")
+            self._write(send_op(text, session, workspace, display_text))
+            for line in self._rx:
                 frame = _parse(line)
                 if frame is None:
                     continue
@@ -229,12 +369,31 @@ class JrosClient:
                     answer = on_request(frame) if on_request else "deny"
                     self._write(respond_op(
                         str(frame.get("id", "")), answer or "deny"))
-                elif kind in ("tool", "state"):
+                elif kind in ("tool", "state", "delta"):
+                    # ``delta`` is the turn's text as it generates
+                    # (contract v9). An older runtime never sends one and
+                    # the whole answer still arrives in ``reply``, so
+                    # this branch needs no version check — the frame is
+                    # either there or it isn't.
                     if on_event is not None:
                         on_event(frame)
                 elif kind == "fatal":
-                    raise JrosError(str(frame.get("error", "bridge failed")))
-            raise JrosError("bridge exited mid-turn")
+                    raise JaegerError(str(frame.get("error", "bridge failed")))
+            raise JaegerError("bridge exited mid-turn")
+
+    def cancel(self, session: str = "") -> None:
+        """Cooperatively interrupt the current Jaeger bridge turn."""
+        del session  # reserved for a future multi-worker bridge
+        if self._rx is None:
+            raise JaegerError("not started")
+        self._write({"op": "cancel"})
+
+    def steer(self, text: str, session: str = "") -> None:
+        """Inject guidance into the current Jaeger bridge turn."""
+        del session  # reserved for a future multi-worker bridge
+        if self._rx is None:
+            raise JaegerError("not started")
+        self._write({"op": "steer", "text": str(text or "")})
 
     def query(self, what: str, args: dict[str, Any] | None = None) -> Any:
         """Read Jaeger-owned state through the versioned bridge contract."""
@@ -244,29 +403,42 @@ class JrosClient:
         """Ask Jaeger to mutate its own state through a validated command."""
         return self._request({"op": "command", "cmd": cmd, "args": args or {}})
 
+    def integration_contract(self) -> dict[str, Any]:
+        """Return and validate Jaeger's self-described product capabilities."""
+        contract = self.query("contract")
+        valid, err_msg = validate_contract_compatibility(contract)
+        if not valid:
+            raise JaegerError(err_msg)
+        return contract
+
     def _request(self, frame: dict[str, Any]) -> Any:
         with self._io_lock:
-            if self._proc is None:
-                raise JrosError("not started")
+            if self._rx is None:
+                raise JaegerError("not started")
             self._request_counter += 1
             request_id = f"ares-{self._request_counter}"
             payload = {**frame, "id": request_id}
             self._write(payload)
-            for line in self._proc.stdout:        # type: ignore[union-attr]
+            for line in self._rx:
                 reply = _parse(line)
                 if reply is None:
                     continue
                 kind = reply.get("type")
                 if kind == "result" and str(reply.get("id") or "") == request_id:
                     if not bool(reply.get("ok", True)):
-                        raise JrosError(str(reply.get("error") or "Jaeger command failed"))
+                        raise JaegerError(str(reply.get("error") or "Jaeger command failed"))
                     return reply.get("data")
                 if kind == "fatal":
-                    raise JrosError(str(reply.get("error") or "bridge failed"))
-            raise JrosError("bridge exited before returning a result")
+                    raise JaegerError(str(reply.get("error") or "bridge failed"))
+            raise JaegerError("bridge exited before returning a result")
 
     # ── internals ─────────────────────────────────────────────────
     def _write(self, frame: dict[str, Any]) -> None:
-        assert self._proc is not None and self._proc.stdin is not None
-        self._proc.stdin.write(_encode(frame))
-        self._proc.stdin.flush()
+        sink = self._rx if self._attached else (
+            None if self._proc is None else self._proc.stdin
+        )
+        if sink is None:
+            raise JaegerError("not started")
+        with self._write_lock:
+            sink.write(_encode(frame))
+            sink.flush()

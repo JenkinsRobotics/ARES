@@ -166,6 +166,10 @@ _load_ares_dotenv() {
 _find_python() {
   if [[ -n "${ARES_WEBUI_PYTHON:-}" ]]; then
     printf '%s\n' "${ARES_WEBUI_PYTHON}"
+  elif [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+    printf '%s\n' "${REPO_ROOT}/.venv/bin/python"
+  elif [[ -x "${REPO_ROOT}/.venv/Scripts/python.exe" ]]; then
+    printf '%s\n' "${REPO_ROOT}/.venv/Scripts/python.exe"
   elif command -v python3 >/dev/null 2>&1; then
     command -v python3
   elif command -v python >/dev/null 2>&1; then
@@ -429,6 +433,28 @@ _launchd_webui_pid() {
   esac
 }
 
+_ensure_menu_bar_icon() {
+  # ctl.sh is the common floor every start path funnels through — bin/ares,
+  # a launchd job, or a script/agent calling it directly. `bin/ares start`
+  # already launches ARES.app by default specifically so the menu bar icon
+  # and the controller always appear together; every OTHER entry point
+  # (ctl.sh itself, bootstrap.py, a direct uvicorn invocation) used to skip
+  # that entirely, leaving a controller running with no visible icon and no
+  # way to stop/restart it from the menu bar (#thread: "I do not want the
+  # server running without the menu icon"). Best-effort and silent on
+  # failure — a missing/unbuilt .app must never block the controller itself
+  # from starting.
+  [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]] || return 0
+  [[ "${ARES_CTL_NO_MENU_BAR:-}" != "1" ]] || return 0
+  pgrep -x "ARES" >/dev/null 2>&1 && return 0
+  local app_path="${HOME}/Applications/ARES.app"
+  if [[ ! -d "${app_path}" ]]; then
+    app_path="${REPO_ROOT}/../../apps/macos/ARES.app"
+  fi
+  [[ -d "${app_path}" ]] || return 0
+  open -g "${app_path}" >/dev/null 2>&1 || true
+}
+
 start_cmd() {
   ensure_home
   _load_repo_dotenv_preserving_env
@@ -443,6 +469,7 @@ start_cmd() {
   local existing_pid
   if existing_pid="$(_current_pid 2>/dev/null)"; then
     echo "[ctl] Ares WebUI is already running (PID ${existing_pid})"
+    _ensure_menu_bar_icon
     return 0
   fi
   local launchd_pid
@@ -505,6 +532,7 @@ start_cmd() {
       echo "[ctl] Started Ares WebUI (PID ${pid})"
       echo "[ctl] Bound: ${CTL_HOST}:${CTL_PORT}"
       echo "[ctl] Log: ${LOG_FILE}"
+      _ensure_menu_bar_icon
       return 0
     fi
     if (( waited >= grace )); then
@@ -520,6 +548,7 @@ start_cmd() {
     echo "[ctl] Started Ares WebUI (PID ${pid})"
     echo "[ctl] Bound: ${CTL_HOST}:${CTL_PORT}"
     echo "[ctl] Log: ${LOG_FILE}"
+    _ensure_menu_bar_icon
     return 0
   fi
 

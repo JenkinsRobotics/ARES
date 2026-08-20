@@ -1,7 +1,7 @@
 """Provider packages for the workers ARES routes turns to.
 
 ARES is the Companion: it never executes inference itself, it routes turns to
-workers (Hermes, JaegerAI, Ollama, cloud models). Each worker owns a
+workers (JaegerAI, Ollama, cloud models). Each worker owns a
 subpackage here containing its backend, its execution/streaming code, and a
 ``status.py`` exposing ``check_status()``.
 

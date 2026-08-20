@@ -88,8 +88,8 @@ def test_every_stream_target_accepts_at_least_one_user_text_alias():
     import inspect
 
     targets = [
-        ("api.providers.jaeger.gateway_streaming", "run_jros_streaming"),
-        ("api.providers.hermes.streaming", "run_hermes_streaming"),
+        ("api.providers.jaeger.streaming", "run_jaeger_streaming"),
+        ("api.providers.jaeger.streaming", "run_jaeger_streaming"),
         ("api.gateway_chat", "_run_gateway_chat_streaming"),
         ("api.providers.agentic_backend", "run_agentic_backend_streaming"),
     ]
@@ -102,8 +102,8 @@ def test_every_stream_target_accepts_at_least_one_user_text_alias():
 @pytest.mark.parametrize(
     "module_name,attr",
     [
-        ("api.providers.jaeger.gateway_streaming", "run_jros_streaming"),
-        ("api.providers.hermes.streaming", "run_hermes_streaming"),
+        ("api.providers.jaeger.streaming", "run_jaeger_streaming"),
+        ("api.providers.jaeger.streaming", "run_jaeger_streaming"),
         ("api.gateway_chat", "_run_gateway_chat_streaming"),
         ("api.providers.agentic_backend", "run_agentic_backend_streaming"),
     ],
@@ -123,7 +123,7 @@ def test_real_stream_targets_bind_the_canonical_turn_kwargs(module_name, attr):
 
 
 def test_fallback_ids_all_exist_in_the_worker_registry():
-    """``hermes_proxy``/``claude_cloud`` matched nothing and silently
+    """Retired adapter IDs matched nothing and silently
     routed turns to Ollama."""
     from api.backends.router import get_default_router
 

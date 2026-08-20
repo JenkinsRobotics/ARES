@@ -223,7 +223,7 @@ def backend(
     registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
     session_id: str = Query(default="", max_length=256),
 ):
-    from api.ares_capabilities import capabilities_for_backend
+    from api.ares_capabilities import capability_contract_for_backend
     from api.backend_selector import get_active_backend, get_session_backend
     from api.config import get_config
 
@@ -241,13 +241,23 @@ def backend(
             for item in records.get("connections") or []
             if item.get("kind") == "runtime"
         }
+        capability_contract = capability_contract_for_backend(current)
         return {
             "current": current,
             "default": default_backend,
             "scope": scope,
             "session_id": session_id or None,
             "status": status,
-            "capabilities": capabilities_for_backend(current),
+            "capabilities": capability_contract["capabilities"],
+            "capability_negotiated": capability_contract["negotiated"],
+            "capability_source": capability_contract["source"],
+            "capability_error": capability_contract["error"],
+            "capability_domains": capability_contract["domains"],
+            "capability_ownership": capability_contract["ownership"],
+            "capability_features": capability_contract["features"],
+            "runtime_contract_version": (
+                (capability_contract.get("runtime_contract") or {}).get("contract_version")
+            ),
         }
 
 
@@ -413,7 +423,7 @@ def runtime_context(_identity: Annotated[RequestIdentity, Depends(require_identi
 def tools(_identity: Annotated[RequestIdentity, Depends(require_identity)]):
     from api.ares_tool_adapter import register_ares_tools
 
-    # This is a JSON discovery contract, not an executable in-process JROS
+    # This is a JSON discovery contract, not an executable in-process JaegerAI
     # registry. MCP-shaped schemas contain no Python classes or callables and
     # are therefore safe to serialize regardless of the active runtime.
     return {"tools": register_ares_tools(target="mcp")}
@@ -593,53 +603,6 @@ def register_device(
 
 
 
-@router.post("/api/ares/sessions/import-hermes")
-def import_hermes_sessions():
-    """Import all sessions from Hermes WebUI (~/.hermes/sessions/) into ARES."""
-    from api.models import import_cli_session, get_cli_sessions
-    from pathlib import Path
-    import json
-    
-    hermes_dir = Path.home() / ".hermes" / "sessions"
-    if not hermes_dir.exists():
-        return {"imported": 0, "error": "Hermes sessions directory not found"}
-    
-    imported = []
-    skipped = []
-    
-    for session_file in hermes_dir.glob("*.json"):
-        try:
-            data = json.loads(session_file.read_text())
-            session_id = data.get("session_id") or session_file.stem
-            title = data.get("title", "Hermes Session")
-            messages = data.get("messages", [])
-            
-            # Skip if already in ARES
-            from api.models import Session
-            if Session.load(session_id):
-                skipped.append(session_id)
-                continue
-            
-            # Import into ARES
-            session = import_cli_session(
-                session_id=session_id,
-                title=title,
-                messages=messages,
-                model=data.get("model", "unknown"),
-                created_at=data.get("created_at"),
-                updated_at=data.get("updated_at"),
-            )
-            imported.append(session_id)
-        except Exception as e:
-            skipped.append(f"{session_file.name}: {e}")
-    
-    return {
-        "imported": len(imported),
-        "skipped": len(skipped),
-        "imported_ids": imported[:20],  # Limit response size
-        "skipped_ids": skipped[:20],
-    }
-
 
 
 @router.get("/api/ares/rag-sources")
@@ -689,6 +652,110 @@ def set_rag_sources(request: dict):
     config_path.write_text(yaml.dump(config, default_flow_style=False))
     
     return {"ok": True, "count": len(sources)}
+
+
+@router.post("/api/ares/rag-sources/add-folder")
+def add_rag_folder(request: dict):
+    """Add a folder path to configured RAG/knowledge sources."""
+    from pathlib import Path
+    import yaml
+    import time
+
+    folder_path = (request.get("path") or "").strip()
+    if not folder_path:
+        raise CoreApiError(400, "Missing 'path' parameter.", code="invalid_param")
+
+    p = Path(folder_path).expanduser()
+    if not p.exists():
+        raise CoreApiError(404, f"Path '{folder_path}' does not exist.", code="path_not_found")
+
+    config_path = Path.home() / ".ares" / "rag_sources.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config = {}
+    if config_path.exists():
+        try:
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            config = {}
+
+    sources = config.get("sources", [])
+    existing_paths = {
+        (s.get("path") if isinstance(s, dict) else str(s))
+        for s in sources
+    }
+
+    if str(p) not in existing_paths:
+        sources.append({"path": str(p), "enabled": True})
+
+    config["sources"] = sources
+    config["enabled"] = True
+    config["updated_at"] = time.time()
+    config_path.write_text(yaml.dump(config, default_flow_style=False), encoding="utf-8")
+
+    return {"ok": True, "path": str(p), "total_sources": len(sources)}
+
+
+@router.post("/api/ares/rag-sources/remove-folder")
+def remove_rag_folder(request: dict):
+    """Remove a folder path from configured RAG/knowledge sources."""
+    from pathlib import Path
+    import yaml
+    import time
+
+    folder_path = (request.get("path") or "").strip()
+    if not folder_path:
+        raise CoreApiError(400, "Missing 'path' parameter.", code="invalid_param")
+
+    config_path = Path.home() / ".ares" / "rag_sources.yaml"
+    if not config_path.exists():
+        return {"ok": True, "total_sources": 0}
+
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        config = {}
+
+    sources = config.get("sources", [])
+    updated = [
+        s for s in sources
+        if (s.get("path") if isinstance(s, dict) else str(s)) != folder_path
+        and (s.get("path") if isinstance(s, dict) else str(s)) != str(Path(folder_path).expanduser())
+    ]
+
+    config["sources"] = updated
+    config["updated_at"] = time.time()
+    config_path.write_text(yaml.dump(config, default_flow_style=False), encoding="utf-8")
+
+    return {"ok": True, "path": folder_path, "total_sources": len(updated)}
+
+
+@router.get("/api/knowledge/graph")
+def get_knowledge_graph(
+    max_nodes: int = 500,
+    query: str | None = None,
+    tag: str | None = None,
+    cluster: str | None = None,
+):
+    """Get the interactive knowledge graph for the ARES Memory Tab."""
+    from api.knowledge_graph import build_knowledge_graph
+    try:
+        return build_knowledge_graph(
+            max_nodes=max_nodes,
+            query=query,
+            tag=tag,
+            cluster=cluster,
+        )
+    except Exception as exc:
+        logger.error("Failed building knowledge graph: %s", exc, exc_info=True)
+        return {"ok": False, "error": str(exc), "nodes": [], "links": []}
+
+
+@router.get("/api/knowledge/document")
+def get_knowledge_document(path: str):
+    """Read a specific document's content for node inspection."""
+    from api.knowledge_graph import read_knowledge_document
+    return read_knowledge_document(path)
 
 
 @router.post("/api/ares/rag-sources/scan")
@@ -836,9 +903,9 @@ def sync_provider_configuration(
     from api.ares_provider_sync import sync_fallback_chain, sync_provider
     from api.config import _get_config_path
 
-    targets = payload.get("targets") or ["ares", "jros"]
+    targets = payload.get("targets") or ["ares", "jaeger"]
     if not isinstance(targets, list):
-        raise CoreApiError(400, "targets must be a list of ares and/or jros")
+        raise CoreApiError(400, "targets must be a list of ares and/or jaeger")
     dry_run = bool(payload.get("dry_run", False))
     try:
         with profile_scope(identity.profile):
@@ -852,7 +919,7 @@ def sync_provider_configuration(
                 ares_config_path=config_path,
                 dry_run=dry_run,
             )
-            if "jros" in targets:
+            if "jaeger" in targets:
                 try:
                     result["fallback_chain"] = sync_fallback_chain(
                         ares_config_path=config_path,

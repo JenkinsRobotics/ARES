@@ -59,7 +59,7 @@ function _isDocumentVisibleAndFocused() {
 let _desktopBackgroundedForNotifications=false;
 // Desktop shells can background a visible document; keep that signal notification-only.
 if(typeof window!=='undefined'){
-  window.__hermesSetBackgrounded=(value)=>{
+  window.__aresSetBackgrounded=(value)=>{
     _desktopBackgroundedForNotifications=!!value;
     if(_desktopBackgroundedForNotifications){
       for(const k in _STREAM_NOTIFICATION_BACKGROUND){
@@ -166,6 +166,9 @@ if(_msgEl) _msgEl.addEventListener('focus', ()=>{ if('speechSynthesis' in window
 if(_msgEl) _msgEl.addEventListener('blur', ()=>{ if('speechSynthesis' in window && speechSynthesis.paused) speechSynthesis.resume(); });
 
 let _selectedTextReplyBtn=null;
+let _selectedTextRefineBtn=null;
+let _selectedTextCopyBtn=null;
+let _selectedTextReplyGroup=null;
 let _selectedTextReplyText='';
 let _pendingSelections=[];  // [{id, name, text}] — named context blocks
 let _selectionIdCounter=0;
@@ -788,21 +791,47 @@ function _selectedTextReplySelection(){
   return {text, rect};
 }
 
-function _formatSelectedTextReplyQuote(text){
+function _formatSelectedTextReplyQuote(text, includeMarker=true){
   const normalized=String(text||'').replace(/\r\n?/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
   if(!normalized)return '';
-  return `<!-- hermes-selected-context -->\n${normalized.split('\n').map(line=>`> ${line}`).join('\n')}`;
+  const quote=normalized.split('\n').map(line=>`> ${line}`).join('\n');
+  return includeMarker?`<!-- ares-selected-context -->\n${quote}`:quote;
 }
 
-function insertSavedPromptIntoComposer(text){
+function _appendComposerText(text){
   const composer=(typeof $==='function'&&$('msg'))||document.getElementById('msg');
   if(!composer||!text)return;
   const current=String(composer.value||'');
-  composer.value=current.trim()?`${current.replace(/\s+$/,'')}\n\n${text}\n\n`:`${text}\n\n`;
+  composer.value=current.trim()?`${current.replace(/\s+$/,'')}\n\n${text}`:String(text);
   composer.focus();
   try{composer.setSelectionRange(composer.value.length, composer.value.length);}catch(_e){}
   composer.dispatchEvent(new Event('input',{bubbles:true}));
   if(typeof autoResize==='function') autoResize();
+}
+
+function insertSavedPromptIntoComposer(text){
+  if(!text)return;
+  _appendComposerText(`${text}\n\n`);
+}
+
+function _seedSelectedTextRefineDraft(text){
+  const quote=_formatSelectedTextReplyQuote(text, false);
+  const instruction=_selectedTextReplyT('selected_text_refine_instruction','Refine instruction:');
+  if(!quote||!instruction)return;
+  _appendComposerText(`${quote}\n\n${instruction} `);
+}
+
+function _consumeSelectedTextReplySelection(){
+  const info=_selectedTextReplySelection();
+  if(!info){
+    _hideSelectedTextReplyButton();
+    return '';
+  }
+  const text=info.text;
+  _hideSelectedTextReplyButton();
+  const selection=window.getSelection&&window.getSelection();
+  if(selection&&selection.removeAllRanges)selection.removeAllRanges();
+  return text;
 }
 
 let _savedPromptsCache=null;
@@ -1053,49 +1082,98 @@ function _flushSelectionBlocksToComposer(){
 
 function _selectedTextReplyButton(){
   if(_selectedTextReplyBtn)return _selectedTextReplyBtn;
+  const group=document.createElement('div');
+  group.id='selectedTextActionGroup';
+  group.className='selected-text-action-group';
   const btn=document.createElement('button');
   btn.type='button';
   btn.id='selectedTextReplyBtn';
   btn.className='selected-text-reply-btn';
   btn.setAttribute('data-i18n', 'selected_text_reply');
   btn.setAttribute('data-i18n-title', 'selected_text_reply_title');
-  btn.setAttribute('data-i18n-aria-label', 'selected_text_reply_title');
+  btn.setAttribute('data-i18n-aria-label', 'selected_text_reply');
   btn.textContent=_selectedTextReplyT('selected_text_reply', 'Reply with selection');
   btn.title=_selectedTextReplyT('selected_text_reply_title', 'Append selected chat text as quoted context');
-  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('aria-label', btn.textContent);
   btn.addEventListener('mousedown', e=>e.preventDefault());
   btn.addEventListener('click', e=>{
     e.preventDefault();
-    if(_selectedTextReplyText){
-      _addNamedContextBlock(_selectedTextReplyText);
-      _hideSelectedTextReplyButton();
-      const selection=window.getSelection&&window.getSelection();
-      if(selection&&selection.removeAllRanges)selection.removeAllRanges();
+    const text=_consumeSelectedTextReplySelection();
+    if(text){
+      _addNamedContextBlock(text);
     }
   });
-  document.body.appendChild(btn);
+  const refine=document.createElement('button');
+  refine.type='button';
+  refine.id='selectedTextRefineBtn';
+  refine.className='selected-text-refine-btn';
+  refine.setAttribute('data-i18n', 'selected_text_refine');
+  refine.setAttribute('data-i18n-title', 'selected_text_refine_title');
+  refine.setAttribute('data-i18n-aria-label', 'selected_text_refine');
+  refine.textContent=_selectedTextReplyT('selected_text_refine', 'Refine');
+  refine.title=_selectedTextReplyT('selected_text_refine_title', 'Start an editable refinement draft from the selection');
+  refine.setAttribute('aria-label', refine.textContent);
+  refine.addEventListener('mousedown', e=>e.preventDefault());
+  refine.addEventListener('click', e=>{
+    e.preventDefault();
+    const text=_consumeSelectedTextReplySelection();
+    if(text){
+      _seedSelectedTextRefineDraft(text);
+    }
+  });
+  const copy=document.createElement('button');
+  copy.type='button';
+  copy.id='selectedTextCopyBtn';
+  copy.className='selected-text-copy-btn';
+  copy.setAttribute('data-i18n', 'copy');
+  copy.setAttribute('data-i18n-title', 'selected_text_copy_title');
+  copy.setAttribute('data-i18n-aria-label', 'copy');
+  copy.textContent=_selectedTextReplyT('copy', 'Copy');
+  copy.title=_selectedTextReplyT('selected_text_copy_title', 'Copy the selected chat text');
+  copy.setAttribute('aria-label', copy.textContent);
+  copy.addEventListener('mousedown', e=>e.preventDefault());
+  copy.addEventListener('click', e=>{
+    e.preventDefault();
+    const text=_consumeSelectedTextReplySelection();
+    if(!text) return;
+    const done=()=>{ if(typeof showToast==='function') showToast(_selectedTextReplyT('copied','Copied'),1600); };
+    if(typeof _copyText==='function'){
+      _copyText(text).then(done).catch(()=>{ if(typeof showToast==='function') showToast(_selectedTextReplyT('copy_failed','Copy failed'),2000,'error'); });
+    }else{
+      try{
+        navigator.clipboard.writeText(text).then(done).catch(()=>{});
+      }catch(_err){}
+    }
+  });
+  group.appendChild(btn);
+  group.appendChild(refine);
+  group.appendChild(copy);
+  document.body.appendChild(group);
   if(typeof applyLocaleToDOM==='function') applyLocaleToDOM();
   _selectedTextReplyBtn=btn;
+  _selectedTextRefineBtn=refine;
+  _selectedTextCopyBtn=copy;
+  _selectedTextReplyGroup=group;
   return btn;
 }
 
 function _hideSelectedTextReplyButton(){
   _selectedTextReplyText='';
-  if(_selectedTextReplyBtn)_selectedTextReplyBtn.classList.remove('visible');
+  if(_selectedTextReplyGroup)_selectedTextReplyGroup.classList.remove('visible');
 }
 
 function _positionSelectedTextReplyButton(info){
   const btn=_selectedTextReplyButton();
   _selectedTextReplyText=info.text;
-  btn.classList.add('visible');
+  _selectedTextReplyGroup.classList.add('visible');
   const gap=8;
-  const btnRect=btn.getBoundingClientRect();
-  const width=btnRect.width||150;
-  const height=btnRect.height||32;
+  const groupRect=_selectedTextReplyGroup.getBoundingClientRect();
+  const width=groupRect.width||250;
+  const height=groupRect.height||40;
   const left=Math.min(Math.max(gap, info.rect.left+(info.rect.width/2)-(width/2)), Math.max(gap, window.innerWidth-width-gap));
   const top=Math.max(gap, info.rect.top-height-gap);
-  btn.style.left=`${left}px`;
-  btn.style.top=`${top}px`;
+  _selectedTextReplyGroup.style.left=`${left}px`;
+  _selectedTextReplyGroup.style.top=`${top}px`;
 }
 
 function _updateSelectedTextReplyButton(){
@@ -1114,7 +1192,7 @@ function _updateSelectedTextReplyButton(){
 if(typeof document!=='undefined'){
   document.addEventListener('selectionchange', _updateSelectedTextReplyButton);
   document.addEventListener('mouseup', e=>{
-    if(e.target&&e.target.closest&&e.target.closest('.selected-text-reply-btn'))return;
+    if(e.target&&e.target.closest&&e.target.closest('.selected-text-action-group'))return;
     _updateSelectedTextReplyButton();
   });
   document.addEventListener('keyup', e=>{
@@ -1139,9 +1217,10 @@ function _clearStaleBusyStateBeforeSend({compressionRunning=false}={}){
   if(!S||!S.busy||compressionRunning) return false;
   const session=S.session||{};
   const sid=session.session_id||'';
+  const inflightEntry=typeof INFLIGHT==='object'&&INFLIGHT&&sid?INFLIGHT[sid]:null;
+  const hasLiveInflight=Boolean(inflightEntry&&(inflightEntry.ws||inflightEntry.es||inflightEntry.fetchActive));
   const hasRuntimeConfirmation=Boolean(
-    S.activeStreamId||
-    session.active_stream_id||
+    (hasLiveInflight&&S.activeStreamId)||
     session.pending_user_message||
     session.pending_started_at
   );
@@ -1746,17 +1825,21 @@ async function send(){
     // pick. (#3739/#3737, Codex catch)
     if(_pendingPickMatch && typeof _clearPendingSessionModel==='function') _clearPendingSessionModel(activeSid);
     explicitPickForPostStart=_explicitPick;
-    const startData=await api('/api/chat/start',{method:'POST',body:JSON.stringify({
-      session_id:activeSid,message:msgText,
-      // S.session.model remains authoritative; the helper only resolves a
-      // matching provider fallback for the same outgoing model.
-      model:_modelState.model,workspace:S.session.workspace,
-      model_provider:_modelState.model_provider,
-      profile:S.activeProfile||S.session.profile||'default',
-      explicit_model_pick:_explicitPick||undefined,
-      attachments:uploaded.length?uploaded:undefined,
-      moa_config:_pendingMoaConfig?true:undefined
-    })});
+    const startData=await api('/api/chat/start',{
+      method:'POST',
+      timeoutMs: 300000,
+      body:JSON.stringify({
+        session_id:activeSid,message:msgText,
+        // S.session.model remains authoritative; the helper only resolves a
+        // matching provider fallback for the same outgoing model.
+        model:_modelState.model,workspace:S.session.workspace,
+        model_provider:_modelState.model_provider,
+        profile:S.activeProfile||S.session.profile||'default',
+        explicit_model_pick:_explicitPick||undefined,
+        attachments:uploaded.length?uploaded:undefined,
+        moa_config:_pendingMoaConfig?true:undefined
+      })
+    });
     _pendingMoaConfig=null;
     postStartData = startData;
   }catch(e){
@@ -1767,7 +1850,7 @@ async function send(){
     // re-inject the dead id via _sessionIdFromLocation(), then reset to the
     // empty state instead of pushing a confusing error bubble into the chat.
     if(e&&e.status===404){
-      try{ localStorage.removeItem('hermes-webui-session'); }catch(_){ }
+      try{ localStorage.removeItem('ares-webui-session'); }catch(_){ }
       try{
         if(typeof _appRootPath==='function') history.replaceState(null,'',_appRootPath());
         else history.replaceState(null,'',window.location.pathname.replace(/\/session\/[^/]+/,'')+window.location.search);
@@ -1846,7 +1929,7 @@ async function send(){
       }
       S.session.model=startData.effective_model;
       S.session.model_provider=startData.effective_model_provider||S.session.model_provider||null;
-      localStorage.setItem('hermes-webui-model', startData.effective_model);
+      localStorage.setItem('ares-webui-model', startData.effective_model);
       if(typeof _writePersistedModelState==='function') _writePersistedModelState(startData.effective_model,S.session.model_provider||null);
       if($('modelSelect')) _applyModelToDropdown(startData.effective_model, $('modelSelect'),S.session.model_provider||null);
       if(typeof syncTopbar==='function') syncTopbar();
@@ -2015,9 +2098,26 @@ function closeOtherLiveStreams(activeSid){
   }
 }
 
+function _dispatchExtensionTurnLifecycle(type,sessionId,streamId,details={}){
+  const runtime=(typeof window!=='undefined')&&(window.ARESExtensionSettings||window.HermesExtensionSettings);
+  const dispatch=runtime&&runtime._dispatchTurnLifecycle;
+  if(typeof dispatch!=='function') return false;
+  try{
+    return dispatch(type,{sessionId,streamId,...details});
+  }catch(error){
+    if(typeof console!=='undefined'&&typeof console.error==='function'){
+      try{console.error('[ARES extensions] lifecycle dispatch failed:',error);}catch(_loggingError){ }
+    }
+    return false;
+  }
+}
+
 function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   if(!activeSid||!streamId) return;
   const reconnecting=!!options.reconnecting;
+  const _extensionTurnStartedAt=(S.session&&S.session.session_id===activeSid&&Number.isFinite(S.session.pending_started_at))
+    ?S.session.pending_started_at
+    :Date.now()/1000;
   // #4416: start (or, on reconnect for the SAME stream, keep) tracking whether
   // the tab was hidden during this stream so the done-notification fires for a
   // backgrounded tab. A reconnect with a different streamId re-seeds (the old
@@ -2617,8 +2717,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   const _STREAM_FADE_MAX_MS=900;
   const _STREAM_FADE_DONE_MAX_MS=1000;
   const _STREAM_FADE_DONE_DRAIN_MAX_MS=1400;
-  const _anchorApi=(typeof window!=='undefined'&&window.HermesAssistantTurnAnchors)
-    ? window.HermesAssistantTurnAnchors
+  const _anchorApi=(typeof window!=='undefined'&&window.ARESAssistantTurnAnchors)
+    ? window.ARESAssistantTurnAnchors
     : null;
   const _anchorRegistryMap=(typeof window!=='undefined')
     ? (window._liveAnchorRegistries=window._liveAnchorRegistries||new Map())
@@ -4389,7 +4489,12 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     el.addEventListener('animationend',e=>{
       const span=e.target;
       if(!span||!span.classList||!span.classList.contains('stream-fade-word')) return;
-      span.replaceWith(document.createTextNode(span.textContent||''));
+      // Keep the animated inline node stable for the lifetime of the live turn.
+      // Replacing each word with a fresh text node makes native scroll anchoring
+      // choose a new anchor while the transcript is still growing, producing a
+      // visible vertical bounce. Final settlement rebuilds plain persisted DOM.
+      span.classList.remove('is-new');
+      if(span.style) span.style.removeProperty('--stream-fade-ms');
     });
   }
   function _streamFadeRenderer(el){
@@ -4794,7 +4899,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     _streamFadeLastTickMs=now;
 
     // OpenWebUI fades the actual arriving tokens, so long/fast responses naturally
-    // appear to accelerate. Hermes has a playout buffer, so track incoming word
+    // appear to accelerate. ARES has a playout buffer, so track incoming word
     // velocity and play out faster than it instead of using a metronomic cadence.
     // LLM telemetry is usually tokens/sec, but the UI reveals words. A fixed word
     // cadence can look stuck even when token throughput is high, so combine:
@@ -5847,7 +5952,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           if(typeof _hydrateTodosFromSession==='function') _hydrateTodosFromSession(S.session);
           if(typeof clearVisibleMessageRowCache==='function') clearVisibleMessageRowCache();
           if(S.session&&S.session.session_id){
-            try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
+            try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
             if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
           }
           const _markerOnlyAssistantError=_replaceMarkerOnlyAssistantWithStreamError(S.messages);
@@ -6021,6 +6126,10 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         if(isActiveSession) _queueDrainSid=activeSid;
         renderSessionList();
         _setActivePaneIdleIfOwner();
+        _dispatchExtensionTurnLifecycle('turn:complete',activeSid,streamId,{
+          status:d.status||'completed',
+          endedAt:Date.now()/1000,
+        });
         playNotificationSound();
         // #4416: notify if the tab was hidden at ANY point during this stream
         // (not just at done-receive time, which a throttled background-tab SSE
@@ -6205,6 +6314,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       _clearClarifyForOwner('terminal');
       let d={};
       try{ d=JSON.parse(e.data||'{}')||{}; }catch(_){ d={}; }
+      const _extensionErrorType=(d.type==='cancelled'||d.type==='interrupted')?'turn:cancel':'turn:error';
       const currentSid=S.session&&S.session.session_id;
       const eventSid=d.old_session_id||d.session_id||'';
       const continuationSid=(d.session&&d.session.session_id)||d.new_session_id||d.continuation_session_id||'';
@@ -6253,7 +6363,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
             _attachProjectedAnchorSceneToLastAssistant(_nextMsgs3018);
             S.messages=_carryForwardEphemeralTurnFields(S.messages||[], _nextMsgs3018);
             if(S.session&&S.session.session_id){
-              try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
+              try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
               if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
             }
           } else {
@@ -6284,6 +6394,10 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       }
       _setActivePaneIdleIfOwner();
       renderSessionList(); // clear streaming indicator immediately on apperror
+      _dispatchExtensionTurnLifecycle(_extensionErrorType,activeSid,streamId,{
+        status:d.status||d.type||(_extensionErrorType==='turn:cancel'?'cancelled':'error'),
+        endedAt:Date.now()/1000,
+      });
     });
 
     source.addEventListener('warning',e=>{
@@ -6504,13 +6618,18 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
                 ? _isMessageReaderUnpinned()
                 : (typeof _messageUserUnpinned!=='undefined' && _messageUserUnpinned));
             clearLiveToolCards();if(!assistantText)removeThinking();
-            const cancelAgentName=(assistantDisplayName()+'').trim()||'Hermes';
+            const cancelAgentName=(assistantDisplayName()+'').trim()||'ARES';
             S.messages.push({role:'assistant',content:`**Task cancelled:** Task cancelled.\n\n*The run was cancelled by the user before ${cancelAgentName} finished. No provider failure occurred.*`,provider_details:'Task cancelled.',provider_details_label:'Cancellation details',_error:true});
             _attachProjectedAnchorSceneToLastAssistant(S.messages);
             renderMessages({preserveScroll:true});
             if(_wasFollowingAtCancelFb && typeof scrollToBottom==='function') scrollToBottom();
             _markSessionViewed(activeSid, S.messages.length);
           }
+        }finally{
+          _dispatchExtensionTurnLifecycle('turn:cancel',activeSid,streamId,{
+            status:_cancelData.status||_cancelData.type||'cancelled',
+            endedAt:Date.now()/1000,
+          });
         }
       })();
       renderSessionList();
@@ -6636,7 +6755,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         _attachProjectedAnchorSceneToLastAssistant(S.messages);
         if(typeof _hydrateTodosFromSession==='function') _hydrateTodosFromSession(S.session);
         if(S.session&&S.session.session_id){
-          try{localStorage.setItem('hermes-webui-session',S.session.session_id);}catch(_){}
+          try{localStorage.setItem('ares-webui-session',S.session.session_id);}catch(_){}
           if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
         }
         const _markerOnlyAssistantError=_replaceMarkerOnlyAssistantWithStreamError(S.messages);
@@ -6742,6 +6861,10 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       }
     }
     _setActivePaneIdleIfOwner();
+    _dispatchExtensionTurnLifecycle('turn:error',activeSid,streamId,{
+      status:'connection_lost',
+      endedAt:Date.now()/1000,
+    });
   }
 
   (async()=>{
@@ -6783,13 +6906,16 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       }catch(_){}
     }
     const replayParams=(reconnecting||replayOnly)?_runJournalReplayParams():'';
+    _dispatchExtensionTurnLifecycle('turn:start',activeSid,streamId,{
+      startedAt:_extensionTurnStartedAt,
+    });
     _wireSSE(new EventSource(new URL(`api/chat/stream?stream_id=${encodeURIComponent(streamId)}${replayParams}`,document.baseURI||location.href).href,{withCredentials:true}));
   })();
 
 }
 
 function transcript(){
-  const lines=[`# Hermes session ${S.session?.session_id||''}`,``,
+  const lines=[`# ARES session ${S.session?.session_id||''}`,``,
     `Workspace: ${S.session?.workspace||''}`,`Model: ${S.session?.model||''}`,``];
   for(const m of S.messages){
     if(!m||m.role==='tool')continue;
@@ -6994,7 +7120,7 @@ let _approvalCurrentId = null;  // approval_id of the card currently shown
 let _approvalPendingBySession = new Map();
 let _approvalResponding = null;
 
-const _DISMISSED_APPROVALS_KEY = 'hermes_dismissed_approvals';
+const _DISMISSED_APPROVALS_KEY = 'ares_dismissed_approvals';
 
 // Dismissed approvals are namespaced by session so that two sessions carrying
 // the SAME approval_id (e.g. a gateway/run source that reuses externally
@@ -7593,7 +7719,7 @@ function startSessionStream(sid) {
   // Capture the active session id into a dedicated var BEFORE closing, because
   // stopSessionStream() nulls _sessionStreamSessionId — so the reopen path can't
   // rely on it (that was the bug: the stream never reopened on tab re-show).
-  if (typeof document !== 'undefined' && !document._hermesSessionStreamVisibilityHook) {
+  if (typeof document !== 'undefined' && !document._aresSessionStreamVisibilityHook) {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         _sessionStreamHiddenSid = _sessionStreamSessionId;
@@ -7610,7 +7736,7 @@ function startSessionStream(sid) {
         void startSessionStream(resumeSid);
       }
     });
-    document._hermesSessionStreamVisibilityHook = true;
+    document._aresSessionStreamVisibilityHook = true;
   }
   // Don't open when tab is hidden — saves connection pool slots. Preserve the
   // pending session id so the visibility handler reopens it on re-show (a session
@@ -7664,6 +7790,20 @@ function startSessionStream(sid) {
     // the hidden-tab return (loadSession force + keepStaleUntilLoaded): the new
     // transcript replaces the old in a single render frame — NO clear+refetch,
     // so the #5177/#5189 blank-gap "jump" is not reintroduced.
+    // #6999: focusing a backgrounded tab also fires the visibility-recovery
+    // probe in sessions.js (refreshActiveSessionIfExternallyUpdated), which
+    // holds the shared _activeSessionExternalRefreshInFlight guard while it
+    // probes + force-reloads this same session. This handler honors that guard
+    // so the two paths never start two concurrent loadSession(force) calls
+    // (double full-transcript fetch + double renderMessages pass = the OOM
+    // pattern on long sessions). The probe side carries its own
+    // _loadingSessionId guard; loadSession() keeps its legitimate
+    // newest-wins supersede semantics untouched.
+    // #6999 re-gate: while the probe owns the guard, frames are COALESCED via
+    // _coalesceSessionUpdatedWhileRefreshHeld — the max announced count is
+    // latched per SID and the owner's finally runs ONE guarded follow-up when
+    // local state is still behind (a bare return dropped the update; production
+    // does not guarantee a second event).
     es.addEventListener('session-updated', e => {
       try {
         const d = JSON.parse(e.data || '{}');
@@ -7676,12 +7816,13 @@ function startSessionStream(sid) {
           : (S.session && S.session.session_id === sid);
         if (!isCurrent) return;
         if (S.activeStreamId) return;
+        const serverCount = Number(d.message_count);
+        if (typeof _coalesceSessionUpdatedWhileRefreshHeld === 'function' && _coalesceSessionUpdatedWhileRefreshHeld(sid, serverCount)) return;
         // Re-check against our CURRENT known count — a concurrent load may have
         // already caught us up between the server's emit and now.
         const localCount = (S.session && S.session.session_id === sid && Number.isFinite(Number(S.session.message_count)))
           ? Number(S.session.message_count)
           : (Array.isArray(S.messages) ? S.messages.length : 0);
-        const serverCount = Number(d.message_count);
         if (!Number.isFinite(serverCount) || serverCount <= localCount) return;
         if (typeof loadSession === 'function') {
           void loadSession(sid, {force: true, externalRefreshReason: 'session-updated', keepStaleUntilLoaded: true});
@@ -8081,7 +8222,7 @@ function _stashClarifyDraft(reason) {
   const draft = String((input && input.value) || "").trim();
   if (!draft) return false;
   const sid = _clarifySessionId || (S.session && S.session.session_id) || "unknown";
-  const key = `hermes-clarify-draft-${sid}-${_clarifySignature || "unknown"}`;
+  const key = `ares-clarify-draft-${sid}-${_clarifySignature || "unknown"}`;
   try {
     sessionStorage.setItem(key, JSON.stringify({
       draft,
@@ -8591,7 +8732,7 @@ function playAttentionSound(key){
 function _notificationOptions(body,options={}){
   const sid=(options&&options.sid)||(S&&S.session&&S.session.session_id);
   const url=sid?`${location.origin}${_sessionUrlForSid(sid)}`:location.href;
-  return {body:body||'',tag:sid?`hermes-${sid}`:'hermes-webui',renotify:false,icon:'static/favicon-192.png',badge:'static/favicon-32.png',data:{url}};
+  return {body:body||'',tag:sid?`ares-${sid}`:'ares-webui',renotify:false,icon:'static/favicon-192.png',badge:'static/favicon-32.png',data:{url}};
 }
 function _showPwaNotification(title,body,options={}){
   const botName=assistantDisplayName();

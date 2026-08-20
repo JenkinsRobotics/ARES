@@ -45,11 +45,15 @@ CRON_PROJECT_CHIP_LIMIT = 200
 WEBHOOK_PROJECT_CHIP_LIMIT = 200
 _CLI_SESSIONS_CACHE_TTL_SECONDS = 5.0
 # While a turn is actively streaming, hold the CLI/cron projection longer than
-# one poll interval (mirrors the route-level #4808 hold-down). The frontend
-# polls /api/sessions every ~5s during a stream; without a wider window the
-# CLI cache key advances on every streamed message row (see below) and the
-# expensive state.db CLI/cron projection is re-run on every poll. (#4842)
-_CLI_SESSIONS_CACHE_STREAMING_TTL_SECONDS = 30.0
+# one poll interval (mirrors the route-level #4808 hold-down). Without a wider
+# window the CLI cache key advances on every streamed message row (see below)
+# and the expensive state.db CLI/cron projection is re-run on every poll (#4842).
+#
+# This MUST be strictly greater than `_streamingPollMs`/1000 in
+# static/sessions.js. At exactly the poll interval the entry expires as the next
+# poll arrives, so the hold-down collapses back into per-poll rebuilds — the very
+# regression it exists to prevent. See tests/test_streaming_cache_ttl_vs_poll.py.
+_CLI_SESSIONS_CACHE_STREAMING_TTL_SECONDS = 45.0
 _CLI_SESSIONS_CACHE_LOCK = threading.Lock()
 _CLI_SESSIONS_CACHE_INFLIGHT: "dict[tuple, threading.Event]" = {}
 _CLI_SESSIONS_CACHE_INVALIDATION_VERSION = 0
@@ -1120,6 +1124,8 @@ class Session:
                  truncation_boundary=None,
                  clear_generation=None,
                  ares_backend=None,
+                 transcript_owner=None,
+                 runtime_message_count=None,
                  gateway_routing=None, gateway_routing_history=None,
                  llm_title_generated: bool=False,
                  manual_title: bool=False,
@@ -1196,6 +1202,8 @@ class Session:
             if str(ares_backend or "").strip()
             else None
         )
+        self.transcript_owner = str(transcript_owner or "").strip().lower() or None
+        self.runtime_message_count = _parse_nonnegative_int(runtime_message_count)
         self.gateway_routing = gateway_routing if isinstance(gateway_routing, dict) else None
         self.gateway_routing_history = gateway_routing_history if isinstance(gateway_routing_history, list) else []
         self.llm_title_generated = bool(llm_title_generated)
@@ -1282,6 +1290,7 @@ class Session:
             'truncation_boundary',
             'clear_generation',
             'ares_backend',
+            'transcript_owner', 'runtime_message_count',
             'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
             'parent_session_id',
             'worktree_path', 'worktree_branch', 'worktree_repo_root', 'worktree_created_at',
@@ -1297,7 +1306,12 @@ class Session:
         # scene bodies. message_count is placed BEFORE anchor_scene_index so a
         # legacy-format reader that stops at a scene key still finds the count.
         # The full anchor_activity_scenes bodies serialize AFTER messages.
-        meta['message_count'] = len(self.messages or [])
+        canonical_runtime_transcript = self.transcript_owner == 'jaeger'
+        meta['message_count'] = (
+            int(self.runtime_message_count or 0)
+            if canonical_runtime_transcript
+            else len(self.messages or [])
+        )
         meta['anchor_scene_index'] = _anchor_scene_index_from_records(self.anchor_activity_scenes)
         # Keep the in-memory fingerprint aligned with what we just persisted, so a
         # later metadata-only reload of THIS object (or any fingerprint reader)
@@ -1305,8 +1319,11 @@ class Session:
         # defense-in-depth; the cached-side freshness check reads real records,
         # not this, so this is belt-and-suspenders).
         self._anchor_scene_index = dict(meta['anchor_scene_index'])
-        meta['messages'] = self.messages
-        meta['tool_calls'] = self.tool_calls
+        # Runtime-owned transcripts never enter the ARES product-state file.
+        # The in-memory rows may briefly carry a live projection for SSE/UI
+        # rendering, but Jaeger remains the sole durable transcript store.
+        meta['messages'] = [] if canonical_runtime_transcript else self.messages
+        meta['tool_calls'] = [] if canonical_runtime_transcript else self.tool_calls
         meta['anchor_activity_scenes'] = self.anchor_activity_scenes if isinstance(self.anchor_activity_scenes, dict) else {}
         # Fields not in METADATA_FIELDS (e.g. last_usage) go at the end. Exclude
         # the keys we placed explicitly above so they aren't emitted twice.
@@ -1319,7 +1336,7 @@ class Session:
         title_lower = (self.title or "").lower()
         is_probe = (
             "reply with" in title_lower
-            or "ares-hermes-ok" in title_lower
+
             or "ares-jaeger-ok" in title_lower
             or "si-ok" in title_lower
         )
@@ -1349,6 +1366,8 @@ class Session:
                     existing_msg_count = -1  # corrupt → always back up
                 incoming_msg_count = len(self.messages or [])
                 if (
+                    not canonical_runtime_transcript
+                    and
                     existing_msg_count > 0
                     and incoming_msg_count == 0
                     and (self.active_stream_id or self.pending_user_message)
@@ -1362,7 +1381,7 @@ class Session:
                         self.active_stream_id,
                     )
                     return
-                if existing_msg_count > incoming_msg_count:
+                if not canonical_runtime_transcript and existing_msg_count > incoming_msg_count:
                     bak_path = self.path.with_suffix('.json.bak')
                     # SHOULD-FIX #2 (Opus): atomic write via tmp+replace,
                     # mirroring the main save() pattern below. Prevents a
@@ -1403,11 +1422,11 @@ class Session:
             except Exception:
                 pass
             raise
-        if not skip_index and len(self.messages) > 0:
+        if not skip_index and (len(self.messages) > 0 or canonical_runtime_transcript):
             title_lower = (self.title or "").lower()
             is_probe = (
                 "reply with" in title_lower
-                or "ares-hermes-ok" in title_lower
+
                 or "ares-jaeger-ok" in title_lower
                 or "si-ok" in title_lower
             )
@@ -1612,10 +1631,14 @@ class Session:
         return n
 
     def compact(self, include_runtime=False, active_stream_ids=None) -> dict:
+        from api.session_contract import SESSION_CONTRACT_VERSION
+
         active_stream_ids = active_stream_ids if active_stream_ids is not None else set()
         has_pending_user_message = bool(self.pending_user_message)
         message_count = (
-            self._metadata_message_count
+            self.runtime_message_count
+            if self.transcript_owner == 'jaeger' and self.runtime_message_count is not None
+            else self._metadata_message_count
             if self._metadata_message_count is not None
             else len(self.messages)
         )
@@ -1661,6 +1684,10 @@ class Session:
             'compression_recovery': self.compression_recovery,
             'recommended_recovery_action': self.recommended_recovery_action,
             'ares_backend': self.ares_backend,
+            'transcript_owner': self.transcript_owner,
+            'session_contract_version': (
+                SESSION_CONTRACT_VERSION if self.transcript_owner == 'jaeger' else None
+            ),
             'gateway_routing': self.gateway_routing,
             'gateway_routing_history': self.gateway_routing_history,
             'manual_title': self.manual_title,
@@ -2893,16 +2920,44 @@ def _apply_core_sync_or_error_marker(
     # clearing runtime stream state.
     if len(session.messages) != 0:
         _pending_text = " ".join(str(session.pending_user_message or "").split())
+        _recovered_ts = int(time.time())
+        _pending_turn_ts = None
+        if isinstance(session.pending_started_at, (int, float)) and session.pending_started_at > 0:
+            _recovered_ts = int(session.pending_started_at)
+            _pending_turn_ts = _recovered_ts
         _already_checkpointed = False
         if _pending_text and session.messages:
             for _last_msg in reversed(session.messages):
                 if isinstance(_last_msg, dict) and _last_msg.get('role') == 'user':
                     _last_text = " ".join(str(_last_msg.get('content') or "").split())
-                    _already_checkpointed = _last_text == _pending_text
+                    if _last_text != _pending_text:
+                        break
+                    # Matching text is NOT proof this turn is already stored.
+                    # When a turn hangs, the near-universal user response is to
+                    # send the same words again — so the newest user row very
+                    # often has identical text and belongs to the PREVIOUS
+                    # turn. Treating that as an existing checkpoint skipped the
+                    # append below and then cleared pending_user_message,
+                    # destroying the resent turn: it reached neither the
+                    # transcript nor the model, and the user saw their message
+                    # simply vanish.
+                    #
+                    # The turn's timestamp is what identifies it. A row this
+                    # turn's own checkpoint wrote stamps exactly
+                    # ``_pending_turn_ts`` (chat_runtime's eager checkpoint or
+                    # an earlier run of this repair), but legacy rows and rows
+                    # written before timestamp-stamping existed carry none at
+                    # all. Only a row PROVABLY STAMPED BEFORE this turn
+                    # started is evidence of a genuinely distinct, earlier
+                    # turn being resent — anything else (an equal stamp, or no
+                    # stamp to compare) is safer read as this turn's own
+                    # checkpoint than risked as a duplicate.
+                    _existing_ts = _last_msg.get('timestamp')
+                    if _pending_turn_ts is None or not isinstance(_existing_ts, (int, float)):
+                        _already_checkpointed = True
+                    else:
+                        _already_checkpointed = int(_existing_ts) >= _pending_turn_ts
                     break
-        _recovered_ts = int(time.time())
-        if isinstance(session.pending_started_at, (int, float)) and session.pending_started_at > 0:
-            _recovered_ts = int(session.pending_started_at)
         _stream_id = stream_id_for_recheck or session.active_stream_id
         _pending_started_at = session.pending_started_at
         if _run_journal_terminal_state(session, _stream_id) == 'completed':
@@ -4920,67 +4975,6 @@ def _active_state_db_path() -> Path:
     return ares_home / 'state.db'
 
 
-def _worker_state_db_path() -> Path | None:
-    """Return the connected worker's ``state.db``, or ``None`` when absent.
-
-    ARES owns its own sessions under ``ARES_HOME`` (see ``SESSION_DIR``), but
-    CLI/TUI history belongs to the *worker* that produced it and lives in that
-    worker's own home — Hermes Agent keeps it at ``$HERMES_HOME/state.db``.
-    ARES_HOME has no ``state.db`` in a normal install, so resolving the CLI
-    projection against it alone silently yields zero rows and the sidebar looks
-    empty even though the worker has history. This is read-only: ARES never
-    writes into a worker's store.
-    """
-    try:
-        from api.journal.paths import hermes_db
-        db_path = Path(hermes_db()).expanduser()
-    except Exception:
-        return None
-    return db_path if db_path.exists() else None
-
-
-def _worker_backend_id_for_db(db_path) -> str | None:
-    """Map a worker's session store back to the adapter id that owns it.
-
-    Rows in a worker's ``state.db`` carry no adapter column — Hermes records a
-    ``model`` (``glm-5.1``, ``qwen3.5:cloud``) but nothing naming the framework.
-    The store itself is the provenance: anything read from ``$HERMES_HOME`` came
-    from the Hermes Agent regardless of which model served the turn.
-    """
-    try:
-        candidate = Path(db_path).expanduser().resolve()
-    except Exception:
-        return None
-    worker_db = _worker_state_db_path()
-    if worker_db is not None:
-        try:
-            if candidate == worker_db.resolve():
-                return 'jaeger_local'
-        except Exception:
-            return None
-    return None
-
-
-def _stamp_worker_backend(rows, db_path) -> None:
-    """Attach the owning adapter id to rows projected from a worker store.
-
-    Without this the frontend derives a backend from ``source_tag`` ("cli") and
-    invents a ``cli_local`` adapter that does not exist, so real Hermes history
-    lands in a phantom group instead of under HERMES.
-    """
-    backend_id = _worker_backend_id_for_db(db_path)
-    if not backend_id:
-        return
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        # Claude Code rows come from ~/.claude/projects, not this store.
-        if str(row.get('source_tag') or '') == CLAUDE_CODE_SOURCE:
-            continue
-        if not row.get('ares_backend'):
-            row['ares_backend'] = backend_id
-
-
 def _agent_state_db_path(*, profile=None) -> Path | None:
     """Return agent ``state.db`` for *profile*, or ``None`` when unavailable."""
     if isinstance(profile, str) and profile:
@@ -4989,10 +4983,7 @@ def _agent_state_db_path(*, profile=None) -> Path | None:
             db_path = _active_state_db_path()
     else:
         db_path = _active_state_db_path()
-    if not db_path.exists():
-        # Fall back to the worker's own store for imported CLI/TUI history.
-        return _worker_state_db_path()
-    return db_path
+    return db_path if db_path.exists() else None
 
 
 def agent_session_rows_existing(
@@ -6247,76 +6238,12 @@ def _claude_code_title(messages: list[dict], summary_title: str | None) -> str:
 
 
 def get_claude_code_sessions(projects_dir: Path | str | None = None, *, max_files: int = CLAUDE_CODE_MAX_FILES, max_file_bytes: int = CLAUDE_CODE_MAX_FILE_BYTES) -> list:
-    """Read Claude Code JSONL sessions as read-only external-agent rows.
-
-    The bridge is additive and defensive: it skips symlinks, oversized files,
-    malformed lines, and per-file errors rather than crashing WebUI session
-    listing. Tests pass ``projects_dir`` fixtures so Michael's real ~/.claude is
-    never read during test runs.
-    """
-    sessions = []
-    # ``get_last_workspace()`` is loop-invariant (the same active workspace for
-    # every Claude Code row) but internally stats config.yaml + probes terminal
-    # cwd, so calling it once per row was ~200 redundant stat()s on the cold
-    # sidebar build (#4718). Resolve it a single time.
-    cc_workspace = str(get_last_workspace())
-    for path in _iter_claude_code_jsonl_files(projects_dir, max_files=max_files, max_file_bytes=max_file_bytes) or []:
-        messages, summary_title, first_ts, last_ts, cc_meta = _parse_claude_code_jsonl_cached(path)
-        if not messages:
-            continue
-        sid = _claude_code_session_id(path)
-        # Match the truthiness fallback used in the assignments below: the old
-        # inline code was ``first_ts or last_ts or path.stat().st_mtime``, which
-        # also fell back to mtime for a falsy-but-not-None ``0.0`` timestamp
-        # (epoch-0 / 1970 transcripts). An identity (``is None``) guard would
-        # leave those rows with ``None`` instead of the file mtime, so use the
-        # same ``not`` test the assignments use to stay bug-for-bug compatible.
-        if not first_ts and not last_ts:
-            try:
-                _mtime = path.stat().st_mtime
-            except OSError:
-                _mtime = 0.0
-        else:
-            _mtime = None
-        created_at = first_ts or last_ts or _mtime
-        updated_at = last_ts or first_ts or _mtime
-        sessions.append({
-            'session_id': sid,
-            'title': _claude_code_title(messages, summary_title),
-            # Real per-session cwd when the transcript recorded one; the shared
-            # active workspace is only a fallback.
-            'workspace': cc_meta.get('cwd') or cc_workspace,
-            'git_branch': cc_meta.get('git_branch'),
-            'model': 'claude-code',
-            'message_count': len(messages),
-            'created_at': created_at,
-            'updated_at': updated_at,
-            'last_message_at': updated_at,
-            'pinned': False,
-            'archived': False,
-            'project_id': None,
-            'profile': None,
-            'source_tag': CLAUDE_CODE_SOURCE,
-            'raw_source': CLAUDE_CODE_SOURCE,
-            'session_source': 'external_agent',
-            'source_label': CLAUDE_CODE_SOURCE_LABEL,
-            'is_cli_session': True,
-            'read_only': True,
-        })
-    sessions.sort(key=lambda s: s.get('last_message_at') or s.get('updated_at') or 0, reverse=True)
-    return sessions
+    """External Claude Code scanning is retired. Returns an empty list."""
+    return []
 
 
 def get_claude_code_session_messages(sid, projects_dir: Path | str | None = None) -> list:
-    """Return messages for one read-only Claude Code JSONL session."""
-    sid = str(sid or '')
-    if not sid.startswith(f'{CLAUDE_CODE_SOURCE}_'):
-        return []
-    for path in _iter_claude_code_jsonl_files(projects_dir) or []:
-        if _claude_code_session_id(path) != sid:
-            continue
-        messages, _summary_title, _first_ts, _last_ts, _meta = _parse_claude_code_jsonl_cached(path)
-        return messages
+    """External Claude Code session message reading is retired."""
     return []
 
 
@@ -6680,15 +6607,6 @@ def _resolve_cli_sessions_context(source_filter=None, include_claude_code: bool 
         cli_profile = None
 
     db_path = ares_home / 'state.db'
-    if not db_path.exists():
-        # ARES owns WebUI sessions under ARES_HOME/webui/sessions and normally
-        # has no state.db of its own. CLI/TUI history belongs to the worker that
-        # produced it and lives in that worker's home ($HERMES_HOME/state.db).
-        # Without this fallback the projection reads a non-existent path and the
-        # CLI sidebar is silently empty even when the worker has history.
-        worker_db = _worker_state_db_path()
-        if worker_db is not None:
-            db_path = worker_db
     projects_dir = _default_claude_code_projects_dir()
     # #4842: while a turn streams, freeze the volatile state.db component of the
     # key so per-message writes don't bust the CLI cache and re-run the heavy
@@ -6835,10 +6753,10 @@ def _load_cli_sessions_uncached(
     visible_session_limit: int | None = None,
     cron_project_limit: int | None | bool = CRON_PROJECT_CHIP_LIMIT,
     webhook_project_limit: int | None | bool = WEBHOOK_PROJECT_CHIP_LIMIT,
-    include_claude_code: bool = True,
+    include_claude_code: bool = False,
 ) -> list:
     cli_sessions = []
-    if source_filter in (None, CLAUDE_CODE_SOURCE) and include_claude_code:
+    if source_filter == CLAUDE_CODE_SOURCE and include_claude_code:
         try:
             cli_sessions.extend(get_claude_code_sessions())
         except Exception:
@@ -7151,7 +7069,6 @@ def _load_cli_sessions_uncached(
         except Exception:
             logger.debug("Webhook project-chip second pass failed", exc_info=True)
 
-    _stamp_worker_backend(cli_sessions, db_path)
     return cli_sessions
 
 

@@ -1,0 +1,182 @@
+"""Selected-runtime routing for the Skills API."""
+
+from __future__ import annotations
+
+import re
+from pathlib import PurePosixPath
+from typing import Any
+
+from api.backend_catalog import JAEGER_BACKEND_ID
+
+
+_SKILL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+class RuntimeSkillError(ValueError):
+    def __init__(self, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _validated_name(value: str, *, label: str = "skill name") -> str:
+    candidate = str(value or "").strip()
+    if not _SKILL_NAME.fullmatch(candidate) or candidate in {".", ".."}:
+        raise RuntimeSkillError(f"Invalid {label}")
+    return candidate
+
+
+def _validated_linked_file(value: str | None) -> str | None:
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    path = PurePosixPath(candidate.replace("\\", "/"))
+    if not candidate or path.is_absolute() or ".." in path.parts:
+        raise RuntimeSkillError("Invalid linked skill file")
+    return candidate
+
+
+def selected_runtime_owns_skills() -> bool:
+    from api.backend_selector import get_active_backend
+    from api.config import get_config
+
+    return get_active_backend(get_config()) == JAEGER_BACKEND_ID
+
+
+def _require_jaeger_skills() -> None:
+    from api.ares_capabilities import capability_contract_for_backend
+
+    negotiated = capability_contract_for_backend(JAEGER_BACKEND_ID)
+    contract = negotiated.get("runtime_contract") or {}
+    feature = (contract.get("features") or {}).get("skills") or {}
+    if negotiated.get("negotiated") is not True or feature.get("available") is not True:
+        detail = negotiated.get("error") or "the selected Jaeger runtime does not advertise Skills support"
+        raise RuntimeSkillError(str(detail), 503)
+
+
+def _query(what: str, args: dict[str, Any] | None = None) -> Any:
+    _require_jaeger_skills()
+    try:
+        from api.providers.jaeger.streaming import query_local_companion
+
+        return query_local_companion(what, args or {})
+    except RuntimeSkillError:
+        raise
+    except Exception as exc:
+        raise RuntimeSkillError(f"Jaeger Skills query failed: {exc}", 502) from exc
+
+
+def _is_not_found(exc: Exception) -> bool:
+    """True when a bridge command failed only because the target is absent."""
+    text = str(exc).lower()
+    return "not found" in text or "no such skill" in text or "unknown skill" in text
+
+
+def _command(cmd: str, args: dict[str, Any] | None = None) -> Any:
+    _require_jaeger_skills()
+    try:
+        from api.providers.jaeger.streaming import command_local_companion
+
+        return command_local_companion(cmd, args or {})
+    except RuntimeSkillError:
+        raise
+    except Exception as exc:
+        # A skill the operator named but Jaeger does not have is a CLIENT
+        # error, not a bad gateway: the bridge answered correctly, the
+        # request was simply wrong. Blanket-502 here made "delete a skill
+        # that isn't there" indistinguishable from "the runtime is down",
+        # so callers could not tell a typo from an outage.
+        raise RuntimeSkillError(
+            f"Jaeger Skills command failed: {exc}",
+            404 if _is_not_found(exc) else 502,
+        ) from exc
+
+
+def list_runtime_skills(category: str | None = None) -> dict[str, Any]:
+    payload = _query("list_skills")
+    if not isinstance(payload, dict) or not isinstance(payload.get("skills"), list):
+        raise RuntimeSkillError("Jaeger returned an invalid skill catalog", 502)
+    if category:
+        payload = {**payload, "skills": [
+            row for row in payload["skills"]
+            if isinstance(row, dict) and row.get("category") == category
+        ]}
+    return payload
+
+
+def get_runtime_skill(name: str, linked_file: str | None = None) -> dict[str, Any]:
+    payload = _query(
+        "get_skill",
+        {"name": _validated_name(name), "file": _validated_linked_file(linked_file)},
+    )
+    if not isinstance(payload, dict):
+        raise RuntimeSkillError("Jaeger returned invalid skill content", 502)
+    return payload
+
+
+def install_runtime_skill(name: str, content: str, category: str = "") -> dict[str, Any]:
+    validated_category = (
+        _validated_name(category, label="skill category") if str(category).strip() else ""
+    )
+    return _command("install_skill", {
+        "name": _validated_name(name),
+        "content": content,
+        "category": validated_category,
+    })
+
+
+def clone_runtime_skill(name: str) -> dict[str, Any]:
+    return _command("clone_skill", {"name": _validated_name(name)})
+
+
+def remove_runtime_skill(name: str) -> dict[str, Any]:
+    return _command("remove_skill", {"name": _validated_name(name)})
+
+
+def toggle_runtime_skill(name: str, enabled: bool) -> dict[str, Any]:
+    return _command(
+        "enable_skill" if enabled else "disable_skill",
+        {"name": _validated_name(name)},
+    )
+
+
+def runtime_skill_usage() -> dict[str, Any]:
+    """Real skill usage from the runtime that owns it.
+
+    This used to return hardcoded zeros with ``usage_available: False`` — so
+    whenever Jaeger was the runtime (the normal case) the skills panel showed
+    "0 invocations" no matter how much a skill had actually been used. The
+    counts were never missing: Jaeger's ``usage_stats`` has been recording
+    every skill view to ``<instance>/logs/usage.json`` all along, it simply
+    had no bridge query to reach. Ask for it instead of reporting a zero we
+    never measured.
+
+    Still degrades to the old empty shape when the runtime cannot answer, so
+    a bridge that is down reports "unavailable" rather than a confident zero.
+    """
+    skills = list_runtime_skills().get("skills", [])
+    names = sorted(str(row.get("name")) for row in skills if isinstance(row, dict))
+    try:
+        payload = _query("skill_usage")
+    except Exception:
+        payload = None
+    if not isinstance(payload, dict) or not payload.get("usage_available"):
+        return {
+            "usage": {},
+            "skill_names": names,
+            "total_invocations": 0,
+            "unique_skills_used": 0,
+            "owner": "jaeger",
+            "usage_available": False,
+        }
+    usage = payload.get("skills") if isinstance(payload.get("skills"), dict) else {}
+    return {
+        "usage": usage,
+        "skill_names": names,
+        "total_invocations": int(payload.get("total_skill_views") or 0),
+        "unique_skills_used": int(payload.get("unique_skills_used") or len(usage)),
+        "top_skills": payload.get("top_skills") or [],
+        "top_tools": payload.get("top_tools") or [],
+        "tool_usage": payload.get("tools") or {},
+        "owner": "jaeger",
+        "usage_available": True,
+    }

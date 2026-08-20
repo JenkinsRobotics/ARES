@@ -4,7 +4,7 @@ Directives are standing instructions the user sets once ("reply in the shortest
 form", "no markdown unless I ask for code") that ARES prepends to the execution
 prompt for every turn, on every worker. They are ARES's, not the worker's: the
 file lives under ``ARES_HOME`` and is applied at the ARES/worker seam, so
-switching from Jaeger to Hermes does not change which rules are in force.
+switching runtimes does not change which rules are in force.
 
 Scope is deliberately behavioral. A directive is a sentence in a prompt, so it
 can shape *how a worker answers* — it cannot configure the worker. In

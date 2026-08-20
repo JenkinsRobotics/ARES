@@ -1,7 +1,7 @@
 # Ares WebUI — Python tooling config.
 #
 # This project is NOT a packaged Python distribution. The controller is Python and
-# the frontend is built independently from frontend/ with React and Vite. This file
+# the browser UI is served directly from apps/web/static/. This file
 # exists only to configure Python tooling — currently ruff, used as a curated,
 # forward-looking lint gate over the Python codebase. There is intentionally no
 # [build-system] section: nothing pip-installs this directory.

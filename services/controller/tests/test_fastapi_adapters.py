@@ -20,7 +20,7 @@ from fastapi_app.adapters import (
     McpToolAdapter,
     ModelDescriptor,
 )
-from fastapi_app.adapters.frameworks import GeminiAntigravityAdapter, HermesAdapter
+from fastapi_app.adapters.frameworks import GeminiAntigravityAdapter
 from fastapi_app.main import create_app
 from fastapi_app.realtime import RealtimeService
 from fastapi_app.request_context import (
@@ -89,7 +89,6 @@ class RecordingTools(BaseToolAdapter):
 
 
 def test_framework_and_tool_adapters_have_distinct_strict_interfaces():
-    assert isinstance(HermesAdapter(turn_starter=lambda *_args, **_kwargs: {}), BaseLLMAdapter)
     assert isinstance(JaegerAdapter(turn_starter=lambda *_args, **_kwargs: {}), BaseLLMAdapter)
     assert isinstance(McpToolAdapter(), BaseToolAdapter)
     assert not isinstance(McpToolAdapter(), BaseLLMAdapter)
@@ -127,18 +126,18 @@ def test_fastapi_chat_service_and_router_have_no_framework_imports():
     source = inspect.getsource(service_module) + inspect.getsource(router_module)
     assert "api.routes" not in source
     assert "api.backends" not in source
-    assert "api.jros" not in source
+    assert "api.jaeger" not in source
     assert "api.streaming" not in source
 
 
 def test_framework_adapter_preserves_external_runtime_response(monkeypatch):
     captured = {}
 
-    def starter(session_id, message, *, source, attachments=None):
+    def starter(session_id, message, *, source, attachments=None, model=None, model_provider=None, explicit_model_pick=None):
         captured.update(session_id=session_id, message=message, source=source)
         return {"_status": 200, "stream_id": "run-1", "session_id": session_id}
 
-    adapter = HermesAdapter(turn_starter=starter)
+    adapter = JaegerAdapter(turn_starter=starter)
     monkeypatch.setattr(
         adapter,
         "check_health",
@@ -319,6 +318,9 @@ def test_realtime_service_honors_explicit_connection_without_overloading_provide
 
 
 def test_connection_model_and_mcp_routes_use_registry(tmp_path: Path, monkeypatch):
+    # This contract test intentionally exercises the injected local registry,
+    # independent of whichever runtime is selected in the developer's profile.
+    monkeypatch.setattr("api.runtime_mcp.selected_runtime_owns_mcp", lambda: False)
     recording = RecordingAdapter()
     unavailable = RecordingAdapter()
     unavailable.adapter_id = "offline"

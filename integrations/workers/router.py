@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import Dict
 
 from api.providers.agentic_backend import AgenticBackend
-from api.providers.hermes.backend import HermesBackend
 from api.providers.jaeger.backend import JaegerBackend
 from .cli_backends import (
     AntigravityGeminiBackend,
@@ -30,7 +29,6 @@ def get_default_router() -> BackendRouter:
     """Factory returning the canonical ARES router with all available backends."""
     jaeger = JaegerBackend()
     backends: Dict[str, AgenticBackend] = {
-        "hermes_local": HermesBackend(),
         "jaeger_local": jaeger,
         "claude_local": ClaudeLocalBackend(),
         "codex_local": CodexLocalBackend(),

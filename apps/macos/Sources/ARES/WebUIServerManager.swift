@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Network
+import Darwin
 import ARESCore
 
 private final class PortProbeCompletion: @unchecked Sendable {
@@ -24,6 +25,22 @@ public final class WebUIServerManager: ObservableObject {
 
     @Published public var isRunning = false
     @Published public var portConflict = false
+    // Set only when the process occupying the port answers the ARES health
+    // check AND self-reports as a "standalone" instance (started outside
+    // this app, e.g. via `ares start`/ctl.sh) — never for a genuinely
+    // foreign process, and never for another mac_app-owned instance. This
+    // is the one case where offering the user a "stop it and take over"
+    // action is safe: it's provably ARES's own controller, just not one
+    // this app instance launched. `start()` used to just give up silently
+    // here with no way to start/stop/restart anything (the user's own
+    // controller effectively became invisible to the app).
+    @Published public var conflictingStandaloneInstance = false
+    /// True when the controller answering on the port was started by
+    /// something else (`ares start`, ctl.sh, launchd, or a previous instance
+    /// of this app) and this app adopted it instead of refusing to run.
+    /// Stop/Restart still work in this state — they drive ctl.sh rather than
+    /// an owned `Process` handle.
+    @Published public var adoptedExternalController = false
     @Published public var serverHealth = "Stopped" // "Stopped", "Starting...", "Running (Healthy)", "Running (Degraded)", "Running (Unreachable)", "Failed"
     @Published public var recentLogs = ""
 
@@ -55,16 +72,51 @@ public final class WebUIServerManager: ObservableObject {
         
         serverHealth = "Checking port..."
 
-        // The native app is the sole owner of this controller lifecycle. Never
-        // adopt an unrelated or orphaned process merely because it answers an
-        // ARES health check on the configured port.
-        let inUse = await isPortInUse(port, host: host)
+        // Ownership is decided by what is provably running, not by which
+        // process happened to spawn it.
+        //
+        // This used to reason from private in-memory state ("did *this* app
+        // instance launch it?"), which is lost on every app restart, rebuild,
+        // or crash. The app would then meet its own still-healthy controller,
+        // fail to recognize it, and report "Port 8788 is owned by another
+        // process" — offering no way to start, stop, or restart a server that
+        // was working the whole time. There are three legitimate ways to
+        // start the controller (this app, `ares start`, ctl.sh/launchd), so
+        // "I didn't personally spawn it" was never a sound basis for calling
+        // something foreign.
+        //
+        // A live /health answer identifying itself as ares-webui IS the proof
+        // of ownership, and it survives app restarts because it lives in the
+        // running system rather than in this object. So:
+        //   • answers as ARES  → adopt it: report Running (External); Stop and
+        //     Restart drive it through ctl.sh, the same lifecycle every other
+        //     start path already uses.
+        //   • answers as something else, or not at all → a genuinely foreign
+        //     process. That is the only real conflict, and it keeps the error.
+        // Killing and respawning a healthy ARES controller to satisfy a
+        // bookkeeping preference would drop the user's in-flight turns for no
+        // benefit, so adoption is the default rather than a recovery action.
+        let probeHost = Self.loopbackIfNetworkBind(host)
+        let inUse = await isPortInUse(port, host: probeHost)
         if inUse {
+            if let owner = await Self.runtimeOwner(host: probeHost, port: port) {
+                portConflict = false
+                conflictingStandaloneInstance = false
+                adoptedExternalController = true
+                isRunning = true
+                serverHealth = "Running (External)"
+                print("[ARES] Adopted existing ARES controller on \(probeHost):\(port) (runtime_owner=\(owner))")
+                return
+            }
             portConflict = true
+            conflictingStandaloneInstance = false
+            adoptedExternalController = false
             serverHealth = "Port \(port) is owned by another process"
             return
         }
         portConflict = false
+        conflictingStandaloneInstance = false
+        adoptedExternalController = false
         serverHealth = "Starting..."
 
         let webuiDir = findWebUIDir()
@@ -91,15 +143,9 @@ public final class WebUIServerManager: ObservableObject {
             host: host,
             port: port,
             reloadDevMode: config.reloadDevMode,
+            allowUnauthenticatedNetwork: config.allowUnauthenticatedNetwork,
             instanceID: NativeSystemBridge.shared.instanceID,
             stateDirectory: config.configDirectory
-        )
-        env = Self.applyingGatewayEnvironment(
-            to: env,
-            hermesURL: config.hermesURL,
-            hermesAPIKey: config.hermesAPIKey,
-            jrosURL: config.jrosURL,
-            jrosAPIKey: config.jrosAPIKey
         )
         env = Self.applyingJaegerDependencyEnvironment(
             to: env,
@@ -144,63 +190,12 @@ public final class WebUIServerManager: ObservableObject {
         }
     }
 
-    nonisolated static func applyingGatewayEnvironment(
-        to base: [String: String],
-        hermesURL: String,
-        hermesAPIKey: String,
-        jrosURL: String,
-        jrosAPIKey: String
-    ) -> [String: String] {
-        var environment = base
-        // ARES_API_URL drives remote gateway health/tasks. Gateway-backed chat
-        // uses the more specific base URL variable; keep both in sync.
-        //
-        // Only export them for a genuinely remote gateway. Setting ARES_API_URL
-        // forces agent health into remote-HTTP probing and skips the local
-        // PID/state-file detection — with the localhost default this reported
-        // a healthy local Hermes gateway as permanently "down" because nothing
-        // serves HTTP health on that port in a local install.
-        let normalizedHermesURL = hermesURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalizedHermesURL.isEmpty {
-            environment.removeValue(forKey: "ARES_API_URL")
-            environment.removeValue(forKey: "ARES_WEBUI_GATEWAY_BASE_URL")
-        } else if Self.isLocalGatewayURL(normalizedHermesURL) {
-            environment.removeValue(forKey: "ARES_API_URL")
-            // Chat still needs this endpoint. Keeping it separate preserves
-            // PID/state-file health ownership for a locally managed gateway.
-            environment["ARES_WEBUI_GATEWAY_BASE_URL"] = normalizedHermesURL
-        } else {
-            environment["ARES_API_URL"] = normalizedHermesURL
-            environment["ARES_WEBUI_GATEWAY_BASE_URL"] = normalizedHermesURL
-        }
-        let normalizedJROSURL = jrosURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Never forward retired product variables into the controller. The
-        // controller reads them only as compatibility input for older launchers.
-        environment.removeValue(forKey: "ARES_JROS_GATEWAY_URL")
-        environment.removeValue(forKey: "ARES_JROS_GATEWAY_KEY")
-        if normalizedJROSURL.isEmpty {
-            environment.removeValue(forKey: "ARES_JAEGER_GATEWAY_URL")
-        } else {
-            environment["ARES_JAEGER_GATEWAY_URL"] = normalizedJROSURL
-        }
-        if hermesAPIKey.isEmpty {
-            environment.removeValue(forKey: "ARES_WEBUI_GATEWAY_API_KEY")
-        } else {
-            environment["ARES_WEBUI_GATEWAY_API_KEY"] = hermesAPIKey
-        }
-        if jrosAPIKey.isEmpty {
-            environment.removeValue(forKey: "ARES_JAEGER_GATEWAY_KEY")
-        } else {
-            environment["ARES_JAEGER_GATEWAY_KEY"] = jrosAPIKey
-        }
-        return environment
-    }
-
     nonisolated static func applyingNativeRuntimeEnvironment(
         to base: [String: String],
         host: String,
         port: Int,
         reloadDevMode: Bool,
+        allowUnauthenticatedNetwork: Bool = true,
         instanceID: String,
         stateDirectory: URL
     ) -> [String: String] {
@@ -208,6 +203,7 @@ public final class WebUIServerManager: ObservableObject {
         environment["ARES_WEBUI_HOST"] = host
         environment["ARES_WEBUI_PORT"] = String(port)
         environment["ARES_WEBUI_RELOAD"] = reloadDevMode ? "1" : "0"
+        environment["ARES_WEBUI_ALLOW_UNAUTHENTICATED_NETWORK"] = allowUnauthenticatedNetwork ? "1" : "0"
         environment["ARES_RUNTIME_OWNER"] = "mac_app"
         environment["ARES_RUNTIME_INSTANCE_ID"] = instanceID
         environment["ARES_NATIVE_STATE_DIR"] = stateDirectory.path
@@ -221,11 +217,11 @@ public final class WebUIServerManager: ObservableObject {
         fileManager: FileManager = .default
     ) -> [String: String] {
         var environment = base
-        // Retired JROS variables are migration inputs inside the controller,
+        // Retired JaegerAI variables are migration inputs inside the controller,
         // never values emitted by the current Mac launcher.
         for key in [
-            "ARES_JROS_DIR", "ARES_JROS_CONFIG_PATH", "ARES_JROS_INSTANCE",
-            "JROS_HOME", "JROS_INSTANCE_NAME",
+            "ARES_JaegerAI_DIR", "ARES_JaegerAI_CONFIG_PATH", "ARES_JaegerAI_INSTANCE",
+            "JaegerAI_HOME", "JaegerAI_INSTANCE_NAME",
         ] {
             environment.removeValue(forKey: key)
         }
@@ -249,7 +245,7 @@ public final class WebUIServerManager: ObservableObject {
         let selected: URL?
         let selectedIsSource: Bool
         if let explicitSelection {
-            // Explicit dependency selection fails closed. A stale JROS path
+            // Explicit dependency selection fails closed. A stale JaegerAI path
             // must never be hidden by switching to another checkout.
             selected = isJaegerAIProductRoot(explicitSelection.url, fileManager: fileManager)
                 ? explicitSelection.url
@@ -280,17 +276,9 @@ public final class WebUIServerManager: ObservableObject {
             environment.removeValue(forKey: "ARES_JAEGER_SOURCE_DIR")
         }
 
-        let activeFile = selected.appendingPathComponent(".jaeger_os/active_instance")
-        if let active = try? String(contentsOf: activeFile, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !active.isEmpty,
-           fileManager.fileExists(
-               atPath: selected.appendingPathComponent(".jaeger_os/instances/\(active)").path
-           ) {
-            environment["ARES_JAEGER_INSTANCE"] = active
-        } else {
-            environment.removeValue(forKey: "ARES_JAEGER_INSTANCE")
-        }
+        // The controller's shared path resolver selects the active instance.
+        // The app intentionally does not traverse Jaeger's runtime layout.
+        environment.removeValue(forKey: "ARES_JAEGER_INSTANCE")
         return environment
     }
 
@@ -307,27 +295,160 @@ public final class WebUIServerManager: ObservableObject {
         return fileManager.isExecutableFile(atPath: launcher.path)
     }
 
-    /// True when the configured Hermes gateway URL points at this machine —
-    /// local installs detect the gateway via PID/state files, not HTTP.
-    nonisolated static func isLocalGatewayURL(_ raw: String) -> Bool {
-        guard let url = URL(string: raw.trimmingCharacters(in: .whitespaces)),
-              let host = url.host?.lowercased()
-        else { return true }
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0"
-    }
-
-    public func stop() {
+    /// Stop the controller and wait for it to actually exit before returning.
+    ///
+    /// A prior version sent SIGTERM and immediately reported "Stopped"
+    /// without confirming the process had died. `restart()` then raced a
+    /// fresh `start()` against a controller (and its grandchild JaegerAI
+    /// bridge subprocess) that was still mid-shutdown — the bridge subprocess
+    /// could outlive the controller and orphan-hold its instance lock,
+    /// producing "instance is locked by pid X (still running)" on every
+    /// subsequent chat until a human ran `jaeger kill` by hand. Waiting here,
+    /// bounded, closes that race at the source.
+    ///
+    /// The bound (~9.5s) is deliberately a little longer than the
+    /// controller's own graceful-shutdown budget — FastAPI's lifespan
+    /// shutdown chain runs bridge-client teardown last of five best-effort
+    /// steps, and closing the bridge client itself budgets up to ~9s (three
+    /// quit/terminate/kill stages). Giving Python's shutdown enough room to
+    /// run means the grandchild bridge process exits cleanly through its own
+    /// lock-release path instead of being orphaned by an early SIGKILL here.
+    public func stop() async {
+        // An adopted controller has no `Process` handle here — this app did
+        // not spawn it — so stopping it goes through ctl.sh, which owns the
+        // PID file and the same graceful-shutdown path every other start
+        // route uses. Without this, Stop silently did nothing for exactly the
+        // controllers the user could see running.
+        if process == nil && adoptedExternalController {
+            await stopExternalController()
+            return
+        }
         guard let p = process else { return }
-        p.terminate()
         process = nil
+        serverHealth = "Stopping..."
+        p.terminate()
+
+        let deadline = Date().addingTimeInterval(9.5)
+        while p.isRunning && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s poll
+        }
+
+        if p.isRunning {
+            // Graceful shutdown didn't finish in time — escalate. This must
+            // never leave the manager claiming "Stopped" while the PID is
+            // still alive, since that mismatch is exactly what let the
+            // restart race happen before.
+            kill(p.processIdentifier, SIGKILL)
+            let killDeadline = Date().addingTimeInterval(1.0)
+            while p.isRunning && Date() < killDeadline {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+
         isRunning = false
-        serverHealth = "Stopped"
+        serverHealth = p.isRunning ? "Stop timed out" : "Stopped"
     }
 
     public func restart() async {
-        stop()
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1 second
+        await stop()
         await start()
+    }
+
+    /// Gracefully stop a standalone controller this app didn't launch, so
+    /// the port frees up and a subsequent ``start()`` can take over.
+    ///
+    /// Only ever call this when ``conflictingStandaloneInstance`` is true —
+    /// that flag is only set when the occupying process proved itself to be
+    /// ARES's own controller via a live health check, matching the same
+    /// safety bar the shell CLI (`bin/ares`) already applies before it
+    /// hands lifecycle ownership to this app. This does not run on its own;
+    /// it exists so the UI can offer the user an explicit "take over"
+    /// action instead of leaving them with no start/stop/restart control at
+    /// all over a controller that is, in fact, theirs.
+    public func stopConflictingStandaloneInstance() async {
+        guard conflictingStandaloneInstance || adoptedExternalController else { return }
+        await stopExternalController()
+    }
+
+    /// Stop a controller this app did not spawn, via ctl.sh.
+    ///
+    /// Reached both by Stop on an adopted controller and by the older
+    /// conflict-recovery path. ctl.sh owns the PID file and the graceful
+    /// shutdown sequence, so routing through it keeps every start/stop route
+    /// agreeing about what is running instead of each tracking its own idea
+    /// of ownership.
+    private func stopExternalController() async {
+        guard let dir = findWebUIDir() else {
+            serverHealth = "WebUI directory not found"
+            return
+        }
+        let ctlScript = dir.appendingPathComponent("ctl.sh")
+        guard FileManager.default.isExecutableFile(atPath: ctlScript.path)
+            || FileManager.default.fileExists(atPath: ctlScript.path)
+        else {
+            serverHealth = "ctl.sh not found — stop the other instance manually"
+            return
+        }
+        serverHealth = "Stopping other instance..."
+        let config = ARESConfiguration.shared
+        var env = ProcessInfo.processInfo.environment
+        env["ARES_WEBUI_HOST"] = config.webuiHost
+        env["ARES_WEBUI_PORT"] = String(config.webuiPort)
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+        proc.arguments = [ctlScript.path, "stop"]
+        proc.environment = env
+        proc.currentDirectoryURL = dir
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            proc.terminationHandler = { _ in continuation.resume() }
+            do {
+                try proc.run()
+            } catch {
+                serverHealth = "Failed to stop other instance: \(error.localizedDescription)"
+                continuation.resume()
+            }
+        }
+
+        // Give the port a moment to actually release before the caller
+        // retries start() — ctl.sh's own stop_cmd already polls/escalates
+        // internally, but the OS can lag a beat behind the process exiting.
+        let probeHost = Self.loopbackIfNetworkBind(config.webuiHost)
+        let deadline = Date().addingTimeInterval(3.0)
+        while await isPortInUse(config.webuiPort, host: probeHost), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+
+        var stillInUse = await isPortInUse(config.webuiPort, host: probeHost)
+        if stillInUse {
+            // If ctl.sh stop didn't release the port (e.g. process started by a prior app instance),
+            // terminate the occupying process directly.
+            let killProc = Process()
+            killProc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            killProc.arguments = ["-c", "pids=$(lsof -ti :\(config.webuiPort)); if [ -n \"$pids\" ]; then kill -15 $pids 2>/dev/null; sleep 0.5; kill -9 $pids 2>/dev/null; fi"]
+            try? killProc.run()
+            killProc.waitUntilExit()
+
+            let killDeadline = Date().addingTimeInterval(3.0)
+            while await isPortInUse(config.webuiPort, host: probeHost), Date() < killDeadline {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            stillInUse = await isPortInUse(config.webuiPort, host: probeHost)
+        }
+
+        if stillInUse {
+            portConflict = true
+            conflictingStandaloneInstance = true
+            serverHealth = "Failed to stop other instance on port \(config.webuiPort)"
+            return
+        }
+
+        portConflict = false
+        conflictingStandaloneInstance = false
+        adoptedExternalController = false
+        isRunning = false
+        serverHealth = "Stopped"
     }
 
     private func checkHealth() async {
@@ -347,7 +468,8 @@ public final class WebUIServerManager: ObservableObject {
         }
 
         let config = ARESConfiguration.shared
-        let urlString = "http://\(config.webuiHost):\(config.webuiPort)/health"
+        let probeHost = Self.loopbackIfNetworkBind(config.webuiHost)
+        let urlString = "http://\(probeHost):\(config.webuiPort)/health"
         guard let url = URL(string: urlString) else { return }
         
         var request = URLRequest(url: url)
@@ -358,13 +480,36 @@ public final class WebUIServerManager: ObservableObject {
             if let httpResp = response as? HTTPURLResponse,
                Self.isAresHealthResponse(statusCode: httpResp.statusCode, data: data) {
                 isRunning = true
-                serverHealth = "Running (Healthy)"
+                // Keep an adopted controller labelled as external so the UI
+                // (and the user) can tell "healthy, and this app supervises
+                // it" from "healthy, started elsewhere" — both are fine, and
+                // neither is an error.
+                serverHealth = adoptedExternalController ? "Running (External)" : "Running (Healthy)"
             } else {
                 recordHealthFailure(exitedProcess: exitedProcess, fallback: "Running (Degraded)")
             }
         } catch {
             recordHealthFailure(exitedProcess: exitedProcess, fallback: "Running (Unreachable)")
         }
+    }
+
+    /// Adopt an already-running ARES controller at app launch.
+    ///
+    /// The health poller only re-labels a server it already believes is
+    /// running; on a cold start (`isRunning == false`, no owned process) it
+    /// returns immediately, so an app relaunched next to a live controller
+    /// would sit at "Stopped" until someone pressed Start. Probing once at
+    /// startup means the menu bar reflects reality from the first tick.
+    public func adoptRunningControllerIfPresent() async {
+        guard process == nil, !isRunning else { return }
+        let config = ARESConfiguration.shared
+        let probeHost = Self.loopbackIfNetworkBind(config.webuiHost)
+        guard await Self.runtimeOwner(host: probeHost, port: config.webuiPort) != nil else { return }
+        portConflict = false
+        conflictingStandaloneInstance = false
+        adoptedExternalController = true
+        isRunning = true
+        serverHealth = "Running (External)"
     }
 
     private func recordHealthFailure(exitedProcess: Process?, fallback: String) {
@@ -394,6 +539,34 @@ public final class WebUIServerManager: ObservableObject {
             return true
         }
         return false
+    }
+
+    nonisolated static func loopbackIfNetworkBind(_ host: String) -> String {
+        (host == "0.0.0.0" || host == "::") ? "127.0.0.1" : host
+    }
+
+    /// The occupying process's self-reported ``runtime_owner`` ("standalone"
+    /// or "mac_app"), or ``nil`` when it isn't answering an ARES health
+    /// check at all (a genuinely foreign process). Mirrors the shell CLI's
+    /// own ``_ares_runtime_owner()`` check in ``bin/ares`` — the app and the
+    /// CLI should agree on what's safe to take over.
+    nonisolated static func runtimeOwner(host: String, port: Int) async -> String? {
+        guard let url = URL(string: "http://\(host):\(port)/health") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 1.0
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResp = response as? HTTPURLResponse
+        else { return nil }
+        return runtimeOwner(statusCode: httpResp.statusCode, data: data)
+    }
+
+    /// Pure parsing half of ``runtimeOwner(host:port:)``, split out so it's
+    /// testable without a live server (mirrors ``isAresHealthResponse``).
+    nonisolated static func runtimeOwner(statusCode: Int, data: Data) -> String? {
+        guard isAresHealthResponse(statusCode: statusCode, data: data),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return payload["runtime_owner"] as? String
     }
 
     private func readLastLogs() {
@@ -480,6 +653,37 @@ public final class WebUIServerManager: ObservableObject {
         }
         candidates.append(homeDirectory.appendingPathComponent(".ares/services/controller"))
         candidates.append(homeDirectory.appendingPathComponent(".ares/webui")) // legacy path
+
+        // Read REPO_ROOT from webui.ctl.env if written by ctl.sh or a previous controller run
+        let aresHomeURL = environment["ARES_HOME"].flatMap { !$0.isEmpty ? URL(fileURLWithPath: $0) : nil }
+            ?? homeDirectory.appendingPathComponent(".ares", isDirectory: true)
+        let ctlEnvFile = aresHomeURL.appendingPathComponent("webui.ctl.env")
+        if let content = try? String(contentsOf: ctlEnvFile, encoding: .utf8) {
+            for line in content.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("REPO_ROOT=") {
+                    let path = trimmed.dropFirst("REPO_ROOT=".count)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'\n\r\t "))
+                    if !path.isEmpty {
+                        candidates.append(URL(fileURLWithPath: path))
+                    }
+                }
+            }
+        }
+
+        // Check common developer repository checkout locations in home directory
+        let commonRepoSubpaths = [
+            "GitHub/ARES/services/controller",
+            "Developer/ARES/services/controller",
+            "Projects/ARES/services/controller",
+            "src/ARES/services/controller",
+            "ARES/services/controller",
+            "ares/services/controller",
+        ]
+        for subpath in commonRepoSubpaths {
+            candidates.append(homeDirectory.appendingPathComponent(subpath))
+        }
+
         return candidates
     }
 

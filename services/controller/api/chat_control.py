@@ -31,6 +31,18 @@ def steer_session(payload: dict[str, Any]) -> dict[str, Any]:
         except KeyError:
             stream_id = None
         if stream_id:
+            with config.STREAMS_LOCK:
+                live_agent = config.AGENT_INSTANCES.get(str(stream_id))
+            if live_agent is not None and hasattr(live_agent, "steer"):
+                try:
+                    accepted = bool(live_agent.steer(text))
+                except Exception:
+                    accepted = False
+                return {
+                    "accepted": accepted,
+                    "fallback": None if accepted else "steer_rejected",
+                    "stream_id": stream_id,
+                }
             with config.ACTIVE_RUNS_LOCK:
                 run = dict((config.ACTIVE_RUNS or {}).get(str(stream_id)) or {})
             if run.get("backend") == "gateway":

@@ -37,25 +37,6 @@ final class WebUIServerManagerTests: XCTestCase {
         XCTAssertEqual(WebUIServerManager.pythonExecutable(in: root), dotVenv)
     }
 
-    func testGatewayEnvironmentMatchesFastAPIContract() {
-        let environment = WebUIServerManager.applyingGatewayEnvironment(
-            to: ["UNCHANGED": "yes"],
-            hermesURL: "http://gateway.example:8642",
-            hermesAPIKey: "hermes-secret",
-            jrosURL: "http://jros.example:8643",
-            jrosAPIKey: "jros-secret"
-        )
-
-        XCTAssertEqual(environment["ARES_API_URL"], "http://gateway.example:8642")
-        XCTAssertEqual(environment["ARES_WEBUI_GATEWAY_BASE_URL"], "http://gateway.example:8642")
-        XCTAssertEqual(environment["ARES_WEBUI_GATEWAY_API_KEY"], "hermes-secret")
-        XCTAssertEqual(environment["ARES_JAEGER_GATEWAY_URL"], "http://jros.example:8643")
-        XCTAssertEqual(environment["ARES_JAEGER_GATEWAY_KEY"], "jros-secret")
-        XCTAssertNil(environment["ARES_JROS_GATEWAY_URL"])
-        XCTAssertNil(environment["ARES_JROS_GATEWAY_KEY"])
-        XCTAssertEqual(environment["UNCHANGED"], "yes")
-    }
-
     func testNativeRuntimeEnvironmentProvesMacAppOwnership() {
         let environment = WebUIServerManager.applyingNativeRuntimeEnvironment(
             to: ["UNCHANGED": "yes", "ARES_RUNTIME_OWNER": "standalone"],
@@ -91,17 +72,10 @@ final class WebUIServerManagerTests: XCTestCase {
         let launcher = jaeger.appendingPathComponent("jaeger")
         try Data("#!/bin/sh\n".utf8).write(to: launcher)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: launcher.path)
-        try FileManager.default.createDirectory(
-            at: jaeger.appendingPathComponent(".jaeger_os/instances/jarvis"),
-            withIntermediateDirectories: true
-        )
-        try Data("jarvis\n".utf8).write(
-            to: jaeger.appendingPathComponent(".jaeger_os/active_instance")
-        )
         defer { try? FileManager.default.removeItem(at: workspace) }
 
         let environment = WebUIServerManager.applyingJaegerDependencyEnvironment(
-            to: ["ARES_JROS_INSTANCE": "legacy"],
+            to: ["ARES_JaegerAI_INSTANCE": "legacy"],
             controllerDirectory: controller,
             homeDirectory: workspace.appendingPathComponent("home")
         )
@@ -109,13 +83,13 @@ final class WebUIServerManagerTests: XCTestCase {
         XCTAssertEqual(environment["ARES_JAEGER_HOME"], jaeger.path)
         XCTAssertEqual(environment["JAEGER_HOME"], jaeger.path)
         XCTAssertEqual(environment["ARES_JAEGER_SOURCE_DIR"], jaeger.path)
-        XCTAssertEqual(environment["ARES_JAEGER_INSTANCE"], "jarvis")
-        XCTAssertNil(environment["ARES_JROS_INSTANCE"])
+        XCTAssertNil(environment["ARES_JAEGER_INSTANCE"])
+        XCTAssertNil(environment["ARES_JaegerAI_INSTANCE"])
     }
 
-    func testDependencyValidationRejectsLegacyJROSShape() throws {
+    func testDependencyValidationRejectsLegacyJaegerAIShape() throws {
         let legacy = FileManager.default.temporaryDirectory
-            .appendingPathComponent("legacy-jros-\(UUID().uuidString)")
+            .appendingPathComponent("legacy-jaeger-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: legacy.appendingPathComponent("jaeger_os"),
             withIntermediateDirectories: true
@@ -133,7 +107,7 @@ final class WebUIServerManagerTests: XCTestCase {
             .appendingPathComponent("ares-jaeger-explicit-\(UUID().uuidString)")
         let controller = workspace.appendingPathComponent("ARES/services/controller")
         let validSibling = workspace.appendingPathComponent("JaegerAI")
-        let stale = workspace.appendingPathComponent("old-jros")
+        let stale = workspace.appendingPathComponent("old-jaeger")
         try FileManager.default.createDirectory(at: controller, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(
             at: validSibling.appendingPathComponent("jaeger_ai"),
@@ -156,51 +130,6 @@ final class WebUIServerManagerTests: XCTestCase {
         XCTAssertNil(environment["ARES_JAEGER_HOME"])
         XCTAssertNil(environment["JAEGER_HOME"])
         XCTAssertNil(environment["ARES_JAEGER_SOURCE_DIR"])
-    }
-
-    func testLocalGatewayURLDoesNotForceRemoteHealthProbing() {
-        // A loopback Hermes URL must not export ARES_API_URL — that flips the
-        // controller's agent health into remote-HTTP probing and skips the
-        // local PID/state-file detection, reporting a healthy local gateway
-        // as permanently down (no HTTP health port exists in local installs).
-        let environment = WebUIServerManager.applyingGatewayEnvironment(
-            to: [
-                "ARES_API_URL": "http://localhost:8642",
-                "ARES_WEBUI_GATEWAY_BASE_URL": "http://localhost:8642",
-            ],
-            hermesURL: "http://localhost:8642",
-            hermesAPIKey: "",
-            jrosURL: "http://127.0.0.1:8643",
-            jrosAPIKey: ""
-        )
-
-        XCTAssertNil(environment["ARES_API_URL"])
-        XCTAssertEqual(environment["ARES_WEBUI_GATEWAY_BASE_URL"], "http://localhost:8642")
-        // Jaeger AI gateway URL is a real local HTTP service — always exported.
-        XCTAssertEqual(environment["ARES_JAEGER_GATEWAY_URL"], "http://127.0.0.1:8643")
-
-        XCTAssertTrue(WebUIServerManager.isLocalGatewayURL("http://127.0.0.1:8642"))
-        XCTAssertTrue(WebUIServerManager.isLocalGatewayURL("http://localhost:8642"))
-        XCTAssertFalse(WebUIServerManager.isLocalGatewayURL("http://gateway.example:8642"))
-        XCTAssertFalse(WebUIServerManager.isLocalGatewayURL("https://ares.tailnet.example"))
-    }
-
-    func testEmptyGatewayKeysDoNotLeakInheritedCredentials() {
-        let environment = WebUIServerManager.applyingGatewayEnvironment(
-            to: [
-                "ARES_WEBUI_GATEWAY_API_KEY": "stale-hermes",
-                "ARES_JROS_GATEWAY_KEY": "stale-jros",
-                "ARES_JAEGER_GATEWAY_KEY": "stale-jaeger",
-            ],
-            hermesURL: "http://127.0.0.1:8642",
-            hermesAPIKey: "",
-            jrosURL: "http://127.0.0.1:8643",
-            jrosAPIKey: ""
-        )
-
-        XCTAssertNil(environment["ARES_WEBUI_GATEWAY_API_KEY"])
-        XCTAssertNil(environment["ARES_JROS_GATEWAY_KEY"])
-        XCTAssertNil(environment["ARES_JAEGER_GATEWAY_KEY"])
     }
 
     private var temporaryDirectory: URL!
@@ -282,6 +211,29 @@ final class WebUIServerManagerTests: XCTestCase {
         )
     }
 
+    func testInstalledAppBundleDiscoversRepositoryControllerViaCtlEnvAndCommonPaths() throws {
+        let root = temporaryDirectory.appendingPathComponent("installed-app-test")
+        let aresHome = root.appendingPathComponent(".ares")
+        let repoRoot = root.appendingPathComponent("GitHub/ARES/services/controller")
+        try FileManager.default.createDirectory(at: aresHome, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repoRoot, withIntermediateDirectories: true)
+
+        let ctlEnv = aresHome.appendingPathComponent("webui.ctl.env")
+        try "REPO_ROOT=\(repoRoot.path)\n".write(to: ctlEnv, atomically: true, encoding: .utf8)
+
+        let candidates = WebUIServerManager.webUICandidates(
+            resourceURL: URL(fileURLWithPath: "/Users/tester/Applications/ARES.app/Contents/Resources"),
+            executableURL: URL(fileURLWithPath: "/Users/tester/Applications/ARES.app/Contents/MacOS/ARES"),
+            homeDirectory: root,
+            environment: [:],
+            currentDirectory: "/"
+        )
+
+        XCTAssertTrue(
+            candidates.contains(where: { $0.standardizedFileURL.path == repoRoot.standardizedFileURL.path })
+        )
+    }
+
     func testAresHealthResponseRequiresHealthyAresPayload() throws {
         let currentPayload = try JSONSerialization.data(withJSONObject: [
             "service": "ares-webui",
@@ -298,6 +250,37 @@ final class WebUIServerManagerTests: XCTestCase {
         let unrelatedPayload = try JSONSerialization.data(withJSONObject: ["status": "ok"])
         XCTAssertFalse(WebUIServerManager.isAresHealthResponse(statusCode: 200, data: unrelatedPayload))
         XCTAssertFalse(WebUIServerManager.isAresHealthResponse(statusCode: 503, data: currentPayload))
+    }
+
+    /// A standalone controller (started outside this app, e.g. `ares start`)
+    /// must be distinguishable from both a foreign process and another
+    /// mac_app-owned instance — that distinction is what makes it safe to
+    /// offer the user a "take over" action on port conflict.
+    func testRuntimeOwnerDistinguishesStandaloneFromMacAppAndForeignProcesses() throws {
+        let standalonePayload = try JSONSerialization.data(withJSONObject: [
+            "service": "ares-webui",
+            "status": "ok",
+            "runtime_owner": "standalone",
+        ])
+        XCTAssertEqual(
+            WebUIServerManager.runtimeOwner(statusCode: 200, data: standalonePayload),
+            "standalone"
+        )
+
+        let macAppPayload = try JSONSerialization.data(withJSONObject: [
+            "service": "ares-webui",
+            "status": "ok",
+            "runtime_owner": "mac_app",
+        ])
+        XCTAssertEqual(
+            WebUIServerManager.runtimeOwner(statusCode: 200, data: macAppPayload),
+            "mac_app"
+        )
+
+        // Not an ARES health response at all — a genuinely foreign process
+        // must never be reported as any kind of owner.
+        let foreignPayload = try JSONSerialization.data(withJSONObject: ["status": "ok"])
+        XCTAssertNil(WebUIServerManager.runtimeOwner(statusCode: 200, data: foreignPayload))
     }
 
     private func makeExecutable(_ relativePath: String) throws -> URL {

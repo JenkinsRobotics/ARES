@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 import uuid
 
 from api.session_events import publish_session_list_changed
@@ -50,6 +51,52 @@ _approval_sse_subscribers: dict[str, list[queue.Queue]] = {}
 _GATEWAY_MIRROR_FLAG = "_gateway_mirror"
 _GATEWAY_MIRROR_TOKEN = "_gateway_mirror_token"
 _GATEWAY_ENTRY_DATA_TOKEN_KEY = "_webui_mirror_token"
+_external_waiters_lock = threading.Lock()
+_external_waiters: dict[tuple[str, str], tuple[threading.Event, list[str]]] = {}
+
+
+def wait_for_external_approval(
+    session_id: str,
+    approval: dict,
+    *,
+    timeout_seconds: float = 120.0,
+) -> str:
+    """Publish a worker approval and block until the existing UI resolves it.
+
+    This is the transport-neutral equivalent of gateway approval
+    queue. The worker owns execution; ARES owns the visible decision surface.
+    """
+    item = dict(approval or {})
+    approval_id = str(item.get("approval_id") or uuid.uuid4().hex)
+    item["approval_id"] = approval_id
+    item.setdefault("requested_at", time.time())
+    item.setdefault("timeout_seconds", int(timeout_seconds))
+    event = threading.Event()
+    result: list[str] = []
+    key = (str(session_id), approval_id)
+    with _external_waiters_lock:
+        _external_waiters[key] = (event, result)
+    submit_pending(session_id, item)
+    try:
+        if not event.wait(max(0.0, float(timeout_seconds))):
+            resolve_approval_legacy(session_id, approval_id, "deny")
+            return "deny"
+        return str(result[0] if result else "deny")
+    finally:
+        with _external_waiters_lock:
+            _external_waiters.pop(key, None)
+
+
+def _resolve_external_approval(session_id: str, approval_id: str, choice: str) -> bool:
+    key = (str(session_id), str(approval_id))
+    with _external_waiters_lock:
+        waiter = _external_waiters.get(key)
+    if waiter is None:
+        return False
+    event, result = waiter
+    result.append(str(choice or "deny"))
+    event.set()
+    return True
 
 
 def pending_snapshot(session_id: str) -> dict:
@@ -336,7 +383,13 @@ def resolve_approval_legacy(session_id: str, approval_id: str, choice: str) -> b
         else:
             _approval_sse_notify_locked(session_id, None, 0)
 
-    pending_keys = pending.get("pattern_keys") or [pending.get("pattern_key", "")] if pending else []
+    external_worker_pending = bool(
+        isinstance(pending, dict) and pending.get("source") == "jaeger_bridge"
+    )
+    pending_keys = (
+        [] if external_worker_pending
+        else (pending.get("pattern_keys") or [pending.get("pattern_key", "")] if pending else [])
+    )
     keys = [key for key in [*pending_keys, *gateway_keys] if key]
     if choice in {"once", "session"}:
         for key in keys:
@@ -358,7 +411,11 @@ def resolve_approval_legacy(session_id: str, approval_id: str, choice: str) -> b
             signal_decision(approval_id, choice)
         except Exception:
             pass
-    resolved = bool(pending) or bool(gateway_resolved) or not bool(approval_id)
+    external_resolved = (
+        _resolve_external_approval(session_id, approval_id, choice)
+        if approval_id else False
+    )
+    resolved = bool(pending) or bool(gateway_resolved) or external_resolved or not bool(approval_id)
     if resolved:
         publish_session_list_changed("attention_resolved")
     return resolved

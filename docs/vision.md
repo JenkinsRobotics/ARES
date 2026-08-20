@@ -15,7 +15,7 @@ ARES rejects the "magic" of invisible automation. Every action taken by the assi
 - How to verify the result manually.
 
 ### 2. Unified Digital Presence
-ARES acts as the stable identity layer across all backends. Whether routing to Jaeger, Hermes, or future neural networks, the user's identity, preferences, and conversation history remain consistent and owned by ARES.
+ARES presents a stable product identity across runtimes. ARES owns product preferences and metadata; JaegerAI owns authoritative agent transcripts and execution state. The versioned adapter contract keeps that boundary explicit.
 
 ### 3. Omni-Channel Interaction
 A seamless transition between text, voice, and video, maintaining a single continuous state.

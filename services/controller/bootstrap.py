@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import json
 import os
 import platform
 import re
@@ -422,7 +423,8 @@ def _health_ok(url: str, verify: bool = True) -> bool:
         context.verify_mode = ssl.CERT_NONE
     try:
         with urllib.request.urlopen(url, timeout=2, context=context) as response:  # nosec B310
-            return b'"status": "ok"' in response.read()
+            payload = json.loads(response.read().decode("utf-8"))
+            return isinstance(payload, dict) and payload.get("status") == "ok"
     except Exception:
         return False
 
@@ -702,6 +704,7 @@ def main() -> int:
             sys.exit(1)  # Hard abort — refuse to start a duplicate instance
         else:
             warn(f"Port {args.port} is already in use by another process.")
+            sys.exit(1)  # Fail closed; wildcard and loopback binds can coexist on macOS.
 
     # --foreground (or auto-detected supervisor): replace this process with the
     # server. The supervisor sees the long-lived server as the original child,

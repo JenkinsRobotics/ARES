@@ -136,6 +136,18 @@ final class NativeSystemBridge {
         writeRuntimeSnapshot()
     }
 
+    /// Menu-bar toggles mutate the same desired settings the Web UI writes, so
+    /// the settings file stays the single source and the next tick reconciles.
+    func updateDesired(_ mutate: (inout NativeSystemSettings) -> Void) {
+        var next = desired
+        mutate(&next)
+        guard next != desired else { return }
+        desired = next
+        persistSettings(next)
+        applyDesiredSettings()
+        writeRuntimeSnapshot()
+    }
+
     func readSettings() -> NativeSystemSettings? {
         guard let data = try? Data(contentsOf: settingsURL) else { return nil }
         return try? JSONDecoder().decode(NativeSystemSettings.self, from: data)

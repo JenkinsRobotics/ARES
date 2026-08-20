@@ -100,21 +100,18 @@ def _local_base_url() -> str:
 
 
 def _cloud_api_key(explicit: str | None = None) -> str:
-    """The Ollama Cloud key: caller's value, then env, then the
-    credential ARES already reads for the cloud catalogue."""
+    """Resolve only ARES-owned Ollama credentials.
+
+    Jaeger credentials stay in Jaeger's credential service and are never read
+    by a sibling provider adapter.
+    """
     key = str(explicit or "").strip()
     if key:
         return key
     key = str(os.environ.get("OLLAMA_API_KEY") or "").strip()
     if key:
         return key
-    try:
-        from api.model_catalog import _read_jaeger_credential
-
-        return str(_read_jaeger_credential("ollama_cloud_api_key") or "").strip()
-    except Exception:
-        logger.debug("Ollama cloud credential lookup failed", exc_info=True)
-        return ""
+    return ""
 
 
 def _context_length_from_payload(payload: object) -> int:

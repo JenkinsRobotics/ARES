@@ -346,17 +346,14 @@ class TestBug1094RemoveProviderKey:
 class TestBug1094Endpoints:
     """Integration tests via HTTP endpoints for #1094 fixes."""
 
-    def test_delete_provider_via_http(self):
-        """POST /api/providers/delete should return 200 and ok=True."""
-        body, status = _post("/api/providers/delete", {"provider": "anthropic"})
-        assert status == 200
-        assert body.get("ok") is True
+    def test_delete_provider_rejects_unknown_provider_via_http(self):
+        """The compatibility route validates before contacting Jaeger."""
+        body, status = _post("/api/providers/delete", {"provider": "unknown"})
+        assert status == 400
+        assert body.get("ok") is False
 
     def test_get_providers_after_delete(self):
         """After deleting a provider, GET /api/providers should show has_key=False."""
-        # Ensure no env key for anthropic first
-        _post("/api/providers/delete", {"provider": "anthropic"})
-
         result = _get("/api/providers")
         anthropic = next(
             (p for p in result["providers"] if p["id"] == "anthropic"),

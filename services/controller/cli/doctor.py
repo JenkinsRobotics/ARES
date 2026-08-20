@@ -104,28 +104,17 @@ def probe_jaeger(jaeger_home: Path) -> None:
             f"cd {jaeger_home} && ./install.sh",
         )
 
-    instances_root = jaeger_home / ".jaeger_os" / "instances"
-    # Some installs keep a pointer file rather than dirs until first agent create.
-    active_ptr = jaeger_home / ".jaeger_os" / "active_instance"
-    if instances_root.is_dir():
-        instances = [p.name for p in instances_root.iterdir() if p.is_dir()]
-        if instances:
-            check_pass(f"Companion instance(s): {', '.join(sorted(instances))}")
-        elif active_ptr.is_file():
-            check_warn(
-                f"active_instance set ({active_ptr.read_text(encoding='utf-8', errors='replace').strip()!r}) but no instance dirs yet",
-                "Complete ARES onboarding or run: jaeger agent create",
-            )
+    try:
+        from api.providers.jaeger.streaming import query_local_companion
+
+        identity = query_local_companion("identity", {})
+        name = str(identity.get("agent_name") or identity.get("instance") or "").strip()
+        if name:
+            check_pass(f"Companion instance: {name}")
         else:
-            check_warn(
-                "No Companion instances yet",
-                "Complete ARES onboarding or run: jaeger agent create",
-            )
-    else:
-        check_warn(
-            "No .jaeger_os/instances directory",
-            "Run Jaeger install, then create an agent via ARES onboarding",
-        )
+            check_warn("No Companion instance reported", "Complete ARES onboarding or run: jaeger agent create")
+    except Exception as exc:
+        check_warn("Could not query the Companion instance", str(exc))
 
     # Prefer Jaeger's own doctor when available (machine-readable when possible).
     try:
@@ -152,7 +141,7 @@ def probe_jaeger(jaeger_home: Path) -> None:
     except Exception as exc:
         check_warn(f"jaeger doctor failed: {exc}")
 
-    # Gateway health (default ARES jros URL)
+    # Gateway health (default ARES jaeger URL)
     ok, status = _http_ok("http://127.0.0.1:8643/v1/health", timeout=1.5)
     if ok:
         check_pass(f"Jaeger gateway healthy on :8643 (HTTP {status})")
@@ -283,14 +272,10 @@ def run_diagnostics() -> None:
             "No backend framework configured yet.",
             "Complete ARES onboarding (Companion = JaegerAI).",
         )
-    elif configured_backend in ("jros", "jaeger", "hybrid"):
+    elif configured_backend in ("jaeger", "jaeger_local", "hybrid"):
         check_pass(f"Backend configured: {configured_backend}")
-    elif configured_backend == "hermes":
-        check_pass("Hermes Agent is configured as the active framework.")
-        if shutil.which("hermes"):
-            check_pass("Hermes CLI is available in PATH.")
-        else:
-            check_warn("Hermes CLI not found in PATH.")
+    else:
+        check_warn(f"Unknown backend configured: {configured_backend}")
 
     probe_jaeger(resolve_jaeger_home())
 

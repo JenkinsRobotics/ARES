@@ -1,24 +1,23 @@
 #!/bin/bash
 # ARES Web UI launcher — dedicated to ARES on port 8788.
-# Binds to 0.0.0.0 so it's reachable over Tailscale.
+# Defaults to loopback. Network exposure requires an explicit host override and
+# configured authentication (enforced again during application startup).
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Port 8787 is reserved for Hermes WebUI.
+# Port 8787 remains unused for compatibility with older local deployments.
 export ARES_WEBUI_PORT="${ARES_WEBUI_PORT:-8788}"
-export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-0.0.0.0}"
+export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-127.0.0.1}"
 
-# Separate state dir — ARES has its own sessions, settings, and database
-export ARES_WEBUI_STATE_DIR="${ARES_WEBUI_STATE_DIR:-$DIR/.ares_state}"
+# ARES product state is durable and independent of the source checkout.
+export ARES_HOME="${ARES_HOME:-$HOME/.ares}"
+export ARES_WEBUI_STATE_DIR="${ARES_WEBUI_STATE_DIR:-$ARES_HOME/webui}"
 
 # PID file for single-instance enforcement
 _PID_FILE="${ARES_WEBUI_STATE_DIR}/webui-${ARES_WEBUI_PORT}.pid"
 
-# Point at the same Ares Agent install (the brain)
-export ARES_HOME="${ARES_HOME:-$HOME/.ares}"
-
-# Point ARES at the standard local JROS/Jaeger install when present.
+# Point ARES at the standard local JaegerAI/Jaeger install when present.
 if [ -z "${ARES_JAEGER_HOME:-}" ] && [ -x "$HOME/jaeger/jaeger" ]; then
   export ARES_JAEGER_HOME="$HOME/jaeger"
 fi
@@ -71,7 +70,7 @@ echo "Starting ARES Web UI on port $ARES_WEBUI_PORT (host: $ARES_WEBUI_HOST)..."
 echo "State dir: $ARES_WEBUI_STATE_DIR"
 echo "Source: $DIR"
 if [ -n "${ARES_JAEGER_HOME:-}" ]; then
-  echo "JROS home: $ARES_JAEGER_HOME"
+  echo "JaegerAI home: $ARES_JAEGER_HOME"
 fi
 cd "$DIR"
 

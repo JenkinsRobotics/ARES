@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..errors import CoreApiError
@@ -23,6 +23,11 @@ class CompanionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
     character_id: str | None = Field(default=None, min_length=1, max_length=128)
     owner_name: str | None = Field(default=None, max_length=120)
+    custom_instructions: str | None = Field(default=None, max_length=50000)
+    role: str | None = Field(default=None, max_length=5000)
+    voice_tone: str | None = Field(default=None, max_length=5000)
+    soul: str | None = Field(default=None, max_length=10000)
+    backstory: str | None = Field(default=None, max_length=10000)
 
 
 def _snapshot() -> dict[str, Any]:
@@ -65,6 +70,56 @@ def get_companion(
         return _with_relationship(_snapshot())
 
 
+@router.get("/card")
+def get_companion_card(
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    character_id: Annotated[str | None, Query(max_length=128)] = None,
+) -> Response:
+    """The active (or named) character's card art, as image bytes.
+
+    JaegerAI owns the asset and serves it over the bridge; this route is
+    the browser-facing projection of that frame. 404 when the runtime has
+    no art or does not offer the query — the Avatar view falls back to a
+    drawn placeholder, which is a normal state, not a failure.
+    """
+    from api.providers.jaeger.companion_control import (
+        CompanionControlError,
+        companion_card,
+    )
+
+    with profile_scope(identity.profile):
+        try:
+            art = companion_card(character_id)
+        except CompanionControlError as exc:
+            raise CoreApiError(
+                503,
+                f"JaegerAI Companion is unavailable: {exc}",
+                code="companion_unavailable",
+            ) from exc
+    if not art:
+        raise CoreApiError(404, "No card art for this character.",
+                           code="companion_card_missing")
+    from base64 import b64decode
+    from binascii import Error as BinasciiError
+
+    try:
+        payload = b64decode(art["data"], validate=True)
+    except (BinasciiError, ValueError) as exc:
+        raise CoreApiError(502, "JaegerAI returned unreadable card art.",
+                           code="companion_card_invalid") from exc
+    return Response(
+        content=payload,
+        media_type=art["mime"],
+        headers={
+            # The card changes only when the operator edits the character,
+            # and the Avatar view re-requests it on every switch. A short
+            # private cache keeps a re-render from re-crossing the bridge.
+            "Cache-Control": "private, max-age=60",
+            "Content-Disposition": f'inline; filename="{art["filename"]}"',
+        },
+    )
+
+
 @router.patch("")
 def patch_companion(
     payload: CompanionUpdate,
@@ -80,15 +135,31 @@ def patch_companion(
         raise CoreApiError(400, "Companion name cannot be blank.", code="invalid_companion_name")
     if payload.character_id is not None and not clean_character:
         raise CoreApiError(400, "Character cannot be blank.", code="invalid_companion_character")
-    if not any(value is not None for value in (clean_name, clean_character, clean_owner)):
+    if not any(
+        value is not None
+        for value in (
+            clean_name,
+            clean_character,
+            clean_owner,
+            payload.custom_instructions,
+            payload.role,
+            payload.voice_tone,
+            payload.soul,
+            payload.backstory,
+        )
+    ):
         raise CoreApiError(400, "No Companion changes were supplied.", code="empty_companion_update")
 
     with profile_scope(identity.profile):
         try:
-            snapshot = (
-                update_companion(name=clean_name, character_id=clean_character)
-                if clean_name or clean_character
-                else _snapshot()
+            snapshot = update_companion(
+                name=clean_name,
+                character_id=clean_character,
+                custom_instructions=payload.custom_instructions,
+                role=payload.role,
+                voice_tone=payload.voice_tone,
+                soul=payload.soul,
+                backstory=payload.backstory,
             )
         except CompanionControlError as exc:
             raise CoreApiError(
@@ -111,5 +182,10 @@ def patch_companion(
         # Saving this relationship is the explicit user action that elects
         # JaegerAI as ARES's primary local runtime. Controller runtime choices
         # live in config.yaml, separate from profile settings.json.
-        save_config_values({"ares_backend": "jaeger_local"})
+        config_patch: dict[str, Any] = {"ares_backend": "jaeger_local"}
+        if clean_character:
+            # Keep ARES's persona id in lock-step with the Jaeger sheet so
+            # identity fallbacks cannot snap the header back to Jarvis.
+            config_patch["ares_persona"] = clean_character
+        save_config_values(config_patch)
         return _with_relationship(snapshot)

@@ -51,12 +51,9 @@ _args, _unknown = _parser.parse_known_args()
 _profile_arg = _args.profile
 
 # ── Import webui canonical modules (after path setup) ─────────────────────
-import api.config as _cfg
-from api.config import (
-    STATE_DIR, SESSION_DIR, SESSION_INDEX_FILE, PROJECTS_FILE, HOME,
-)
+from api.config import SESSION_DIR, SESSION_INDEX_FILE
 from api.models import load_projects, save_projects
-from api.profiles import get_active_profile_name, _is_root_profile, _profiles_match
+from api.profiles import get_active_profile_name, _profiles_match
 
 # ── Apply --profile override before any module uses get_active_profile_name
 if _profile_arg is not None:
@@ -131,8 +128,7 @@ def _api_password() -> str | None:
     in unauthenticated mode and any auth-protected mutation will fail clearly
     with the server's 401 instead of silently sending an unusable hash.
     """
-    pw = os.environ.get("ARES_WEBUI_PASSWORD", "").strip() or \
-         os.environ.get("ARES_WEBUI_PASSWORD", "").strip()
+    pw = os.environ.get("ARES_WEBUI_PASSWORD", "").strip()
     return pw or None
 
 
@@ -543,6 +539,47 @@ HANDLERS = {
     "move_session": handle_move_session,
     "list_sessions": handle_list_sessions,
 }
+
+
+def _install_ares_tools() -> None:
+    """Publish the canonical ARES tool catalog through this MCP boundary."""
+    from api.ares_tools import ARES_TOOL_DEFS
+
+    existing = {tool.name for tool in TOOLS}
+    for definition in ARES_TOOL_DEFS:
+        name = str(definition["name"])
+        if name in existing:
+            raise RuntimeError(f"Duplicate ARES MCP tool name: {name}")
+        model = definition.get("args_model")
+        schema = model.model_json_schema() if model is not None else {
+            "type": "object", "properties": {},
+        }
+        TOOLS.append(Tool(
+            name=name,
+            description=str(definition["description"]),
+            inputSchema=schema,
+        ))
+
+        async def invoke(arguments: dict, tool_definition=definition) -> list[TextContent]:
+            try:
+                arguments_model = tool_definition.get("args_model")
+                values = (
+                    arguments_model.model_validate(arguments).model_dump()
+                    if arguments_model is not None
+                    else arguments
+                )
+                result = tool_definition["fn"](**values)
+            except Exception as exc:  # tool errors are data, not MCP process failures
+                result = json.dumps({"status": "error", "error": str(exc)})
+            if not isinstance(result, str):
+                result = json.dumps(result, ensure_ascii=False, default=str)
+            return [TextContent(type="text", text=result)]
+
+        HANDLERS[name] = invoke
+        existing.add(name)
+
+
+_install_ares_tools()
 
 
 async def list_tools() -> list[Tool]:

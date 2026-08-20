@@ -137,8 +137,8 @@ def test_start_chat_stream_accepts_goal_related():
         "user_message": "hi",
     }
     targets = [
-        ("api.providers.jaeger.gateway_streaming", "run_jros_streaming"),
-        ("api.providers.hermes.streaming", "run_hermes_streaming"),
+        ("api.providers.jaeger.streaming", "run_jaeger_streaming"),
+        ("api.providers.jaeger.streaming", "run_jaeger_streaming"),
         ("api.gateway_chat", "_run_gateway_chat_streaming"),
         ("api.providers.agentic_backend", "run_agentic_backend_streaming"),
     ]

@@ -1,4 +1,4 @@
-"""Canonical backend identities and compatibility aliases.
+"""Canonical backend identities and user-facing Jaeger synonyms.
 
 Product names, persisted IDs, and transport-era aliases are deliberately kept
 separate here. New state is always written with the canonical ID; old state is
@@ -7,7 +7,6 @@ accepted at the boundary and normalized before it reaches application logic.
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 
 @dataclass(frozen=True)
 class BackendDefinition:
@@ -19,7 +18,6 @@ JAEGER_BACKEND_ID = "jaeger_local"
 
 BACKENDS: tuple[BackendDefinition, ...] = (
     BackendDefinition(JAEGER_BACKEND_ID, "Jaeger AI"),
-    BackendDefinition("hermes_local", "Hermes Agent"),
     BackendDefinition("claude_local", "Claude Code"),
     BackendDefinition("codex_local", "OpenAI Codex"),
     BackendDefinition("gemini_local", "Google Gemini"),
@@ -43,9 +41,6 @@ BACKEND_ALIASES = {
     "jaeger": JAEGER_BACKEND_ID,
     "jaegerai": JAEGER_BACKEND_ID,
     "jaeger_ai": JAEGER_BACKEND_ID,
-    "jros": JAEGER_BACKEND_ID,
-    "jros_local": JAEGER_BACKEND_ID,
-    "hermes": "hermes_local",
 }
 
 

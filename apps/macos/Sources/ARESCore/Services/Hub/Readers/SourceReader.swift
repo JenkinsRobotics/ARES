@@ -3,10 +3,10 @@ import Foundation
 // MARK: - Protocol
 
 /// A reader that discovers sessions from a specific AI tool (Claude Code,
-/// Gemini CLI, Odysseus, or Hermes Agent).  Readers are read-only — ARES
+/// or Gemini CLI. Readers are read-only — ARES
 /// never writes to another tool's data store.
 public protocol SourceReader {
-    /// Machine-readable identifier: "claude_code", "gemini", "odysseus", "hermes"
+    /// Machine-readable identifier such as "claude_code" or "gemini".
     var sourceName: String { get }
 
     /// Whether the tool's data directory exists on this machine.
@@ -16,7 +16,7 @@ public protocol SourceReader {
     func listSessions() throws -> [UnifiedSession]
 
     /// Load the messages for a specific session by its source-prefixed ID.
-    /// Returns an empty array if the session cannot be read (e.g. Hermes is metadata-only).
+    /// Returns an empty array if the source cannot provide message content.
     func loadMessages(forSessionId id: String) throws -> [SessionMessage]
 }
 
@@ -33,7 +33,7 @@ public extension SourceReader {
 public struct UnifiedSession: Identifiable, Codable, Equatable {
     /// Source-prefixed identifier, e.g. "claude_code:abc123"
     public let id: String
-    /// Which reader produced this entry ("claude_code", "gemini", "odysseus", "hermes")
+    /// Which reader produced this entry.
     public let source: String
     /// First user message truncated to 64 characters, or nil
     public let title: String?

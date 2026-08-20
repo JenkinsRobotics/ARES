@@ -5,6 +5,16 @@ from __future__ import annotations
 import threading
 
 import api.models as models
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_runtime_contract(monkeypatch):
+    """Keep profile-routing tests independent of the live Jaeger process."""
+    monkeypatch.setattr("api.session_contract.require_operation", lambda *_a, **_k: {})
+    monkeypatch.setattr(
+        "api.session_contract.runtime_owns_transcript", lambda *_a, **_k: False
+    )
 
 
 class _Session:

@@ -242,6 +242,7 @@ class TestMainForegroundRouting:
         monkeypatch.setattr(bs, "ensure_python_has_webui_deps", lambda *a, **kw: a[0])
         monkeypatch.setattr(bs, "wait_for_health", lambda *a, **kw: True)
         monkeypatch.setattr(bs, "open_browser", lambda *a, **kw: None)
+        monkeypatch.setattr(bs, "check_port_in_use", lambda *a, **kw: False)
         monkeypatch.setenv("ARES_WEBUI_STATE_DIR", str(tmp_path / "state"))
         # Make agent_dir exist so chdir doesn't fail.
         (tmp_path / "agent").mkdir(parents=True, exist_ok=True)
@@ -265,6 +266,22 @@ class TestMainForegroundRouting:
         assert rc == 0
         assert len(popen_calls) == 1, "Default path should call subprocess.Popen exactly once"
         assert len(execv_calls) == 0, "Default path must NOT call os.execv"
+
+    def test_healthy_occupied_port_aborts_before_launch(
+        self, stub_main_dependencies, clean_env, monkeypatch,
+    ):
+        bs = stub_main_dependencies
+        monkeypatch.setattr(sys, "argv", ["bootstrap.py", "--foreground"])
+        monkeypatch.setattr(bs, "check_port_in_use", lambda *a, **kw: True)
+        monkeypatch.setattr(bs, "_health_ok", lambda *a, **kw: True)
+        launches = []
+        monkeypatch.setattr(os, "execv", lambda *args: launches.append(args))
+
+        with pytest.raises(SystemExit) as exc_info:
+            bs.main()
+
+        assert exc_info.value.code == 1
+        assert launches == []
 
     def test_foreground_flag_uses_execv(self, stub_main_dependencies, clean_env, monkeypatch):
         bs = stub_main_dependencies
@@ -388,6 +405,7 @@ class TestForegroundEnvAndCwd:
         monkeypatch.setattr(bs, "ensure_python_has_webui_deps", lambda *a, **kw: a[0])
         monkeypatch.setattr(bs, "wait_for_health", lambda *a, **kw: True)
         monkeypatch.setattr(bs, "open_browser", lambda *a, **kw: None)
+        monkeypatch.setattr(bs, "check_port_in_use", lambda *a, **kw: False)
         # State-dir + every var we care about is captured.
         monkeypatch.setenv("ARES_WEBUI_STATE_DIR", str(tmp_path / "state"))
         return bs, agent_dir
@@ -515,6 +533,7 @@ class TestForegroundExecutabilityGuard:
         monkeypatch.setattr(bs, "ares_command_exists", lambda: True)
         monkeypatch.setattr(bs, "discover_launcher_python", lambda *a: str(bad_python))
         monkeypatch.setattr(bs, "ensure_python_has_webui_deps", lambda *a, **kw: a[0])
+        monkeypatch.setattr(bs, "check_port_in_use", lambda *a, **kw: False)
         monkeypatch.setenv("ARES_WEBUI_STATE_DIR", str(tmp_path / "state"))
         return bs
 

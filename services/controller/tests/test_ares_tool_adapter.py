@@ -9,6 +9,7 @@ RED phase: all tests should FAIL until implementation is written.
 from __future__ import annotations
 
 import json
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -44,30 +45,30 @@ class TestRuntimeContext:
         assert isinstance(ctx["identity_projection"], dict)
         assert "name" in ctx["identity_projection"]
 
-    def test_no_runtime_is_not_silently_replaced_when_jros_is_down(self):
+    def test_no_runtime_is_not_silently_replaced_when_jaeger_is_down(self):
         from api.ares_runtime_context import build_runtime_context
 
         with patch(
-            "api.ares_runtime_context.is_jros_available",
+            "api.ares_runtime_context.is_jaeger_available",
             return_value=False,
         ):
             ctx = build_runtime_context(backend="")
             assert ctx["active_backend"] == ""
             assert ctx["capabilities"]["active_runtime"]["available"] is False
-            assert ctx["capabilities"]["jros"]["available"] is False
+            assert ctx["capabilities"]["jaeger"]["available"] is False
 
     def test_external_runtime_and_ares_resources_are_distinct(self):
         from api.ares_runtime_context import build_runtime_context
 
         with patch(
-            "api.ares_runtime_context.is_jros_available",
+            "api.ares_runtime_context.is_jaeger_available",
             return_value=True,
         ):
             ctx = build_runtime_context(backend="claude_local")
             assert ctx["active_backend"] == "claude_local"
             assert ctx["capabilities"]["ares_resources"]["available"] is True
             assert ctx["capabilities"]["active_runtime"]["available"] is True
-            assert ctx["capabilities"]["jros"]["available"] is True
+            assert ctx["capabilities"]["jaeger"]["available"] is True
 
     def test_render_context_prompt_compact(self):
         """render_context_prompt() produces a compact text block for injection."""
@@ -88,7 +89,7 @@ class TestRuntimeContext:
 # ── ARES Tool Adapter ────────────────────────────────────────────
 
 class TestToolAdapter:
-    """ares_tool_adapter.py: registers ARES tools into Ares or JROS."""
+    """ares_tool_adapter.py: registers ARES tools into Ares or JaegerAI."""
 
     def test_module_exports_register_ares_tools(self):
         """Module exports register_ares_tools()."""
@@ -123,11 +124,11 @@ class TestToolAdapter:
             assert "description" in schema
             assert "inputSchema" in schema
 
-    def test_register_into_jros_tooldef_format(self):
-        """register_ares_tools produces JROS ToolDef-compatible dicts for JROS."""
+    def test_register_into_jaeger_tooldef_format(self):
+        """register_ares_tools produces JaegerAI ToolDef-compatible dicts for JaegerAI."""
         from api.ares_tool_adapter import register_ares_tools
 
-        tooldefs = register_ares_tools(target="jros")
+        tooldefs = register_ares_tools(target="jaeger")
         assert isinstance(tooldefs, list)
         for td in tooldefs:
             assert "name" in td
@@ -142,6 +143,29 @@ class TestToolAdapter:
         with pytest.raises(ValueError, match="Unknown target"):
             register_ares_tools(target="unknown_backend")
 
+    def test_stdio_mcp_server_publishes_canonical_ares_tools(self):
+        from api.ares_tools import ARES_TOOL_DEFS
+        from mcp_server import HANDLERS, TOOLS
+
+        published = {tool.name for tool in TOOLS}
+        expected = {tool["name"] for tool in ARES_TOOL_DEFS}
+        assert expected.issubset(published)
+        assert expected.issubset(HANDLERS)
+
+    def test_stdio_mcp_dispatches_canonical_ares_tool(self, monkeypatch):
+        import mcp_server
+
+        monkeypatch.setattr(
+            "api.workspace_artifacts.list_artifacts",
+            lambda session_id: {"session_id": session_id, "count": 0, "items": []},
+        )
+        result = asyncio.run(mcp_server.call_tool(
+            "ares_list_artifacts", {"session_id": "session-1"}
+        ))
+        assert json.loads(result[0].text) == {
+            "session_id": "session-1", "count": 0, "items": [],
+        }
+
 
 # ── ARES Tools (the actual callable tools) ────────────────────────
 
@@ -153,12 +177,20 @@ class TestAresTools:
         from api.ares_tools import (
             ares_get_runtime_context,
             ares_create_task,
-            ares_self_audit,
+            ares_update_task,
+            ares_extract_pdf,
+            ares_ingest_youtube,
+            ares_edit_image,
+            ares_create_visual_report,
         )
 
         assert callable(ares_get_runtime_context)
         assert callable(ares_create_task)
-        assert callable(ares_self_audit)
+        assert callable(ares_update_task)
+        assert callable(ares_extract_pdf)
+        assert callable(ares_ingest_youtube)
+        assert callable(ares_edit_image)
+        assert callable(ares_create_visual_report)
 
     def test_get_runtime_context_returns_json(self):
         """ares_get_runtime_context returns valid JSON string."""
@@ -182,16 +214,6 @@ class TestAresTools:
         assert parsed["status"] == "created"
         assert parsed["title"] == "Test task"
 
-    def test_self_audit_returns_result(self):
-        """ares_self_audit returns a structured audit result."""
-        from api.ares_tools import ares_self_audit
-
-        result = ares_self_audit(turn_id="test-turn-001")
-        parsed = json.loads(result)
-        assert "status" in parsed
-        assert "checks" in parsed
-
-
 # ── Integration: Runtime Context injection into streaming ─────────
 
 class TestStreamingIntegration:
@@ -209,17 +231,17 @@ class TestStreamingIntegration:
         # Must contain backend designation
         assert "claude_local" in prompt.lower()
 
-    def test_context_injectable_into_jros_prompt(self):
-        """Runtime context can be rendered for JROS system_prompt."""
+    def test_context_injectable_into_jaeger_prompt(self):
+        """Runtime context can be rendered for JaegerAI system_prompt."""
         from api.ares_runtime_context import (
             build_runtime_context,
             render_context_prompt,
         )
 
-        ctx = build_runtime_context(backend="jros_local")
+        ctx = build_runtime_context(backend="jaeger_local")
         prompt = render_context_prompt(ctx)
         # Must contain backend designation
-        assert "jros" in prompt.lower()
+        assert "jaeger" in prompt.lower()
 
     def test_context_prompt_includes_capabilities(self):
         """Context prompt includes capability summary for both backends."""
@@ -228,18 +250,18 @@ class TestStreamingIntegration:
             render_context_prompt,
         )
 
-        # Hermetic: availability is a live JROS gateway health probe now,
+        # Hermetic: availability is a live JaegerAI gateway health probe now,
         # so pin it instead of depending on the test machine's setup.
         with patch(
-            "api.ares_runtime_context.is_jros_available",
+            "api.ares_runtime_context.is_jaeger_available",
             return_value=True,
         ):
-            ctx = build_runtime_context(backend="jros_local")
+            ctx = build_runtime_context(backend="jaeger_local")
         prompt = render_context_prompt(ctx)
-        # JROS presence is an optional managed capability.
-        assert "jros" in prompt.lower()
+        # JaegerAI presence is an optional managed capability.
+        assert "jaeger" in prompt.lower()
         assert ctx["capabilities"]["ares_resources"]["available"] is True
-        assert ctx["capabilities"]["jros"]["available"] is True
+        assert ctx["capabilities"]["jaeger"]["available"] is True
 
 
 # ── Route Registration ────────────────────────────────────────────

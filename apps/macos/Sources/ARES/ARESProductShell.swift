@@ -61,8 +61,9 @@ struct ARESProductShell: View {
     @ObservedObject private var config = ARESConfiguration.shared
 
     var body: some View {
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         if serverManager.isRunning,
-           let url = URL(string: "http://\(config.webuiHost):\(config.webuiPort)/") {
+           let url = URL(string: "http://\(host):\(config.webuiPort)/") {
             WebViewRepresentable(url: url, serverManager: serverManager)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(.all, edges: .bottom)
@@ -134,7 +135,7 @@ struct ARESHomeView: View {
                 GroupBox("Workers (explicit choice — no silent default)") {
                     let runtimes = connections.filter { $0.kind == "runtime" || $0.kind.contains("runtime") }
                     if runtimes.isEmpty {
-                        Text("No workers reported. Open Connections to attach Jaeger AI, Ollama, Hermes, or a cloud provider.")
+                        Text("No workers reported. Open Connections to attach Jaeger AI, Ollama, or a cloud provider.")
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(runtimes) { runtime in
@@ -266,8 +267,9 @@ struct ARESRoutedWebSurface: View {
     @ObservedObject private var config = ARESConfiguration.shared
 
     var body: some View {
+        let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         if serverManager.isRunning,
-           let url = URL(string: "http://\(config.webuiHost):\(config.webuiPort)\(path)") {
+           let url = URL(string: "http://\(host):\(config.webuiPort)\(path)") {
             WebViewRepresentable(url: url, serverManager: serverManager)
         } else {
             ContentUnavailableView(

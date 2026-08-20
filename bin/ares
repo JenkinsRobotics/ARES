@@ -23,9 +23,10 @@ usage() {
 Usage: ares <command> [args]
 
 Commands:
-  start     Launch or activate the ARES app
+  start     Launch ARES into the menu bar (no window)
   start --server
             Start only the ARES WebUI service
+  open      Open the ARES window
   stop      Stop the daemon
   restart   Stop, then start again
   status    Show daemon and health status
@@ -36,7 +37,7 @@ Commands:
 EOF
 }
 
-_launch_ares_app() {
+_ares_app_path() {
   local APP_PATH="${HOME}/Applications/ARES.app"
   if [[ ! -d "$APP_PATH" ]]; then
     APP_PATH="${ARES_ROOT}/apps/macos/ARES.app"
@@ -45,8 +46,14 @@ _launch_ares_app() {
   if [[ ! -d "$APP_PATH" ]]; then
     echo "ARES.app not found at ${APP_PATH}" >&2
     echo "Build it once with: cd apps/macos && bash build-app.sh" >&2
-    exit 1
+    return 1
   fi
+  printf '%s\n' "$APP_PATH"
+}
+
+_launch_ares_app() {
+  local APP_PATH
+  APP_PATH="$(_ares_app_path)" || exit 1
 
   if _ares_service_online && [[ "$(_ares_runtime_owner)" == "standalone" ]]; then
     echo "Stopping the standalone ARES controller before handing lifecycle ownership to the Mac app."
@@ -62,16 +69,30 @@ _launch_ares_app() {
   fi
 
   if _ares_service_online; then
-    echo "ARES WebUI is healthy at http://$(_webui_probe_host):${ARES_WEBUI_PORT}"
-  else
-    echo "ARES WebUI is not healthy yet; the app will start or recover it on ${ARES_WEBUI_PORT}."
+    echo "ARES WebUI is active at http://$(_webui_probe_host):${ARES_WEBUI_PORT}"
   fi
+  # ARES is a menu-bar-only app. Launching it puts the status item in the menu
+  # bar and nothing else; `ares open` is the command that asks for a window.
+  # `open` always sends reopen to a running app, which the delegate treats as a
+  # request for the window, so an already-running app is left alone instead.
   if pgrep -x "ARES" >/dev/null 2>&1; then
-    echo "ARES app is already running; activating its existing window."
-  else
-    echo "Launching ARES app."
+    echo "ARES is in the menu bar (use 'ares open' to open the window and start the server)."
+    return 0
   fi
-  open "$APP_PATH"
+
+  echo "Launching ARES into the menu bar (server is off until opened or started)."
+  open -g "$APP_PATH"
+}
+
+_open_ares_window() {
+  local APP_PATH
+  APP_PATH="$(_ares_app_path)" || return 1
+
+  if pgrep -x "ARES" >/dev/null 2>&1; then
+    open "$APP_PATH"
+  else
+    open "$APP_PATH" --args --open-window
+  fi
   sleep 1
   osascript -e 'tell application id "com.jenkinsrobotics.ares-desktop" to activate' 2>/dev/null || true
 }
@@ -271,6 +292,9 @@ case "${cmd}" in
       exec bash "${CTL_SCRIPT}" start
     fi
     _launch_ares_app
+    ;;
+  open)
+    _open_ares_window
     ;;
   stop|restart|status|logs)
     exec bash "${CTL_SCRIPT}" "${cmd}" "$@"

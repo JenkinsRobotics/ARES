@@ -211,6 +211,49 @@ def resolve_chat_model_state(
     return model, provider
 
 
+def reconcile_session_provider_after_turn(
+    session,
+    gateway_routing: dict | None,
+    *,
+    turn_owns_model: bool,
+    last_persisted_model: str | None,
+    last_persisted_provider: str | None,
+) -> None:
+    """Bring ``session.model``/``model_provider`` in line with what actually served.
+
+    ARES writes the *requested* model/provider into the session optimistically,
+    before the turn contacts the runtime — necessary so the UI reflects a pick
+    immediately. When the runtime silently falls back (e.g. an unresolvable
+    local model), the turn-end ``gateway_routing`` record correctly captures
+    the real outcome, but nothing wrote that back into the session fields the
+    picker itself reads — so the dropdown kept claiming the local pick had
+    served a cloud-answered turn. This closes that gap, mirroring the same
+    ownership-race guard already used to persist the pre-turn pick (a newer
+    concurrent write must never be clobbered by a turn that no longer reflects
+    the session's current state).
+    """
+    if not isinstance(gateway_routing, dict):
+        return
+    if not (gateway_routing.get("provider_changed") or gateway_routing.get("model_changed")):
+        return
+    if not turn_owns_model:
+        return
+    if (
+        getattr(session, "model", None) != last_persisted_model
+        or getattr(session, "model_provider", None) != last_persisted_provider
+    ):
+        # A newer picker write already moved the session past this turn's
+        # view of it — don't clobber it with a stale outcome.
+        return
+    used_provider = _clean_session_model_provider(gateway_routing.get("used_provider"))
+    if used_provider:
+        session.model_provider = used_provider
+    if gateway_routing.get("model_changed"):
+        used_model = str(gateway_routing.get("used_model") or "").strip()
+        if used_model:
+            session.model = used_model
+
+
 def _clean_session_model_provider(value: str | None) -> str | None:
     provider = str(value or "").strip().lower()
     if not provider or provider == "default":
@@ -1036,7 +1079,7 @@ def _resolve_effective_session_model_for_display(session) -> str:
     requested_provider = getattr(session, "model_provider", None)
     # A framework adapter already normalized and persisted its own execution
     # model. Applying the global provider catalog here can replace a Codex model
-    # with the Hermes/Ollama default in the UI even though Codex executed it.
+    # with the unrelated default in the UI even though Codex executed it.
     if str(getattr(session, "ares_backend", None) or "").strip():
         return original_model
     _pp_provider, _pp_default, _pp_cfg = _read_profile_model_config(session, requested_provider)

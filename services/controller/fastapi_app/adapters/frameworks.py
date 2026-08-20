@@ -75,10 +75,30 @@ def _health_remediation(health: Any) -> dict[str, Any]:
         return {}
 
 
-def _default_turn_starter(session_id: str, message: str, *, source: str, attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _default_turn_starter(
+    session_id: str,
+    message: str,
+    *,
+    source: str,
+    attachments: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+    model_provider: str | None = None,
+    explicit_model_pick: bool | None = None,
+) -> dict[str, Any]:
     from api.chat_runtime import start_session_turn
 
-    return dict(start_session_turn(session_id, message, source=source, attachments=attachments) or {})
+    return dict(
+        start_session_turn(
+            session_id,
+            message,
+            source=source,
+            attachments=attachments,
+            model=model,
+            model_provider=model_provider,
+            explicit_model_pick=explicit_model_pick,
+        )
+        or {}
+    )
 
 
 class JournaledFrameworkAdapter(BaseLLMAdapter):
@@ -179,6 +199,9 @@ class JournaledFrameworkAdapter(BaseLLMAdapter):
                 request.message,
                 source="webui",
                 attachments=[att.model_dump() for att in request.attachments] if request.attachments else None,
+                model=request.model,
+                model_provider=request.model_provider,
+                explicit_model_pick=bool(request.explicit_model_pick),
             )
             or {}
         )
@@ -328,12 +351,45 @@ class JaegerAdapter(JournaledFrameworkAdapter):
 
     def get_models(self, *, profile: str | None) -> list[ModelDescriptor]:
         del profile
-        health = self.check_health(profile=None)
-        model_id = str(health.details.get("model") or "").strip()
-        provider = str(health.details.get("provider") or "").strip() or None
-        if not model_id:
-            return []
-        return [ModelDescriptor(model_id, model_id, provider, self.adapter_id)]
+        descriptors: list[ModelDescriptor] = []
+        seen: set[tuple[str, str]] = set()
+        try:
+            from api.providers.jaeger.streaming import query_local_companion
+            catalog = query_local_companion("model_catalog", {})
+            if isinstance(catalog, dict) and isinstance(catalog.get("models"), list):
+                for m in catalog["models"]:
+                    mid = str(m.get("id") or m.get("name") or "").strip()
+                    prov = str(m.get("provider") or "").strip() or None
+                    key = (prov or "", mid)
+                    if not mid or key in seen:
+                        continue
+                    seen.add(key)
+                    label = str(m.get("label") or mid)
+                    descriptors.append(ModelDescriptor(mid, label, prov, self.adapter_id))
+        except Exception:
+            pass
+
+        if not descriptors:
+            try:
+                from jaeger_ai.core.models.model_resolver import list_registered_models
+                for m in list_registered_models():
+                    mid = str(m.get("name") or "").strip()
+                    prov = str(m.get("provider") or "").strip() or None
+                    key = (prov or "", mid)
+                    if not mid or key in seen:
+                        continue
+                    seen.add(key)
+                    descriptors.append(ModelDescriptor(mid, mid, prov, self.adapter_id))
+            except Exception:
+                pass
+
+        if not descriptors:
+            health = self.check_health(profile=None)
+            model_id = str(health.details.get("model") or "").strip()
+            provider = str(health.details.get("provider") or "").strip() or None
+            if model_id:
+                descriptors.append(ModelDescriptor(model_id, model_id, provider, self.adapter_id))
+        return descriptors
 
 
 
@@ -527,9 +583,4 @@ class OllamaLocalAdapter(JournaledFrameworkAdapter):
         # This ensures Registry A and Registry B report the same models
         inventory = self.backend.inventory()
         return _descriptors_from_inventory(inventory, connection_id=self.adapter_id)
-
-
-# Backward compatibility aliases
-HermesAdapter = JaegerAdapter
-HermesLocalAdapter = JaegerAdapter
 

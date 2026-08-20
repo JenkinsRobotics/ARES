@@ -48,7 +48,7 @@ async def verify_diff_endpoint(req: VerifyDiffRequest):
 
 @router.get("/matrix/chat-parity", response_model=VerificationMatrix)
 async def get_chat_parity_matrix():
-    """Retrieve the standard Hermes WebUI -> ARES Chat Tab parity verification matrix."""
+    """Retrieve the standard Legacy WebUI parity parity verification matrix."""
     return FeatureExtractor.decompose_chat_parity_task()
 
 

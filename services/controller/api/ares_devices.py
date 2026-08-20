@@ -3,7 +3,7 @@
 This module is intentionally small and additive. It gives ARES a stable way to
 answer: is this install the primary AI body, or a device joined to an existing
 AI? Later resource sharing and offline sync can build on this registry without
-rewriting chat, Ares, or JROS.
+rewriting chat, Ares, or JaegerAI.
 """
 
 from __future__ import annotations

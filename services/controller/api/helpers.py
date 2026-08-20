@@ -538,6 +538,21 @@ _SENSITIVE_LOWER_MARKERS = (
 _SENSITIVE_TELEGRAM_MARKER_RE = _re.compile(r"(?:bot)?\d{8,}:[-A-Za-z0-9_]{30,}")
 _SENSITIVE_DISCORD_MARKER_RE = _re.compile(r"<@!?\d{17,20}>")
 _SENSITIVE_PHONE_MARKER_RE = _re.compile(r"(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])")
+_SENSITIVE_STRUCTURED_KEYS = {
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth",
+    "authorization",
+    "client_secret",
+    "cookie",
+    "credential",
+    "password",
+    "passwd",
+    "refresh_token",
+    "secret",
+    "token",
+}
 
 
 def _might_contain_sensitive_text(text: str) -> bool:
@@ -587,7 +602,13 @@ def _redact_value(v, *, _enabled: bool | None = None):
     if isinstance(v, str):
         return _redact_text(v, _enabled=_enabled)
     if isinstance(v, dict):
-        return {k: _redact_value(val, _enabled=_enabled) for k, val in v.items()}
+        return {
+            k: "[REDACTED]"
+            if _enabled is not False
+            and str(k).strip().lower().replace("-", "_") in _SENSITIVE_STRUCTURED_KEYS
+            else _redact_value(val, _enabled=_enabled)
+            for k, val in v.items()
+        }
     if isinstance(v, list):
         return [_redact_value(item, _enabled=_enabled) for item in v]
     return v

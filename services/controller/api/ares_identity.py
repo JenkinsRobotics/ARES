@@ -16,17 +16,14 @@ from __future__ import annotations
 import logging
 import datetime
 import json
-from pathlib import Path
 from typing import Any, Dict
-
-import yaml
 
 from api.paths import HOME
 
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_AI_FALLBACK = "Jarvis"
+_DEFAULT_AI_FALLBACK = "ARES Assistant"
 
 
 def _clean_text(value: Any) -> str:
@@ -41,7 +38,7 @@ def _profile_display_name(profile: str | None) -> str | None:
 
 
 def _is_placeholder_assistant_name(value: str | None) -> bool:
-    return _clean_text(value).lower() in {"", "ares", "ares agent", "jros"}
+    return _clean_text(value).lower() in {"", "ares", "ares agent", "jaeger"}
 
 
 def _persona_display_name(persona_id: str | None) -> str | None:
@@ -63,53 +60,49 @@ def _persona_display_name(persona_id: str | None) -> str | None:
     return pid.replace("_", " ").replace("-", " ").title()
 
 
-def _jros_identity_path_candidates() -> list[Path]:
-    candidates: list[Path] = []
+def _jaeger_live_display_name() -> str | None:
+    """Who Jaeger says is answering — the selected character, not identity.yaml.
+
+    ``bot_name`` / identity.yaml is the instance's own name (often still
+    "Jarvis" after a character swap). Prefer the live character sheet:
+    its id first (so a stale display_name cannot pin the chat header),
+    then display_name, then the character label.
+    """
     try:
-        from api.providers.jaeger.paths import jaeger_home, jros_config_path, jros_instance_name
+        from api.providers.jaeger.streaming import query_local_companion
 
-        config_path = jros_config_path()
-        candidates.append(config_path.with_name("identity.yaml"))
-        instance_name = jros_instance_name()
-        if instance_name:
-            candidates.append(jaeger_home() / ".jaeger_os" / "instances" / instance_name / "identity.yaml")
-            candidates.append(Path("~/.jaeger/instances").expanduser() / instance_name / "identity.yaml")
-        candidates.append(jaeger_home() / ".jaeger_os" / "instances" / "default" / "identity.yaml")
+        identity = query_local_companion("identity", {})
+        if not isinstance(identity, dict):
+            return None
+        cid = _clean_text(identity.get("character_id"))
+        if cid and cid.lower() not in {"assistant", "default"}:
+            persona = _persona_display_name(cid)
+            if persona:
+                return persona
+            character = _clean_text(identity.get("character"))
+            if character:
+                return character
+        name = _clean_text(identity.get("display_name"))
+        if name:
+            return name
+        character = _clean_text(identity.get("character"))
+        if character and character.lower() != "assistant":
+            return character
+        return _clean_text(identity.get("agent_name")) or None
     except Exception:
-        logger.debug("Failed to resolve JROS identity path candidates", exc_info=True)
-    candidates.append(Path("~/.jaeger/instances/default/identity.yaml").expanduser())
-    return candidates
+        logger.debug("Failed to query Jaeger identity", exc_info=True)
+        return None
 
 
-def _jros_default_agent_name() -> str | None:
-    seen: set[Path] = set()
-    for path in _jros_identity_path_candidates():
-        try:
-            resolved = path.expanduser().resolve(strict=False)
-        except OSError:
-            continue
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        try:
-            if not resolved.exists():
-                continue
-            data = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
-        except Exception:
-            logger.debug("Failed to read JROS identity file %s", resolved, exc_info=True)
-            continue
-        if isinstance(data, dict):
-            name = _clean_text(data.get("name")) or _clean_text(data.get("display_name"))
-            if name:
-                return name
-    return None
+def _jaeger_default_agent_name() -> str | None:
+    return _jaeger_live_display_name()
 
 
 def _default_assistant_name(bot_name: str | None) -> str:
     saved = _clean_text(bot_name)
     if saved and not _is_placeholder_assistant_name(saved):
         return saved
-    return _jros_default_agent_name() or _DEFAULT_AI_FALLBACK
+    return _jaeger_default_agent_name() or _DEFAULT_AI_FALLBACK
 
 
 def _normalize_backend(value: str | None) -> str:
@@ -153,14 +146,21 @@ def get_assistant_display_name(
 
     Resolution order:
       1. If a non-default WebUI profile is active, keep that profile label.
-      2. If JROS is active and a character is selected, show the
+      2. If JaegerAI is active and a character is selected, show the
          character/person being messaged.
-      3. Otherwise show the user's default AI name from settings/JROS identity.
-      4. Fall back to Jarvis for incomplete setup.
+      3. Otherwise show the user's default AI name from settings/JaegerAI identity.
+      4. Fall back to a neutral product label for incomplete setup.
     """
     profile_name = _profile_display_name(profile)
     if profile_name:
         return profile_name
+
+    # Live Jaeger character wins even when the backend slug is missing or
+    # still the instance name — that's how the header stayed stuck on
+    # "Jarvis" after picking Anakin.
+    live = _jaeger_live_display_name()
+    if live:
+        return live
 
     normalized_backend = _normalize_backend(backend)
     if normalized_backend == "jaeger_local":

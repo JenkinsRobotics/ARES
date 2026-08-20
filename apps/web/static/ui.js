@@ -9,11 +9,37 @@ const S={session:null,messages:[],entries:[],busy:false,pendingFiles:[],toolCall
 
 function assistantDisplayName(){
   if(S.activeProfile&&S.activeProfile!=='default') return S.activeProfile.charAt(0).toUpperCase()+S.activeProfile.slice(1);
-  return window._botName||'Hermes';
+  return window._identityDisplayName||window._botName||'ARES';
+}
+function _stampAssistantIdentityInDom(name){
+  const label=String(name||'').trim();
+  if(!label) return;
+  const initial=label.charAt(0).toUpperCase();
+  document.querySelectorAll('.msg-role.assistant .msg-role-name').forEach(el=>{
+    el.textContent=label;
+  });
+  document.querySelectorAll('.msg-role.assistant .role-icon.assistant').forEach(el=>{
+    el.textContent=initial;
+  });
+}
+async function refreshAssistantIdentity(){
+  try{
+    if(typeof api!=='function') return;
+    const sid=S&&S.session&&S.session.session_id?String(S.session.session_id):'';
+    const url=sid
+      ?('/api/ares/identity?session_id='+encodeURIComponent(sid))
+      :'/api/ares/identity';
+    const payload=await api(url,{retries:0,timeoutToast:false});
+    const name=payload&&String(payload.display_name||'').trim();
+    if(!name) return;
+    window._identityDisplayName=name;
+    if(typeof applyBotName==='function') applyBotName();
+    _stampAssistantIdentityInDom(name);
+  }catch(_e){}
 }
 const INFLIGHT={};  // keyed by session_id while request in-flight
 const SESSION_QUEUES={};  // keyed by session_id for queued follow-up turns
-const MAX_UPLOAD_BYTES=(window.__HERMES_CONFIG__&&window.__HERMES_CONFIG__.maxUploadBytes)||20*1024*1024;
+const MAX_UPLOAD_BYTES=(window.__ARES_CONFIG__&&window.__ARES_CONFIG__.maxUploadBytes)||20*1024*1024;
 const MAX_UPLOAD_MB=Math.round(MAX_UPLOAD_BYTES/1024/1024);
 // Tracks which session's queue to drain in setBusy(false).
 // Set to activeSid just before setBusy(false) in done/error handlers so the
@@ -199,7 +225,7 @@ function initOfflineMonitor(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initOfflineMonitor,{once:true});
 else initOfflineMonitor();
 // Redirect to login when the server responds with 401 (auth session expired).
-// Handles iOS PWA standalone mode and keeps subpath mounts like /hermes/ from
+// Handles iOS PWA standalone mode and keeps subpath mounts like /ares/ from
 // escaping to the personal site root /login.
 // #5578: on a login-shaped page, reload 'login' WITHOUT a next (avoid self-nesting).
 function _redirectIfUnauth(res){if(res&&res.status===401){var _p=(window.location.pathname||'').replace(/\/+$/,'');if(/(?:^|\/)login$/.test(_p)){window.location.href='login';}else{window.location.href='login?next='+encodeURIComponent(window.location.pathname+window.location.search);}return true;}return false;}
@@ -209,7 +235,7 @@ function _getSessionQueue(sid, create=false){
   return SESSION_QUEUES[sid]||[];
 }
 function _queueStorageKey(sid){
-  return 'hermes-queue-'+sid;
+  return 'ares-queue-'+sid;
 }
 function _clearPersistedSessionQueue(sid){
   if(!sid) return;
@@ -319,7 +345,7 @@ function _renderUserFencedBlocks(text){
   const stashContext=(label,quote)=>{contextStash.push(sentContextHtml(label,quote));return '\x00UC'+(contextStash.length-1)+'\x00';};
   const stashSelectedContextBlocks=(value)=>{
     const lines=String(value||'').split('\n');
-    const marker='<!-- hermes-selected-context -->';
+    const marker='<!-- ares-selected-context -->';
     const out=[];
     for(let i=0;i<lines.length;i++){
       const labelMatch=lines[i].match(/^\*\*([^\n]{1,200}):\*\*\s*$/);
@@ -489,7 +515,7 @@ async function startCompressionRecovery(btn){
     const data=await api('/api/session/compression-recovery/start',{method:'POST',body:JSON.stringify({session_id:sourceSid})});
     const sid=data&&data.session&&data.session.session_id;
     if(!sid) throw new Error('Compression recovery did not return a session.');
-    try{localStorage.setItem('hermes-webui-session',sid);}catch(_){}
+    try{localStorage.setItem('ares-webui-session',sid);}catch(_){}
     if(typeof loadSession==='function') await loadSession(sid,{preserveActiveInput:false});
     else if(data.session){S.session=data.session;S.messages=data.session.messages||[];syncTopbar();renderMessages();}
     if(typeof renderSessionList==='function') await renderSessionList();
@@ -961,6 +987,7 @@ function _captureMessageViewportAnchor(){
         // anchor's topOffset is stale and realigning to it would yank a still reader
         // backward (issue #5637).
         scrollHeightAtCapture:container.scrollHeight,
+        inputGeneration:typeof _messageScrollInputGeneration==='number' ? _messageScrollInputGeneration : 0,
       };
     }
   }
@@ -1175,7 +1202,7 @@ function _remountMessageViewportAnchor(anchor){
   if(visIdx<0) return false;
   // A virtualized anchor may be outside the current DOM. Scroll to its virtual
   // row and render once so the semantic restore below has a real target.
-  _programmaticScroll=true;
+  _programmaticScroll=true;_programmaticScrollSetAt=performance.now();
   container.scrollTop=_messageVirtualScrollTopForVisibleIdx(visWithIdx,visIdx,container);
   _messageVirtualWindowKey='';
   _messageViewportAnchorRemounting=true;
@@ -1612,6 +1639,11 @@ function _highlightQuestionRow(row){
 async function jumpToTurnQuestion(questionRawIdx, assistantRawIdx){
   const container=$('messages');
   if(!container||typeof questionRawIdx!=='number'||questionRawIdx<0) return;
+  const clampTargetScrollTop=(scrollTop)=>{
+    const maxTop=Math.max(0,container.scrollHeight-container.clientHeight);
+    const n=Number(scrollTop);
+    return Math.max(0,Math.min(Number.isFinite(n)?n:container.scrollTop,maxTop));
+  };
   const scrollToTarget=()=>{
     const hasAssistant=typeof assistantRawIdx==='number'&&assistantRawIdx>=0;
     if(hasAssistant){
@@ -1634,14 +1666,18 @@ async function jumpToTurnQuestion(questionRawIdx, assistantRawIdx){
     _highlightQuestionRow(row);
     return true;
   };
+  // Cancel load-time bottom settling before any visible or virtualized target
+  // path can return. The jump owner keeps every native smooth-scroll frame out
+  // of the manual-reader listener, then reconciles against the final geometry.
+  _cancelBottomSettle();
+  _beginMessageJumpScroll(container);
   if(scrollToTarget()) return;
   const visWithIdx=_getVisibleMessagesWithIdx();
   const visibleIdx=_messageVisibleIndexForRawIdx(questionRawIdx, visWithIdx);
   if(visibleIdx>=0){
-    _scrollPinned=false;
-    _messageUserUnpinned=true;
     _programmaticScroll=true;_programmaticScrollSetAt=performance.now();
-    container.scrollTop=_messageVirtualScrollTopForVisibleIdx(visWithIdx, visibleIdx, container);
+    const virtualTarget=clampTargetScrollTop(_messageVirtualScrollTopForVisibleIdx(visWithIdx, visibleIdx, container));
+    container.scrollTop=virtualTarget;
     _messageVirtualWindowKey='';
     renderMessages({ preserveScroll:true });
     requestAnimationFrame(()=>{
@@ -1856,7 +1892,7 @@ async function saveDashboardSettings(opts){
     if(opts.raiseOnError) throw err;
   }
 }
-function openHermesDashboard(event){
+function openExternalDashboard(event){
   if(event){event.preventDefault();event.stopPropagation();}
   const btn=event&&event.currentTarget?event.currentTarget:document.querySelector('[data-dashboard-link]');
   const url=(btn&&btn.dataset&&btn.dataset.dashboardUrl)||_dashboardBrowserUrl(_dashboardStatusCache);
@@ -1864,6 +1900,8 @@ function openHermesDashboard(event){
   window.open(url,'_blank','noopener,noreferrer');
   return false;
 }
+// Compatibility alias for extensions and cached pages using the inherited name.
+const openARESDashboard=openExternalDashboard;
 function _initDashboardLinkProbe(){
   loadDashboardSettings();
   refreshDashboardStatus(true);
@@ -2502,7 +2540,7 @@ const _CSV_EXTS=/\.csv$/i;
 const _EXCALIDRAW_EXTS=/\.excalidraw$/i;
 // ── Media playback speed controls ─────────────────────────────────────────
 const MEDIA_PLAYBACK_RATES=[0.5,0.75,1,1.25,1.5,2];
-const MEDIA_PLAYBACK_STORAGE_KEY='hermes-media-playback-rate';
+const MEDIA_PLAYBACK_STORAGE_KEY='ares-media-playback-rate';
 function _getStoredMediaPlaybackRate(){
   try{
     const raw=localStorage.getItem(MEDIA_PLAYBACK_STORAGE_KEY);
@@ -2812,8 +2850,8 @@ window.addEventListener('visibilitychange',()=>{
 // Dynamic model labels -- populated by populateModelDropdown(), fallback to static map
 let _dynamicModelLabels={};
 window._configuredModelBadges=window._configuredModelBadges||{};
-const MODEL_STATE_KEY='hermes-webui-model-state';
-const PENDING_SESSION_MODEL_PREFIX='hermes-webui-pending-session-model:';
+const MODEL_STATE_KEY='ares-webui-model-state';
+const PENDING_SESSION_MODEL_PREFIX='ares-webui-pending-session-model:';
 const PENDING_SESSION_MODEL_MAX_AGE_MS=10*60*1000;
 
 // ── Smart model resolver ────────────────────────────────────────────────────
@@ -3015,7 +3053,7 @@ function _readPersistedModelState(){
       }
     }
   }catch(_){}
-  const legacy=localStorage.getItem('hermes-webui-model');
+  const legacy=localStorage.getItem('ares-webui-model');
   if(!legacy) return null;
   return {model:legacy,model_provider:_providerFromModelValue(legacy)||null};
 }
@@ -3023,17 +3061,17 @@ function _writePersistedModelState(model, modelProvider){
   const value=String(model||'').trim();
   const provider=modelProvider?String(modelProvider).trim():(_providerFromModelValue(value)||null);
   if(!value){
-    localStorage.removeItem('hermes-webui-model');
+    localStorage.removeItem('ares-webui-model');
     localStorage.removeItem(MODEL_STATE_KEY);
     return;
   }
-  localStorage.setItem('hermes-webui-model', value);
+  localStorage.setItem('ares-webui-model', value);
   try{
     localStorage.setItem(MODEL_STATE_KEY, JSON.stringify({model:value,model_provider:provider||null}));
   }catch(_){}
 }
 function _clearPersistedModelState(){
-  localStorage.removeItem('hermes-webui-model');
+  localStorage.removeItem('ares-webui-model');
   localStorage.removeItem(MODEL_STATE_KEY);
 }
 function _pendingSessionModelKey(sessionId){
@@ -3474,6 +3512,14 @@ async function populateModelDropdown(opts={}){
         const opt=document.createElement('option');
         opt.value=m.id;
         opt.textContent=m.label;
+        // A catalog group can legitimately mix providers (e.g. JaegerAI's
+        // "local" bucket holds both raw GGUF/MLX files and models actually
+        // served through the local Ollama daemon) — an option's own
+        // provider, when the catalog states one, must win over the group
+        // default so a pick routes to where the model can actually be
+        // reached, not wherever the rest of the group happens to point.
+        const mProvider=(m&&(m.provider_id||m.provider))?String(m.provider_id||m.provider).trim():'';
+        if(mProvider && mProvider!==g.provider_id) opt.dataset.provider=mProvider;
         if(m && (m.supports_fast_tier === true || String(m.supports_fast_tier).toLowerCase()==='true')){
           opt.dataset.fast='1';
         }else if(m && (m.supports_fast_tier === false || String(m.supports_fast_tier).toLowerCase()==='false')){
@@ -3652,10 +3698,10 @@ async function _fetchLiveModels(provider, sel, requestSeq=null){
     const added=_addLiveModelsToSelect(provider,data.models,sel);
     if(added>0){
       if(typeof syncModelChip==='function') syncModelChip();
-      console.debug('[hermes] Live models loaded for',provider+':',added,'new models added');
+      console.debug('[ares] Live models loaded for',provider+':',added,'new models added');
     }
   }catch(e){
-    console.debug('[hermes] Live model fetch failed for',provider,e.message);
+    console.debug('[ares] Live model fetch failed for',provider,e.message);
   }finally{
     _liveModelFetchPending.delete(provider);
   }
@@ -3663,7 +3709,7 @@ async function _fetchLiveModels(provider, sel, requestSeq=null){
 
 /**
  * Check if the given model ID belongs to a different provider than the one
- * currently configured in Hermes. Returns a warning string if mismatched,
+ * currently configured in ARES. Returns a warning string if mismatched,
  * or null if the selection looks compatible.
  *
  * Provider detection is intentionally loose — we compare the model's slash
@@ -3685,7 +3731,7 @@ function _checkProviderMismatch(modelId){
   const norm=p=>aliases[p]||p;
   if(norm(modelProvider)!==norm(ap)){
     return (window.t?window.t('provider_mismatch_warning',modelId,ap):
-      `"${modelId}" may not work with your configured provider (${ap}). Send anyway or run \`hermes model\` to switch.`);
+      `"${modelId}" may not work with your configured provider (${ap}). Send anyway or run \`ares model\` to switch.`);
   }
   return null;
 }
@@ -3819,10 +3865,9 @@ function syncModelChip(){
   const opt=_selectedModelOption();
   const text=opt?opt.textContent:getModelLabel(sel.value||'');
   const compactText=_compactComposerModelChipLabel(sel.value||'', text);
-  const gatewayRouting=_latestGatewayRoutingForSession(S.session);
-  const displayText=_formatGatewayModelLabel(sel.value||'',compactText,gatewayRouting)||compactText;
-  label.textContent=displayText;
-  if(mobileLabel) mobileLabel.textContent=displayText;
+  label.textContent=compactText;
+  if(mobileLabel) mobileLabel.textContent=compactText;
+  const gatewayRouting=_latestGatewayRoutingForSession(S.session,sel.value||'');
   chip.title=gatewayRouting?`${sel.value||'Conversation model'} ${_gatewayRoutingLabel(gatewayRouting)}`:(sel.value||'Conversation model');
   chip.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
   if(mobileAction) mobileAction.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
@@ -4156,7 +4201,12 @@ function renderModelDropdown(){
         const displayName=rawValue.startsWith('@custom:')
           ? getModelLabel(rawValue)
           : (opt.textContent||getModelLabel(rawValue));
-        const entry={value:opt.value,name:esc(displayName),id:esc(opt.value),group:child.label||'',groupKey,providerId,modelsEndpointError,badge:_getConfiguredModelBadge(opt.value,_badgeMap,providerId),hiddenByDefault:false};
+        // A group can mix providers (e.g. JaegerAI's "local" bucket holds
+        // both raw GGUF/MLX files and models served through the local
+        // Ollama daemon) — prefer the option's own provider, when the
+        // catalog set one, over the group default.
+        const optProviderId=(opt.dataset&&opt.dataset.provider)?opt.dataset.provider:providerId;
+        const entry={value:opt.value,name:esc(displayName),id:esc(opt.value),group:child.label||'',groupKey,providerId:optProviderId,modelsEndpointError,badge:_getConfiguredModelBadge(opt.value,_badgeMap,optProviderId),hiddenByDefault:false};
         _modelData.push(entry);
         groupMeta.modelCount++;
       }
@@ -5726,11 +5776,126 @@ window.addEventListener('resize',function(){
 // Any manual scroll up sets a sticky unpinned flag until the user scrolls back
 // to the bottom (near-bottom hysteresis on downward motion) or clicks ↓.
 // Programmatic scrolls are ignored via _programmaticScroll. Fixes #1469 / #1360 / #1731.
+// #6606 ownership: ui.js/messages.js load before boot.js, and boot.js only
+// assigns window._autoScrollFollow after its awaited settings request. Every
+// consumer in this file (scroll listener, settle paths, scrollIfPinned,
+// DOM-replace gate) can run before that assignment — a bare read would throw
+// ReferenceError. Establish the default synchronously here (single owner);
+// boot.js overwrites it with the saved setting after hydration. The typeof
+// guard preserves an explicit saved `false` if boot.js already ran.
+if(typeof window._autoScrollFollow==='undefined'){ window._autoScrollFollow=true; }
 let _scrollPinned=true;
 let _programmaticScroll=false;
 let _programmaticScrollSetAt=0;
 let _programmaticScrollResetTimer=0;
+const PROGRAMMATIC_SCROLL_VALID_MS=150;
+function _freshProgrammaticScrollActive(){
+  if(!_programmaticScroll) return false;
+  const age=performance.now()-_programmaticScrollSetAt;
+  if(!Number.isFinite(age)||age<0||age>PROGRAMMATIC_SCROLL_VALID_MS){
+    _programmaticScroll=false;
+    return false;
+  }
+  return true;
+}
 function _deferClearProgrammaticScroll(ms){clearTimeout(_programmaticScrollResetTimer);_programmaticScrollResetTimer=setTimeout(()=>{_programmaticScroll=false;},ms||80);}
+// Bug #6621: a "jump to question" smooth-scroll
+// has no defense against a live stream token landing mid-animation. Without
+// an explicit owner, scrollIfPinned() sees the reader as still pinned and
+// reclaims the bottom on the very next token, snapping the viewport off the
+// jump target before the smooth-scroll frame ever finishes. The owner token
+// tells scrollIfPinned()/scrollToBottom() a jump is in flight so they leave
+// it alone, then reconciles the real pin state once geometry settles.
+let _messageJumpScrollGeneration=0;
+let _messageJumpScrollOwner=null;
+let _messageJumpScrollSettleTimer=0;
+function _messageJumpSessionId(){
+  if(typeof S!=='undefined'&&S.session&&S.session.session_id) return String(S.session.session_id);
+  return '';
+}
+function _scheduleMessageJumpScrollReconcile(generation,ms){
+  if(!_messageJumpScrollOwner||_messageJumpScrollOwner.generation!==generation) return;
+  clearTimeout(_messageJumpScrollSettleTimer);
+  _messageJumpScrollSettleTimer=setTimeout(()=>_finishMessageJumpScroll(generation),ms||220);
+}
+function _beginMessageJumpScroll(container){
+  const previous=_messageJumpScrollOwner;
+  const preserved=previous?previous.preserved:{
+    scrollPinned:_scrollPinned,
+    messageUserUnpinned:_messageUserUnpinned,
+    nearBottomCount:_nearBottomCount,
+  };
+  clearTimeout(_messageJumpScrollSettleTimer);
+  const generation=++_messageJumpScrollGeneration;
+  _messageJumpScrollOwner={generation,container,sessionId:_messageJumpSessionId(),preserved};
+  // While the jump owner is active, temporarily release the reader pin so a
+  // live token arriving between smooth-scroll frames cannot let scrollIfPinned()
+  // reclaim the bottom and snap the reader off the jump target (#6621). The
+  // preserved snapshot above is what _finishMessageJumpScroll() reconciles
+  // against once the jump settles.
+  _scrollPinned=false;
+  _messageUserUnpinned=true;
+  _nearBottomCount=0;
+  _programmaticScroll=true;
+  _programmaticScrollSetAt=performance.now();
+  _scheduleMessageJumpScrollReconcile(generation,300);
+  return generation;
+}
+function _finishMessageJumpScroll(generation){
+  const owner=_messageJumpScrollOwner;
+  if(!owner||owner.generation!==generation) return;
+  if(owner.sessionId!==_messageJumpSessionId()){
+    _cancelMessageJumpScroll();
+    return;
+  }
+  clearTimeout(_messageJumpScrollSettleTimer);
+  _messageJumpScrollSettleTimer=0;
+  const container=owner.container;
+  const maxTop=Math.max(0,container.scrollHeight-container.clientHeight);
+  const top=Math.max(0,Math.min(Number(container.scrollTop)||0,maxTop));
+  const bottomDistance=maxTop-top;
+  if(bottomDistance>80){
+    _scrollPinned=false;
+    _messageUserUnpinned=true;
+    _nearBottomCount=0;
+  }else{
+    _scrollPinned=owner.preserved.scrollPinned;
+    _messageUserUnpinned=owner.preserved.messageUserUnpinned;
+    _nearBottomCount=owner.preserved.nearBottomCount;
+  }
+  _lastScrollTop=container.scrollTop;
+  _lastMessageClientHeight=container.clientHeight;
+  _messageJumpScrollOwner=null;
+  _programmaticScroll=false;
+  if(typeof _syncScrollToBottomCue==='function'){
+    _syncScrollToBottomCue(!_scrollPinned&&bottomDistance>80,{newMessage:_newMessageCueVisible});
+  }
+  if(typeof _updateSessionStartJumpButton==='function') _updateSessionStartJumpButton();
+  // An external-session refresh deferred while the reader was temporarily
+  // unpinned for the jump window (#6621) would otherwise stay stranded once the
+  // near-tail reconciliation restores follow mode. Flush it when the terminal
+  // state is genuinely pinned to the tail.
+  if(_scrollPinned&&!_messageUserUnpinned&&typeof _flushDeferredActiveSessionExternalRefresh==='function'){
+    _flushDeferredActiveSessionExternalRefresh();
+  }
+}
+function _cancelMessageJumpScroll(){
+  ++_messageJumpScrollGeneration;
+  clearTimeout(_messageJumpScrollSettleTimer);
+  _messageJumpScrollSettleTimer=0;
+  // _beginMessageJumpScroll temporarily unpins the reader for the ownership
+  // window (#6621); a cancel that isn't a reconcile must put the pre-jump pin
+  // state back, or the transient unpinned state would leak. Callers that want a
+  // different terminal pin state (e.g. scrollToBottom) set it right after this.
+  const owner=_messageJumpScrollOwner;
+  if(owner&&owner.preserved){
+    _scrollPinned=owner.preserved.scrollPinned;
+    _messageUserUnpinned=owner.preserved.messageUserUnpinned;
+    _nearBottomCount=owner.preserved.nearBottomCount;
+  }
+  _messageJumpScrollOwner=null;
+  _programmaticScroll=false;
+}
 let _nearBottomCount=0;
 let _lastScrollTop=null;
 let _lastMessageClientHeight=null;   // #4702: track scroller height to ignore iOS portrait toolbar-settle reflows (a clientHeight increase fires a scroll event with decreased scrollTop that is NOT a user scroll)
@@ -5743,6 +5908,9 @@ let _lastMessageClientHeight=null;   // #4702: track scroller height to ignore i
 // window after load as suppressed.
 let _lastNonMessageScrollIntentMs=-Infinity;
 let _messageUserUnpinned=false;
+// A monotonic ownership token lets delayed restores distinguish reader input
+// that happened after a snapshot from input that merely happened recently.
+let _messageScrollInputGeneration=0;
 let _bottomSettleToken=0;
 let _settleRAF=0;
 let _settleRO=null;
@@ -5773,7 +5941,7 @@ let _lastMessageRenderAt=-Infinity;
 function _recentMessageRenderArtifactWindow(ms){
   return performance.now()-_lastMessageRenderAt<(ms||1400);
 }
-function _cancelBottomSettle(){ _bottomSettleToken++; if(_settleRO){ _settleRO.disconnect(); _settleRO=null; } clearTimeout(_settleTimer); clearTimeout(_settleFinalTimer); cancelAnimationFrame(_settleRAF); }
+function _cancelBottomSettle(){ _cancelMessageJumpScroll(); _bottomSettleToken++; if(_settleRO){ _settleRO.disconnect(); _settleRO=null; } clearTimeout(_settleTimer); clearTimeout(_settleFinalTimer); cancelAnimationFrame(_settleRAF); }
 function _markMessageTouchScrollIntent(active=true){
   _messageTouchScrollActive=!!active;
   _lastMessageTouchScrollIntentMs=performance.now();
@@ -5826,21 +5994,35 @@ function _recordNonMessageScrollIntent(e){
   const target=e&&e.target;
   if(!el||!target) return;
   if(!el.contains(target)){ _lastNonMessageScrollIntentMs=performance.now(); return; }
-  // #4970: record ANY upward message-pane wheel motion as recent wheel intent,
-  // including gentle low-delta trackpad wheels (e.g. deltaY:-5) that never reach
-  // the decisive -30 sticky-unpin threshold below. The post-render artifact
-  // suppression consults _recentMessageWheelIntent() so it cannot swallow a real
-  // gentle scroll-up. This does NOT unpin on its own — only the <-30 branch and
-  // the scroll listener's movedUp branch flip _messageUserUnpinned.
+  // Capture the guards before cancelling the active owner: cancellation clears
+  // the programmatic flag and jump owner, but a low-delta upward wheel must still
+  // count as reader takeover when it interrupted an owned scroll.
+  const wheelUp=typeof e.deltaY==='number'&&e.deltaY<0;
+  const guardedWheelUp=wheelUp&&_freshProgrammaticScrollActive();
+  const jumpScrollOwned=typeof _messageJumpScrollOwner!=='undefined'&&!!_messageJumpScrollOwner;
   if(e.type==='touchmove'||(typeof e.deltaY==='number'&&e.deltaY!==0)){
-    const bottomDistance=el.scrollHeight-el.scrollTop-el.clientHeight;
-    if(bottomDistance>120) _lastMessageScrollIntentMs=performance.now();
+    if(typeof _messageScrollInputGeneration==='number') _messageScrollInputGeneration++;
+    if(jumpScrollOwned||e.type==='touchmove'||(typeof e.deltaY==='number'&&e.deltaY< -30)||guardedWheelUp){
+      if(typeof _cancelBottomSettle==='function') _cancelBottomSettle();
+    }
+  }
+  // Any message-pane scroll input that interrupts an active jump owner is a
+  // reader takeover, regardless of direction or the programmatic-latch age
+  // (#6621): _cancelBottomSettle above restores the pre-jump snapshot, so
+  // without this a gentle wheel-up OR wheel-down (or a touch scroll) after the
+  // latch expires would leave the reader pinned and let the next token snap to
+  // the bottom. Establish the unpinned reader-owned state explicitly; a reader
+  // who wants the bottom re-pins by reaching it (<=80px) or pressing End.
+  if(jumpScrollOwned&&(wheelUp||e.type==='touchmove'||(typeof e.deltaY==='number'&&e.deltaY!==0))){
+    _messageUserUnpinned=true;
+    _scrollPinned=false;
+    _nearBottomCount=0;
   }
   if(typeof e.deltaY==='number'&&e.deltaY<0) _lastMessageWheelIntentMs=performance.now();
-  if(e.type==='touchmove'||(typeof e.deltaY==='number'&&e.deltaY< -30)){
-    _cancelBottomSettle();
+  // Keep e.deltaY< -30 as the ordinary direct sticky-unpin threshold.
+  if(e.type==='touchmove'||(typeof e.deltaY==='number'&&e.deltaY< -30)||guardedWheelUp){
     if(e.type==='touchmove') _markMessageTouchScrollIntent(true);
-    if(typeof e.deltaY==='number'&&e.deltaY< -30){
+    if((typeof e.deltaY==='number'&&e.deltaY< -30)||guardedWheelUp){
       _messageUserUnpinned=true;
       _nearBottomCount=0;
       _scrollPinned=false;
@@ -5857,6 +6039,19 @@ function _recordNonMessageScrollIntent(e){
         _scrollPinned=false;
       }
     }
+  }
+  // #4970: record ANY upward message-pane wheel motion as recent wheel intent,
+  // including gentle low-delta trackpad wheels (e.g. deltaY:-5) that never reach
+  // the decisive -30 sticky-unpin threshold below. The post-render artifact
+  // suppression consults _recentMessageWheelIntent() so it cannot swallow a real
+  // gentle scroll-up. Ordinarily this does NOT unpin on its own: the <-30 branch
+  // and the scroll listener's movedUp branch remain the stable threshold. The
+  // exception is an active programmatic-scroll guard. That guard returns before
+  // its listener can see the native scroll event, so even a small capture-phase
+  // upward wheel input must immediately stop live-tail follow (#6414).
+  if(e.type==='touchmove'||(typeof e.deltaY==='number'&&e.deltaY!==0)){
+    const bottomDistance=el.scrollHeight-el.scrollTop-el.clientHeight;
+    if(bottomDistance>120) _lastMessageScrollIntentMs=performance.now();
   }
 }
 function _recentNonMessageScrollIntent(){
@@ -5917,6 +6112,7 @@ if(typeof document!=='undefined'){
 // prevent the new chat's first scroll comparing against the previous chat's
 // scrollTop (Opus stage-302 SHOULD-FIX, #1731 follow-up).
 function _resetScrollDirectionTracker(){
+  _cancelMessageJumpScroll();
   _clearNewMessageScrollCue();
   _lastScrollTop=null;
   _lastMessageClientHeight=null;
@@ -5938,6 +6134,11 @@ function _resetScrollDirectionTracker(){
   _deferredOlderMessagesTimer=0;
 }
 function _resetStreamScrollFollow(){
+  // Cancel any in-flight jump owner FIRST: a new stream is a definitive
+  // pin-to-follow, and _cancelMessageJumpScroll() restores the pre-jump snapshot
+  // (#6621), so it must run BEFORE the pinned-state assignments below or it would
+  // undo them and silently disable auto-follow for the new stream.
+  _cancelBottomSettle();
   _clearNewMessageScrollCue();
   _messageUserUnpinned=false;
   _scrollPinned=true;
@@ -5950,7 +6151,6 @@ function _resetStreamScrollFollow(){
   _lastMessageScrollIntentMs=-Infinity;
   // #4970 review (greptile P1): same hygiene for keyboard scroll intent.
   _lastMessageKeyScrollIntentMs=-Infinity;
-  _cancelBottomSettle();
 }
 if(typeof window!=='undefined'){
   window._resetScrollDirectionTracker=_resetScrollDirectionTracker;
@@ -6029,7 +6229,11 @@ if(typeof window!=='undefined'){
   const el=document.getElementById('messages');
   if(!el) return;
   el.addEventListener('pointerdown',(e)=>{
-    if(e.target===el&&e.offsetX>=el.clientWidth) _scrollbarDragActive=true;
+    if(e.target===el&&e.offsetX>=el.clientWidth){
+      if(typeof _cancelBottomSettle==='function') _cancelBottomSettle();
+      _scrollbarDragActive=true;
+      if(typeof _messageScrollInputGeneration==='number') _messageScrollInputGeneration++;
+    }
   },{passive:true});
   window.addEventListener('pointerup',()=>{
     if(!_scrollbarDragActive) return;
@@ -6074,7 +6278,9 @@ if(typeof window!=='undefined'){
     // Count only when the message pane itself is the scroll target: it is focused,
     // contains the focus, or the pointer is over it (keyboard scroll w/o focus).
     if(a===el||el.contains(a)||el.matches(':hover')){
+      if(typeof _cancelBottomSettle==='function') _cancelBottomSettle();
       const now=performance.now();
+      if(typeof _messageScrollInputGeneration==='number') _messageScrollInputGeneration++;
       _lastMessageKeyScrollIntentMs=now;
       const bottomDistance=el.scrollHeight-el.scrollTop-el.clientHeight;
       if(bottomDistance>120) _lastMessageScrollIntentMs=now;
@@ -6083,8 +6289,11 @@ if(typeof window!=='undefined'){
   let _scrollRaf=0;
   el.addEventListener('scroll',()=>{
     _scheduleMessageVirtualizedRender();
-    if(_programmaticScroll&&(performance.now()-_programmaticScrollSetAt)>150) _programmaticScroll=false;
-    if(_programmaticScroll) return;
+    if(_messageJumpScrollOwner){
+      _scheduleMessageJumpScrollReconcile(_messageJumpScrollOwner.generation);
+      return;
+    }
+    if(_freshProgrammaticScrollActive()) return;
     _markMessageVirtualScrollActive();
     cancelAnimationFrame(_scrollRaf);
     _scrollRaf=requestAnimationFrame(()=>{
@@ -6156,7 +6365,7 @@ if(typeof window!=='undefined'){
         if(nearBottom){
           _nearBottomCount=_nearBottomCount+1;
           if(_nearBottomCount>=2){_scrollPinned=true;_nearBottomCount=0;}
-        }else if(!movedUp && _autoScrollFollow && _scrollPinned){
+        }else if(!movedUp && window._autoScrollFollow && _scrollPinned){
           // Content-grew-beneath-a-pinned-viewport case (NOT a user scroll-away).
           // During streaming on a tall transcript (esp. mobile, where chunks land
           // fast), new content increases scrollHeight under a stationary viewport,
@@ -6866,7 +7075,7 @@ function _shouldFollowMessagesOnDomReplace(){
   // following only for users who are still pinned or effectively at the tail.
   // A broad near-bottom window causes long answers/mobile readers who scroll up
   // a little to read mid-stream to get snapped back to the bottom on completion.
-  return _autoScrollFollow && !_messageUserUnpinned && (_scrollPinned || _isMessagePaneNearBottom(120));
+  return window._autoScrollFollow && !_messageUserUnpinned && (_scrollPinned || _isMessagePaneNearBottom(120));
 }
 function _followMessagesAfterDomReplace(){
   if(_shouldFollowMessagesOnDomReplace()){
@@ -6916,7 +7125,7 @@ function _settleMessageScrollToBottom(force, explicit){
   // active one that may now be in the global _settleRO. (Codex review #3.)
   const ro=new ResizeObserver(()=>{
     if(token!==_bottomSettleToken){ ro.disconnect(); if(_settleRO===ro) _settleRO=null; return; }
-    if((!_autoScrollFollow&&!explicit)||!_scrollPinned||_messageUserUnpinned||_recentNonMessageScrollIntent()){
+    if((!window._autoScrollFollow&&!explicit)||!_scrollPinned||_messageUserUnpinned||_recentNonMessageScrollIntent()){
       ro.disconnect(); if(_settleRO===ro) _settleRO=null;
       _programmaticScroll=false;
       return;
@@ -6955,7 +7164,7 @@ function _settleMessageScrollToBottom(force, explicit){
   _settleFinalTimer=setTimeout(()=>{
     if(token!==_bottomSettleToken) return;
     ro.disconnect(); if(_settleRO===ro) _settleRO=null;
-    if((!_autoScrollFollow&&!explicit)||!_scrollPinned||_messageUserUnpinned||_recentNonMessageScrollIntent()){ _programmaticScroll=false; return; }
+    if((!window._autoScrollFollow&&!explicit)||!_scrollPinned||_messageUserUnpinned||_recentNonMessageScrollIntent()){ _programmaticScroll=false; return; }
     _settleFinalScroll(token);
   },2000);
 }
@@ -6976,7 +7185,12 @@ function _settleFinalScroll(token){
   _deferClearProgrammaticScroll();
 }
 function scrollIfPinned(){
-  if(!_autoScrollFollow) return;
+  if(!window._autoScrollFollow) return;
+  // A jump-to-question owner is mid-flight: it deliberately holds the reader at
+  // the jump target across smooth-scroll frames, so never let a live token
+  // reclaim the bottom while it is active (#6621). _finishMessageJumpScroll()
+  // reconciles the pin state once the jump settles.
+  if(typeof _messageJumpScrollOwner!=='undefined'&&_messageJumpScrollOwner) return;
   if(_messageUserUnpinned){
     // Only scrollToBottom() cleared this flag, so one scroll-up permanently
     // killed auto-follow. Re-pin ONLY when the reader has genuinely returned to
@@ -7001,6 +7215,13 @@ function scrollIfPinned(){
   _settleMessageScrollToBottom(false);
 }
 function scrollToBottom(){
+  // An explicit scroll-to-bottom (End button, or any definitive pin-to-bottom)
+  // supersedes a pending jump-to-question reconciliation: cancel the active jump
+  // owner first so its deferred _finishMessageJumpScroll() can't restore the
+  // pre-jump unpinned snapshot and silently undo this pin (#6621). The jump path
+  // itself never calls scrollToBottom(), and while a jump owner is active the
+  // reader is unpinned so the internal auto-follow callers don't reach here.
+  if(typeof _messageJumpScrollOwner!=='undefined'&&_messageJumpScrollOwner&&typeof _cancelMessageJumpScroll==='function') _cancelMessageJumpScroll();
   _clearNewMessageScrollCue();
   _scrollPinned=true;
   _messageUserUnpinned=false;
@@ -7125,6 +7346,7 @@ function _formatGatewayModelLabel(modelId,labelText,routing){
   const base=usedModel
     ?_compactComposerModelChipLabel(usedModel,getModelLabel(usedModel))
     :_compactComposerModelChipLabel(modelId,labelText||getModelLabel(modelId));
+  if(!routing.provider_changed && !routing.has_failover && !routing.serving_fallback) return base;
   const via=_gatewayRoutingLabel(routing);
   return via?`${base} ${via}`:base;
 }
@@ -7156,11 +7378,23 @@ function _gatewayModelWarningText(routing){
   const used=getModelLabel(routing.used_model||'served model');
   return`Model switched: ${requested} → ${used}`;
 }
-function _latestGatewayRoutingForSession(session){
+function _latestGatewayRoutingForSession(session, currentModelId){
   if(!session)return null;
-  if(session.gateway_routing)return session.gateway_routing;
-  const history=Array.isArray(session.gateway_routing_history)?session.gateway_routing_history:[];
-  return history.length?history[history.length-1]:null;
+  const routing=session.gateway_routing
+    ||(Array.isArray(session.gateway_routing_history)&&session.gateway_routing_history.length
+        ?session.gateway_routing_history[session.gateway_routing_history.length-1]
+        :null);
+  if(!routing)return null;
+  // A routing record only describes the turn it came from. Once the operator
+  // picks a different model, that record is stale — showing it anyway is how
+  // the composer chip ended up pairing a freshly-picked local model name with
+  // the previous turn's cloud fallback provider ("qwen3.6:35b-mlx via Ollama
+  // Cloud"). Only surface it while it still describes the current pick.
+  if(currentModelId===undefined)return routing; // caller didn't opt into the guard
+  const current=_modelPickerOptionIdentity(currentModelId,'');
+  const candidates=[routing.used_model,routing.requested_model].filter(Boolean);
+  const matches=candidates.some(id=>_modelPickerOptionIdentity(id,'')===current);
+  return matches?routing:null;
 }
 
 function _stripXmlToolCallsDisplay(s){
@@ -8669,15 +8903,15 @@ let _playingEdgeAudio=null;
 
 function _buildBrowserUtterance(text, btn){
   const utter=new SpeechSynthesisUtterance(text);
-  const savedVoice=localStorage.getItem('hermes-tts-voice');
+  const savedVoice=localStorage.getItem('ares-tts-voice');
   const voices=speechSynthesis.getVoices();
   if(savedVoice&&voices.length){
     const match=voices.find(v=>v.name===savedVoice);
     if(match) utter.voice=match;
   }
-  const savedRate=parseFloat(localStorage.getItem('hermes-tts-rate'));
+  const savedRate=parseFloat(localStorage.getItem('ares-tts-rate'));
   if(!isNaN(savedRate)) utter.rate=Math.min(2,Math.max(0.5,savedRate));
-  const savedPitch=parseFloat(localStorage.getItem('hermes-tts-pitch'));
+  const savedPitch=parseFloat(localStorage.getItem('ares-tts-pitch'));
   if(!isNaN(savedPitch)) utter.pitch=Math.min(2,Math.max(0,savedPitch));
   utter.onend=()=>{
     _ttsChunkIndex++;
@@ -8712,9 +8946,9 @@ function _playEdgeTtsChunked(text, btn){
       return;
     }
     const chunk=chunks[idx];
-    const voice=localStorage.getItem('hermes-tts-voice')||'zh-CN-XiaoxiaoNeural';
-    const savedRate=parseFloat(localStorage.getItem('hermes-tts-rate'));
-    const savedPitch=parseFloat(localStorage.getItem('hermes-tts-pitch'));
+    const voice=localStorage.getItem('ares-tts-voice')||'zh-CN-XiaoxiaoNeural';
+    const savedRate=parseFloat(localStorage.getItem('ares-tts-rate'));
+    const savedPitch=parseFloat(localStorage.getItem('ares-tts-pitch'));
     let rate='', pitch='';
     if(!isNaN(savedRate)){const pct=Math.round((savedRate-1)*100);const sign=pct>=0?'+':'';rate=sign+pct+'%';}
     if(!isNaN(savedPitch)){const hz=Math.round((savedPitch-1)*50);const sign=hz>=0?'+':'';pitch=sign+hz+'Hz';}
@@ -8778,7 +9012,7 @@ function speakMessage(btn){
   const clean=_stripForTTS(text);
   if(!clean) return;
 
-  const engine=localStorage.getItem('hermes-tts-engine')||'browser';
+  const engine=localStorage.getItem('ares-tts-engine')||'browser';
   if(engine==='openai'){
     _playOpenaiTts(clean, btn);
     return;
@@ -8791,9 +9025,9 @@ function speakMessage(btn){
     _playEdgeTtsChunked(clean, btn);
     return;
   }
-  // Extension-registered TTS engine (window.registerHermesTtsEngine). Synthesize
+  // Extension-registered TTS engine (window.registerARESTtsEngine). Synthesize
   // via the extension, then play through the shared audio-buffer path.
-  if(typeof window._hermesTtsIsRegistered==='function' && window._hermesTtsIsRegistered(engine)){
+  if(typeof window._aresTtsIsRegistered==='function' && window._aresTtsIsRegistered(engine)){
     if(btn) btn.dataset.speaking='1';
     _ttsSpeaking=true;
     const _failReg=function(msg){
@@ -8802,11 +9036,11 @@ function speakMessage(btn){
       if(msg&&typeof showToast==='function') showToast(msg,4000,'error');
     };
     const _opts={
-      voice: localStorage.getItem('hermes-tts-voice')||'',
-      rate: parseFloat(localStorage.getItem('hermes-tts-rate')),
-      pitch: parseFloat(localStorage.getItem('hermes-tts-pitch')),
+      voice: localStorage.getItem('ares-tts-voice')||'',
+      rate: parseFloat(localStorage.getItem('ares-tts-rate')),
+      pitch: parseFloat(localStorage.getItem('ares-tts-pitch')),
     };
-    Promise.resolve(window._hermesTtsSynth(engine, clean, _opts))
+    Promise.resolve(window._aresTtsSynth(engine, clean, _opts))
       .then(function(buf){ return _playAudioBuf(buf, btn, 'TTS'); })
       .catch(function(e){ _failReg((e&&e.message)||'TTS engine failed'); });
     return;
@@ -8949,9 +9183,9 @@ function stopTTS(){
 }
 
 function autoReadLastAssistant(){
-  const engine=localStorage.getItem('hermes-tts-engine')||'browser';
+  const engine=localStorage.getItem('ares-tts-engine')||'browser';
   if(engine==='browser'&&!('speechSynthesis' in window)) return;
-  const pref=localStorage.getItem('hermes-tts-auto-read');
+  const pref=localStorage.getItem('ares-tts-auto-read');
   if(pref!=='true') return;
   // Find the last assistant message segment in the DOM
   const rows=document.querySelectorAll('.msg-row[data-role="assistant"], .assistant-segment[data-raw-text]');
@@ -8973,17 +9207,17 @@ function autoReadLastAssistant(){
     _playEdgeTtsChunked(clean, null);
     return;
   }
-  // Extension-registered TTS engine (window.registerHermesTtsEngine): synth via
+  // Extension-registered TTS engine (window.registerARESTtsEngine): synth via
   // the extension, then play through the shared audio-buffer path. Mirrors the
   // registered-engine branch in speakMessage() so auto-read honors the selection.
-  if(typeof window._hermesTtsIsRegistered==='function' && window._hermesTtsIsRegistered(engine)){
+  if(typeof window._aresTtsIsRegistered==='function' && window._aresTtsIsRegistered(engine)){
     _ttsSpeaking=true;
     const _opts={
-      voice: localStorage.getItem('hermes-tts-voice')||'',
-      rate: parseFloat(localStorage.getItem('hermes-tts-rate')),
-      pitch: parseFloat(localStorage.getItem('hermes-tts-pitch')),
+      voice: localStorage.getItem('ares-tts-voice')||'',
+      rate: parseFloat(localStorage.getItem('ares-tts-rate')),
+      pitch: parseFloat(localStorage.getItem('ares-tts-pitch')),
     };
-    Promise.resolve(window._hermesTtsSynth(engine, clean, _opts))
+    Promise.resolve(window._aresTtsSynth(engine, clean, _opts))
       .then(function(buf){ return _playAudioBuf(buf, null, 'TTS'); })
       .catch(function(){ _ttsSpeaking=false; _playingEdgeAudio=null; });
     return;
@@ -9001,8 +9235,8 @@ function autoReadLastAssistant(){
 }
 
 // ── Reconnect banner (B4/B5: reload resilience) ──
-const INFLIGHT_KEY = 'hermes-webui-inflight'; // localStorage key for in-flight session tracking
-const INFLIGHT_STATE_KEY = 'hermes-webui-inflight-state'; // localStorage snapshots for mid-stream reload recovery
+const INFLIGHT_KEY = 'ares-webui-inflight'; // localStorage key for in-flight session tracking
+const INFLIGHT_STATE_KEY = 'ares-webui-inflight-state'; // localStorage snapshots for mid-stream reload recovery
 const INFLIGHT_STATE_DEFAULT_LIMITS = {
   maxSessions:8,
   messages:24,
@@ -9551,7 +9785,149 @@ document.addEventListener('visibilitychange',_syncSystemHealthMonitorVisibility)
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startSystemHealthMonitor);
 else startSystemHealthMonitor();
 
-// ── Hermes agent/gateway heartbeat alert (#716) ──
+// ── Live System & AI Model Telemetry Pill & Popover ──
+let _lastSystemStats = null;
+let _systemStatsTimer = null;
+const SYSTEM_STATS_INTERVAL_MS = 3000;
+
+async function pollSystemStats() {
+  if (document.visibilityState !== 'visible') return;
+  try {
+    const stats = await api('/api/system/stats', { timeoutToast: false });
+    if (!stats || !stats.ok) return;
+    _lastSystemStats = stats;
+    _updateTitlebarStatsPill(stats);
+    _updateSystemTelemetryPopover(stats);
+  } catch (_) {}
+}
+
+function _updateTitlebarStatsPill(stats) {
+  const label = $('titlebarStatsLabel');
+  const badge = $('titlebarModelBadge');
+  const dot = $('titlebarStatsDot');
+  if (!label || !badge || !dot) return;
+
+  const cpu = stats.host?.cpu_percent ?? 0;
+  const mem = stats.host?.memory?.used_gb ?? 0;
+  label.textContent = `⚡ ${cpu}% · 💾 ${mem} GB`;
+
+  const ai = stats.ai_runtimes || {};
+  if (ai.is_local_model_loaded && ai.active_model_in_vram) {
+    const shortName = ai.active_model_in_vram.split(':')[0];
+    badge.textContent = `🧠 ${shortName} (VRAM)`;
+    badge.style.background = 'rgba(59,130,246,0.2)';
+    badge.style.color = '#60a5fa';
+    dot.classList.add('model-active');
+  } else if (ai.ollama?.available || ai.jaeger?.available) {
+    badge.textContent = 'AI Ready';
+    badge.style.background = 'rgba(16,185,129,0.15)';
+    badge.style.color = '#34d399';
+    dot.classList.remove('model-active');
+  } else {
+    badge.textContent = 'AI Cloud';
+    badge.style.background = 'rgba(156,163,175,0.15)';
+    badge.style.color = 'var(--muted)';
+    dot.classList.remove('model-active');
+  }
+}
+
+function toggleSystemTelemetryModal(event) {
+  if (event) event.stopPropagation();
+  let pop = $('systemTelemetryPopover');
+  if (pop) {
+    pop.remove();
+    return;
+  }
+
+  const btn = $('titlebarSystemStatsBtn');
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+
+  pop = document.createElement('div');
+  pop.id = 'systemTelemetryPopover';
+  pop.className = 'system-telemetry-popover';
+  pop.style.top = `${rect.bottom + 8}px`;
+  pop.style.left = `${Math.max(12, rect.left)}px`;
+
+  document.body.appendChild(pop);
+  _updateSystemTelemetryPopover(_lastSystemStats);
+
+  function _closeOnClickOutside(e) {
+    if (pop && !pop.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+      pop.remove();
+      document.removeEventListener('click', _closeOnClickOutside);
+    }
+  }
+  setTimeout(() => document.addEventListener('click', _closeOnClickOutside), 10);
+  void pollSystemStats();
+}
+
+function _updateSystemTelemetryPopover(stats) {
+  const pop = $('systemTelemetryPopover');
+  if (!pop || !stats) return;
+
+  const host = stats.host || {};
+  const mem = host.memory || {};
+  const ai = stats.ai_runtimes || {};
+  const ollama = ai.ollama || {};
+  const jaeger = ai.jaeger || {};
+
+  let modelsHtml = '<div style="color:var(--muted);font-size:11px">No local models currently loaded in VRAM</div>';
+  if (ollama.models && ollama.models.length > 0) {
+    modelsHtml = ollama.models.map(m => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+        <span style="font-weight:600;color:var(--text)">${m.name}</span>
+        <span style="font-size:10px;background:rgba(59,130,246,0.15);color:#60a5fa;padding:1px 5px;border-radius:4px">${m.size_vram_formatted} VRAM</span>
+      </div>
+    `).join('');
+  }
+
+  pop.innerHTML = `
+    <div class="system-telemetry-head">
+      <span class="system-telemetry-title">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+        System & AI Health (${stats.profile || assistantDisplayName()})
+      </span>
+      <span style="font-size:10px;color:var(--muted)">Live</span>
+    </div>
+    <div class="system-telemetry-grid">
+      <div class="system-telemetry-card">
+        <span class="system-telemetry-card-title">CPU Load</span>
+        <span class="system-telemetry-card-value">${host.cpu_percent ?? 0}%</span>
+      </div>
+      <div class="system-telemetry-card">
+        <span class="system-telemetry-card-title">RAM (Unified)</span>
+        <span class="system-telemetry-card-value">${mem.formatted || '0 GB'}</span>
+      </div>
+    </div>
+    <div class="system-telemetry-runtime">
+      <div class="system-telemetry-runtime-header">
+        <span>Ollama VRAM Runtime</span>
+        <span style="color:${ollama.available ? '#34d399' : 'var(--muted)'}">${ollama.status || 'offline'}</span>
+      </div>
+      ${modelsHtml}
+    </div>
+    <div class="system-telemetry-runtime">
+      <div class="system-telemetry-runtime-header">
+        <span>Jaeger AI Bridge</span>
+        <span style="color:${jaeger.available ? '#34d399' : 'var(--muted)'}">${jaeger.status || 'disconnected'}</span>
+      </div>
+      <div style="font-size:10.5px;color:var(--muted)">${jaeger.message || 'STDIO / Versioned Contract v7'}</div>
+    </div>
+  `;
+}
+
+function startSystemStatsMonitor() {
+  // Titlebar no longer shows a CPU/VRAM chip — it advertised "model
+  // loaded" without any unload/optimize action. Insights still has
+  // system health. Keep this as a no-op so leftover callers are safe.
+  if (_systemStatsTimer) {
+    clearInterval(_systemStatsTimer);
+    _systemStatsTimer = null;
+  }
+}
+
+// ── Optional ARES messaging gateway heartbeat alert (#716) ──
 const AGENT_HEALTH_INTERVAL_MS=30000;
 const AGENT_HEALTH_DISMISSED_KEY='agent-health-dismissed';
 let _agentHealthTimer=null;
@@ -9577,7 +9953,7 @@ function _showAgentHealthAlert(payload){
   const title=$('agentHealthTitle');
   const details=$('agentHealthDetails');
   if(!banner) return;
-  if(title) title.textContent='Hermes agent is not responding';
+  if(title) title.textContent='ARES messaging gateway is not responding';
   const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
   if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
   banner.hidden=false;
@@ -9687,7 +10063,7 @@ function _formatUpdateTargetStatus(label,info){
 }
 function _formatManualUpdateInstruction(info){
   if(!(info&&info.no_git&&info.manual_update&&info.behind>0)) return null;
-  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/hermes-webui:latest');
+  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/ares-webui:latest');
 }
 function _formatUpdateCheckError(label,info){
   if(!info||!info.error) return null;
@@ -9768,7 +10144,7 @@ function toggleUpdateSummaryExpanded(){
   panel.classList.toggle('update-summary-expanded',expanded);
   _syncUpdateSummaryExpandButton(expanded);
 }
-const WHATS_NEW_SUMMARY_STORAGE_KEY='hermes-whats-new-generated-summaries';
+const WHATS_NEW_SUMMARY_STORAGE_KEY='ares-whats-new-generated-summaries';
 const WHATS_NEW_SUMMARY_STORAGE_MAX_BYTES=256*1024;
 function _summaryStorageByteLength(value){
   const text=typeof value==='string'?value:JSON.stringify(value);
@@ -10035,7 +10411,7 @@ function _i18nUpdateText(key, fallback){
 }
 function dismissUpdate(){
   const b=$('updateBanner');if(b)b.classList.remove('visible');
-  sessionStorage.setItem('hermes-update-dismissed','1');
+  sessionStorage.setItem('ares-update-dismissed','1');
 }
 function _isUpdateApplyNetworkError(error){
   if(error && error.status) return false;
@@ -10104,8 +10480,8 @@ async function applyUpdates(){
     }
     const stashConflictMessage=stashConflictMessages.join('\n\n');
     showToast(stashConflictMessage||'Update applied — restarting…',stashConflictMessages.length?10000:undefined,stashConflictMessages.length?'warning':undefined);
-    sessionStorage.removeItem('hermes-update-checked');
-    sessionStorage.removeItem('hermes-update-dismissed');
+    sessionStorage.removeItem('ares-update-checked');
+    sessionStorage.removeItem('ares-update-dismissed');
     _waitForServerThenReload({baselineServerIdentity});
   }catch(e){
     const msg=_formatUpdateApplyExceptionMessage(e);
@@ -10153,8 +10529,8 @@ async function applyClearUpdateLock(btn){
   try{
     const res=await api('/api/updates/clear_lock',{method:'POST',body:JSON.stringify({target}),timeoutMs:60000});
     if(res.ok){
-      sessionStorage.removeItem('hermes-update-checked');
-      sessionStorage.removeItem('hermes-update-dismissed');
+      sessionStorage.removeItem('ares-update-checked');
+      sessionStorage.removeItem('ares-update-dismissed');
       showToast('Update applied — restarting…');
       _waitForServerThenReload({});
     } else if(res.lock_held){
@@ -10300,8 +10676,8 @@ async function forceUpdate(btn){
       return;
     }
     showToast('Force update applied — restarting…');
-    sessionStorage.removeItem('hermes-update-checked');
-    sessionStorage.removeItem('hermes-update-dismissed');
+    sessionStorage.removeItem('ares-update-checked');
+    sessionStorage.removeItem('ares-update-dismissed');
     _waitForServerThenReload({baselineServerIdentity});
   }catch(e){
     if(errEl){errEl.textContent='Force update failed: '+e.message;errEl.style.display='block';}
@@ -10450,22 +10826,126 @@ function _pendingCurrentTailUserMessage(messages){
   return null;
 }
 
+// Precision-only epsilon when matching a transcript row against
+// session.pending_started_at. The server stamps the active turn's user row with
+// the exact pending_started_at float; state.db round-trips can lose
+// sub-microsecond precision, so 1e-6 absorbs float drift without ever treating a
+// whole-second (or sub-second) difference as identity. Anything wider is
+// ambiguous — a fast "继续"/"continue" double-send lands ~1s after the previous
+// turn — and must NOT match: fail toward materializing the pending turn (a
+// harmless transient duplicate the settle render clears) rather than hiding a
+// turn and moving its attachments onto an earlier row.
+const _PENDING_ACTIVE_TURN_TS_EPSILON=1e-6;
+
+function _messageTimestampSeconds(msg){
+  if(!msg) return null;
+  const raw=msg._ts!=null?msg._ts:msg.timestamp;
+  const value=Number(raw);
+  return Number.isFinite(value)&&value>0?value:null;
+}
+
+/**
+ * Exact-identity match for the active turn's user row via its
+ * `_active_turn_token`, mirroring the server's `build_active_turn_token`
+ * ("{stream_id}:{started_at}") stamped by the eager-checkpoint path. The token
+ * embeds the stream_id, which no other turn can share, so a row carrying the
+ * current session's token IS the active turn — no timestamp tolerance needed.
+ */
+function _activeTurnTokenMatches(msg, session){
+  if(!msg||typeof msg._active_turn_token!=='string') return false;
+  const streamId=session&&session.active_stream_id;
+  const startedAt=Number(session&&session.pending_started_at);
+  if(!streamId||!Number.isFinite(startedAt)||startedAt<=0) return false;
+  const sep=msg._active_turn_token.lastIndexOf(':');
+  if(sep<=0) return false;
+  if(msg._active_turn_token.slice(0,sep).trim()!==String(streamId).trim()) return false;
+  const tokenStarted=Number(msg._active_turn_token.slice(sep+1));
+  return Number.isFinite(tokenStarted)&&tokenStarted>0
+    && Math.abs(tokenStarted-startedAt)<=_PENDING_ACTIVE_TURN_TS_EPSILON;
+}
+
+/**
+ * Find the active turn's user row even when the current turn's output already
+ * follows it in the transcript.
+ *
+ * While a turn is live the server can reconcile the current user row into the
+ * returned transcript (the sidecar/state.db merge picks it up from state.db,
+ * where the agent writes it immediately) while `pending_user_message` is still
+ * set. The row is then followed by that same turn's assistant/tool rows, so the
+ * strict tail scan in `_pendingCurrentTailUserMessage` stops at the completed
+ * assistant and reports "no current user row" — and the caller materializes the
+ * pending prompt a SECOND time, rendering a duplicate user bubble until the
+ * settle render replaces the list.
+ *
+ * Scanning past assistant/tool rows alone would be wrong: a user who submits the
+ * same text twice in a row (a plain "继续" follow-up) legitimately gets two
+ * identical user turns, and matching on text would swallow the new one. The
+ * discriminator is therefore exact identity, never proximity: the active turn's
+ * row either carries the server-stamped `_active_turn_token` (stream_id +
+ * started_at — unique to this turn), or its timestamp equals `pending_started_at`
+ * within a precision-only epsilon that absorbs float/state.db drift but never a
+ * full second. A whole-second (or sub-second) mismatch is ambiguous and returns
+ * null so the caller materializes the pending turn — the transient duplicate is
+ * harmless, hiding a turn + moving its attachments is not. Text equality is
+ * still required downstream, so a false match needs identical text AND an exact
+ * identity signal.
+ */
+function _pendingActiveTurnUserMessage(messages, session){
+  const startedAt=Number(session?.pending_started_at);
+  if(!Number.isFinite(startedAt)||startedAt<=0) return null;
+  const list=Array.isArray(messages)?messages:[];
+  for(let i=list.length-1;i>=0;i--){
+    const msg=list[i];
+    if(!msg||String(msg.role||'')!=='user') continue;
+    if(typeof _isContextCompactionMessage==='function'&&_isContextCompactionMessage(msg)) continue;
+    // Unambiguous: the row carries the active turn's exact token
+    // (stream_id + started_at) stamped by the server's eager-checkpoint path.
+    if(typeof _activeTurnTokenMatches==='function'&&_activeTurnTokenMatches(msg,session)) return msg;
+    // Unambiguous: the row's timestamp IS pending_started_at within
+    // precision-only float drift (never a whole second).
+    const ts=_messageTimestampSeconds(msg);
+    if(ts===null) continue;
+    if(Math.abs(ts-startedAt)<=_PENDING_ACTIVE_TURN_TS_EPSILON) return msg;
+  }
+  // Any wider drift (whole-second truncation, a rapid repeat ~1s later) is
+  // ambiguous: return null so getPendingSessionMessage() materializes the
+  // pending turn rather than guessing.
+  return null;
+}
+
 function getPendingSessionMessage(session, messagesOverride=null){
   const text=String(session?.pending_user_message||'').trim();
   if(!text) return null;
   const attachments=Array.isArray(session?.pending_attachments)?session.pending_attachments.filter(Boolean):[];
   const sourceMessages=Array.isArray(messagesOverride)?messagesOverride:session?.messages;
   const messages=Array.isArray(sourceMessages)?sourceMessages:[];
+  const pendingCandidate={role:'user',content:text};
+  const _matchesPending=(row)=>{
+    if(!row) return false;
+    return typeof _sameTranscriptMessage==='function'
+      ? _sameTranscriptMessage(row,pendingCandidate)
+      : String(msgContent(row)||'').trim()===text;
+  };
+  const _adoptExistingRow=(row)=>{
+    if(attachments.length&&!row.attachments?.length) row.attachments=attachments;
+    return null;
+  };
   const currentTailUser=_pendingCurrentTailUserMessage(messages);
   if(currentTailUser){
-    const pendingCandidate={role:'user',content:text};
-    const sameCurrentTurn=typeof _sameTranscriptMessage==='function'
-      ? _sameTranscriptMessage(currentTailUser,pendingCandidate)
-      : String(msgContent(currentTailUser)||'').trim()===text;
-    if(sameCurrentTurn){
-      if(attachments.length&&!currentTailUser.attachments?.length) currentTailUser.attachments=attachments;
-      return null;
-    }
+    const sameCurrentTurn=_matchesPending(currentTailUser);
+    if(sameCurrentTurn) return _adoptExistingRow(currentTailUser);
+  }
+  // Fallback: the current turn's user row is already in the transcript but the
+  // strict tail scan above could not see it because this turn's assistant/tool
+  // output follows it. Matched by pending_started_at, so previous turns that
+  // repeat the same text are unaffected. Guarded with typeof so a partial load
+  // (or a static probe that extracts only some helpers) degrades to the
+  // original strict-tail behaviour instead of throwing.
+  const activeTurnUser=typeof _pendingActiveTurnUserMessage==='function'
+    ? _pendingActiveTurnUserMessage(messages,session)
+    : null;
+  if(activeTurnUser&&activeTurnUser!==currentTailUser&&_matchesPending(activeTurnUser)){
+    return _adoptExistingRow(activeTurnUser);
   }
   return {
     role:'user',
@@ -10527,7 +11007,7 @@ function syncTopbar(){
     if(typeof _syncWorkspaceHeadingState==='function') _syncWorkspaceHeadingState();
     if(typeof syncModelChip==='function') syncModelChip();
     if(typeof syncTerminalButton==='function') syncTerminalButton();
-    if(typeof _syncHermesPanelSessionActions==='function') _syncHermesPanelSessionActions();
+    if(typeof _syncARESPanelSessionActions==='function') _syncARESPanelSessionActions();
     else {
       const sidebarName=$('sidebarWsName');
       if(sidebarName && sidebarName.textContent==='Workspace'){
@@ -10648,14 +11128,14 @@ function syncTopbar(){
   // Show Clear button only when session has messages
   const clearBtn=$('btnClearConv');
   if(clearBtn) clearBtn.style.display=(S.messages&&S.messages.filter(msg=>msg.role!=='tool').length>0)?'':'none';
-  if(typeof _syncHermesPanelSessionActions==='function') _syncHermesPanelSessionActions();
+  if(typeof _syncARESPanelSessionActions==='function') _syncARESPanelSessionActions();
   if(typeof syncWorkspaceDisplays==='function') syncWorkspaceDisplays();
   if(typeof syncTerminalButton==='function') syncTerminalButton();
   // modelSelect already set above
   // Update profile chip label.
   // The chip is the profile-SWITCHER trigger (it fronts the profile dropdown) and
   // governs where the next message / new chat routes — both follow the client
-  // active profile (the hermes_profile cookie, set only by /api/profile/switch).
+  // active profile (the ares_profile cookie, set only by /api/profile/switch).
   // It must therefore reflect S.activeProfile, NOT the loaded session's profile.
   // #3331 briefly keyed this on S.session.profile so the label would track the
   // session being browsed, but loadSession() never updates S.activeProfile, so
@@ -10786,7 +11266,7 @@ function _createAssistantTurn(tsTitle='', tpsText=''){
 }
 function _setLatestAssistantTurnLandmark(turn, isLatest){
   if(!turn) return;
-  const label='Latest Hermes response';
+  const label='Latest ARES response';
   if(isLatest){
     if(typeof document!=='undefined'){
       document.querySelectorAll('.assistant-turn[data-latest-assistant-response="true"]').forEach(el=>{
@@ -11091,7 +11571,7 @@ function _thinkingCardHtml(text, open){
   const copyBtn=`<button class="thinking-copy-btn" onclick="event.stopPropagation();_copyThinkingText(this)" title="${t('copy')}" aria-label="${t('copy')}">${li('copy',12)}</button>`;
   const shouldOpen=!!open||_worklogDetailsExpandedDefault();
   const classes=`thinking-card${shouldOpen?' open':''}`;
-  return `<div class="${classes}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thinking')}</span><span class="thinking-card-btn-row">${copyBtn}<span class="thinking-card-toggle">${li('chevron-right',12)}</span></span></div><div class="thinking-card-body"><pre>${esc(clean)}</pre></div></div>`;
+  return `<div class="${classes}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thought_process')}</span><span class="thinking-card-btn-row">${copyBtn}<span class="thinking-card-toggle">${li('chevron-right',12)}</span></span></div><div class="thinking-card-body"><pre>${esc(clean)}</pre></div></div>`;
 }
 function isSimplifiedToolCalling(){
   return window._simplifiedToolCalling!==false;
@@ -11511,7 +11991,7 @@ function _syncTransparentEventControls(turn){
     label.setAttribute('data-transparent-tool-count',String(toolCount));
   }
   bar.setAttribute('data-tool-count',String(toolCount));
-  // Wire the Hermes chat name tag toggle for the live turn.
+  // Wire the ARES chat name tag toggle for the live turn.
   _wireTransparentTurnToggle(turn);
   // Apply recency fade so the newest activity stands out while streaming. The
   // fade helper is internally gated to the live turn, so this no-ops on settled
@@ -11713,7 +12193,7 @@ function _decorateTransparentEventRow(row, opts){
       if(btnRow&&btnRow.parentNode===header&&!btnRow.children.length) btnRow.remove();
       header.style.flexDirection='row';
       const label=header.querySelector('.thinking-card-label');
-      if(label) label.textContent='Thinking';
+      if(label) label.textContent=(typeof t==='function'?t('thought_process'):'Thought process');
       let preview=header.querySelector('.transparent-event-preview,.transparent-event-thinking-preview');
       const previewText=_transparentEventPreview(opts.preview||opts.text||row.textContent||'');
       if(previewText){
@@ -11786,7 +12266,7 @@ function _setTransparentRowsExpanded(root, expanded){
     _setTransparentCardOpen(card,!!expanded);
   });
 }
-// ── Transparent turn-level collapse (Hermes chat name tag) ───────────────
+// ── Transparent turn-level collapse (ARES chat name tag) ───────────────
 // In transparent_stream mode the assistant role label is the turn's "name
 // tag". Clicking it collapses the entire event stack underneath so the
 // transcript shows only the final answer (Output only). A chevron on the
@@ -11951,7 +12431,7 @@ function _renderTransparentTurnFooter(turn, opts){
 // finalized into a settled assistant turn (the live attribute is removed in
 // _convertLiveActivityGroupToSettled / when liveAssistantTurn loses its id).
 let _liveActivityUserExpanded;
-const _activityDisclosureStoragePrefix='hermes-activity-disclosure:';
+const _activityDisclosureStoragePrefix='ares-activity-disclosure:';
 function _activityDisclosureStorageKey(activityKey){
   if(!activityKey||!S.session||!S.session.session_id) return null;
   return _activityDisclosureStoragePrefix+S.session.session_id+':'+activityKey;
@@ -12761,7 +13241,7 @@ function isLiveAnchorActivitySceneOwner(streamId){
   return !streamId||!current||String(streamId)===current;
 }
 function _projectLiveAnchorActivitySceneForStream(streamId, mode){
-  const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
+  const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
   const map=(typeof window!=='undefined')?window._liveAnchorRegistries:null;
   const registry=map&&streamId?map.get(streamId):null;
   if(!api||!registry||typeof api.projectAssistantTurnAnchorActivityScene!=='function') return null;
@@ -12809,6 +13289,23 @@ function _prepareLiveAnchorScrollRebuildGuard(scrollSnapshot){
       }
     },
   };
+}
+function _restoreLiveAnchorScrollSnapshotAfterRebuild(scrollSnapshot, scrollRebuildGuard){
+  if(!scrollSnapshot) return;
+  const hasHeightGuard=!!(scrollRebuildGuard&&scrollRebuildGuard.release);
+  // Pinned renders have no height guard to release, but still need the same
+  // queued ownership check: a reader can provide real input before the frame
+  // settles, and that input must win over the captured tail position.
+  if(!hasHeightGuard&&scrollSnapshot.pinned!==true) return;
+  requestAnimationFrame(()=>{
+    if(hasHeightGuard) scrollRebuildGuard.release();
+    // Only re-restore the unpinned snapshot if the reader is STILL unpinned at
+    // rAF time. If they re-pinned between guard-engage and this frame, the
+    // stale re-restore would yank them back off the bottom (Opus gate finding).
+    if(scrollSnapshot.pinned===true||_messageUserUnpinned){
+      _restoreMessageScrollSnapshotSameFrame(scrollSnapshot);
+    }
+  });
 }
 function _resetMismatchedLiveAssistantTurnForSession(turn, sessionId){
   const sid=String(sessionId||'');
@@ -12959,15 +13456,7 @@ function renderLiveAnchorActivityScene(streamId, scene, opts){
   _dedupeLiveProcessedWorklogAnchors(turn);
   if(typeof _moveLiveRunStatusToTurnEnd==='function') _moveLiveRunStatusToTurnEnd();
   _restoreMessageScrollSnapshotSameFrame(scrollSnapshot);
-  if(scrollRebuildGuard&&scrollRebuildGuard.release){
-    requestAnimationFrame(()=>{
-      scrollRebuildGuard.release();
-      // Only re-restore the unpinned snapshot if the reader is STILL unpinned at
-      // rAF time. If they re-pinned between guard-engage and this frame, the
-      // stale re-restore would yank them back off the bottom (Opus gate finding).
-      if(_messageUserUnpinned) _restoreMessageScrollSnapshotSameFrame(scrollSnapshot);
-    });
-  }
+  _restoreLiveAnchorScrollSnapshotAfterRebuild(scrollSnapshot,scrollRebuildGuard);
   if(!scrollRebuildGuard.readerAwayFromBottom&&typeof scrollIfPinned==='function') scrollIfPinned();
   return true;
 }
@@ -13073,12 +13562,7 @@ function _renderLiveAnchorActivitySceneTransparent(streamId, scene, opts){
   if(renderedRows.length) _syncTransparentEventControls(turn);
   if(typeof _moveLiveRunStatusToTurnEnd==='function') _moveLiveRunStatusToTurnEnd();
   _restoreMessageScrollSnapshotSameFrame(scrollSnapshot);
-  if(scrollRebuildGuard&&scrollRebuildGuard.release){
-    requestAnimationFrame(()=>{
-      scrollRebuildGuard.release();
-      if(_messageUserUnpinned) _restoreMessageScrollSnapshotSameFrame(scrollSnapshot);
-    });
-  }
+  _restoreLiveAnchorScrollSnapshotAfterRebuild(scrollSnapshot,scrollRebuildGuard);
   if(!scrollRebuildGuard.readerAwayFromBottom&&typeof scrollIfPinned==='function') scrollIfPinned();
   return !!renderedRows.length;
 }
@@ -13193,7 +13677,13 @@ function _bindTransparentFadeCleanup(body){
   body.addEventListener('animationend', e=>{
     const span = e.target;
     if(!span || !span.classList || !span.classList.contains('stream-fade-word')) return;
-    span.replaceWith(document.createTextNode(span.textContent || ''));
+    // Keep the animated inline node stable for the lifetime of the live turn,
+    // exactly like _streamFadeBindCleanup() in messages.js. Replacing each word
+    // with a fresh text node makes native scroll anchoring choose a new anchor
+    // while the transparent prose row is still growing, producing a visible
+    // vertical bounce. Final settlement rebuilds plain persisted DOM.
+    span.classList.remove('is-new');
+    if(span.style) span.style.removeProperty('--stream-fade-ms');
   });
 }
 
@@ -14932,7 +15422,7 @@ function _idLinkedHistoricalTurnScene(messages, turnStart, turnEnd, options){
   const end=Math.min(list.length,Math.max(start,Number(turnEnd)||0));
   const opts=options&&typeof options==='object'?options:{};
   const sessionId=String(opts.sessionId||opts.session_id||'').trim();
-  const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
+  const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
   if(!sessionId||!api||typeof api.projectAssistantTurnAnchorHistoricalTranscriptScene!=='function') return null;
 
   const declarations=[];
@@ -15086,9 +15576,40 @@ function _captureMessageScrollSnapshot(){
     top:el.scrollTop,
     bottom,
     scrollHeight:el.scrollHeight,
+    inputGeneration:typeof _messageScrollInputGeneration==='number' ? _messageScrollInputGeneration : 0,
     pinned:readerAwayFromBottom?false:_shouldFollowMessagesOnDomReplace(),
     userUnpinned:readerAwayFromBottom?true:_messageUserUnpinned,
   };
+}
+function _messageScrollSnapshotInputChanged(snapshot){
+  if(!snapshot) return false;
+  const captured=Number(snapshot.inputGeneration);
+  const current=typeof _messageScrollInputGeneration==='number' ? _messageScrollInputGeneration : captured;
+  return Number.isFinite(captured)&&Number.isFinite(current)&&current!==captured;
+}
+function _abandonMessageScrollSnapshot(){
+  const el=$('messages');
+  if(!el){
+    _messageUserUnpinned=true;
+    _scrollPinned=false;
+    _nearBottomCount=0;
+    return;
+  }
+  _lastScrollTop=el.scrollTop||0;
+  _lastMessageClientHeight=el.clientHeight||0;
+  // A generation mismatch abandons only the stale snapshot write. Reconcile
+  // ownership from the live viewport so a reader who moved down to the true
+  // bottom is immediately re-pinned instead of being stranded sticky-unpinned.
+  const bottomDistance=el.scrollHeight-el.scrollTop-el.clientHeight;
+  if(bottomDistance<=80){
+    _messageUserUnpinned=false;
+    _scrollPinned=true;
+    _nearBottomCount=2;
+  }else{
+    _messageUserUnpinned=true;
+    _scrollPinned=false;
+    _nearBottomCount=0;
+  }
 }
 function _restorePinnedMessageScrollSnapshot(snapshot){
   const el=$('messages');
@@ -15116,6 +15637,10 @@ function _restoreMessageScrollSnapshot(snapshot){
   // activity rebuilds can remount an older top-of-viewport anchor and yank a
   // pinned streaming transcript upward. Semantic anchors remain for manual
   // unpinned reading positions below.
+  if(typeof _messageScrollSnapshotInputChanged==='function'&&_messageScrollSnapshotInputChanged(snapshot)){
+    if(typeof _abandonMessageScrollSnapshot==='function') _abandonMessageScrollSnapshot();
+    return;
+  }
   if(_restorePinnedMessageScrollSnapshot(snapshot)) return;
   let restoredViaAnchor=(snapshot.anchor&&typeof _restoreMessageViewportAnchor==='function')
     ? _restoreMessageViewportAnchor(snapshot.anchor,0)
@@ -15334,7 +15859,14 @@ function _restoreMessageScrollSnapshotSameFrame(snapshot){
   // Same-frame live DOM updates (tool/worklog/activity rows) are the hot path for
   // streaming. Pinned followers must stay tail-relative here too; restoring the
   // semantic viewport anchor is only safe for explicitly unpinned readers.
+  if(typeof _messageScrollSnapshotInputChanged==='function'&&_messageScrollSnapshotInputChanged(snapshot)){
+    if(typeof _abandonMessageScrollSnapshot==='function') _abandonMessageScrollSnapshot();
+    return;
+  }
   if(_restorePinnedMessageScrollSnapshot(snapshot)) return;
+  // A delayed rAF restore must not overwrite a position the reader changed
+  // after capture. Recent-intent timestamps are lossy; the generation is
+  // monotonic and therefore preserves snapshot ownership exactly.
   let restoredViaAnchor=(snapshot.anchor&&typeof _restoreMessageViewportAnchor==='function')
     ? _restoreMessageViewportAnchor(snapshot.anchor,0)
     : false;
@@ -15346,6 +15878,10 @@ function _restoreMessageScrollSnapshotSameFrame(snapshot){
   if(!restoredViaAnchor){
     const maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
     const bottom=Number(snapshot.bottom);
+    // Mobile/touch viewports have native overflow anchoring to hold an
+    // unpinned reader across a rebuild. Desktop deliberately disables that
+    // browser behavior, so it must continue into the explicit fallback below.
+    const _fbTouchHold=(typeof _isTouchLikeMessageViewport==='function' && _isTouchLikeMessageViewport(el));
     // #5637: when the reader has scrolled UP into history (userUnpinned) and the
     // semantic anchor restore failed, do NOT snap scrollTop to the captured
     // ABSOLUTE snapshot.top. During streaming, the live activity-scene refresh
@@ -15355,7 +15891,7 @@ function _restoreMessageScrollSnapshotSameFrame(snapshot){
     // untouched lets the browser's own scroll anchoring hold the reader's
     // position. Pinned / near-bottom readers still get the tail-relative restore
     // below (that path is correct and must run).
-    if(snapshot.userUnpinned===true&&snapshot.pinned!==true){
+    if(snapshot.userUnpinned===true&&snapshot.pinned!==true&&_fbTouchHold){
       _lastScrollTop=el.scrollTop;_lastMessageClientHeight=el.clientHeight;
       _messageUserUnpinned=true;
       _scrollPinned=false;
@@ -15386,7 +15922,6 @@ function _restoreMessageScrollSnapshotSameFrame(snapshot){
     const _grewSinceSnap=Number.isFinite(_snapSH)&&_snapSH>0&&(el.scrollHeight-_snapSH)>4;
     const _fbActiveIntent=(typeof _recentMessageScrollIntent==='function' && _recentMessageScrollIntent())
       || (typeof _recentMessageTouchScrollIntent==='function' && _recentMessageTouchScrollIntent());
-    const _fbTouchHold=(typeof _isTouchLikeMessageViewport==='function' && _isTouchLikeMessageViewport(el));
     if(_fbTouchHold && snapshot.pinned!==true && _grewSinceSnap && !_fbActiveIntent
        && Math.abs((Math.max(0,Math.min(target,maxTop)))-el.scrollTop)>8){
       _lastScrollTop=el.scrollTop;_lastMessageClientHeight=el.clientHeight;
@@ -15595,7 +16130,7 @@ function _assistantTurnAnchorSettledFinalAnswer(message, content, context){
   const sceneFinal=_assistantAnchorSceneFinalAnswerText(message);
   const effectiveContent=String(content||'').trim()?content:sceneFinal;
   try{
-    const api=(typeof window!=='undefined')?window.HermesAssistantTurnAnchors:null;
+    const api=(typeof window!=='undefined')?window.ARESAssistantTurnAnchors:null;
     if(!api||typeof api.projectAssistantTurnAnchorSettledMessageFinalAnswer!=='function') return String(sceneFinal||'').trim()?sceneFinal:null;
     const result=api.projectAssistantTurnAnchorSettledMessageFinalAnswer(message,{
       session_id:context&&context.session_id,
@@ -16649,7 +17184,7 @@ function renderMessages(options){
     }catch(e){}
     S.messages.forEach((m,rawIdx)=>{
       if(!m) return;
-      // OpenAI / Hermes CLI format: role=tool with tool_call_id
+      // OpenAI / ARES CLI format: role=tool with tool_call_id
       if(m.role==='tool'){
         const tid=m.tool_call_id||m.tool_use_id||'';
         if(tid) resultsByTid[tid]=_cliToolResultSnippet(m.content);
@@ -17138,7 +17673,7 @@ function renderMessages(options){
       }
     }
   }
-  // Transparent mode per-turn wiring: collapsible Hermes chat name tag, old-event
+  // Transparent mode per-turn wiring: collapsible ARES chat name tag, old-event
   // fading, and the bottom-of-turn footer (elapsed · tokens · TTFT · status).
   // Runs after the per-turn duration block above so the footer can reuse the
   // computed durationText / tokens / TTFT for each settled assistant turn.
@@ -17695,6 +18230,21 @@ function _toolWorklogSummary(toolCalls, opts){
     }
     return out;
   };
+  // A batch that mixes tool kinds collapses to ONE generic count —
+  // "Ran 16 commands" — instead of "Ran 4 commands, Read 9 files,
+  // Searched workspace 3 times". The per-kind detail is still there on
+  // every row inside the group; the summary is a disclosure label, and
+  // three clauses of it stops being one. A single-kind batch keeps its
+  // specific line ("Read 9 files"): there is nothing to merge, and the
+  // specific wording says more for the same width.
+  const kinds=new Set([...Object.keys(runningCounts),...Object.keys(doneCounts)]
+    .filter(k=>(runningCounts[k]||0)+(doneCounts[k]||0)>0));
+  if(kinds.size>1){
+    const running=Object.values(runningCounts).reduce((a,b)=>a+b,0);
+    const line=_toolWorklogSummaryLine(
+      'shell', running?'running':'done', cards.length);
+    return failed?`${line}, ${failed} failed`:line;
+  }
   const lines=[...emit(runningCounts,'running'),...emit(doneCounts,'done')];
   if(failed) lines.push(`${failed} failed`);
   return lines.length?_toolWorklogJoin(lines):_toolActionLabel(cards[0]);
@@ -18379,7 +18929,7 @@ function _setLiveWorklogThinkingPlaceholder(group){
     group.querySelector('.tool-worklog-label') || group.querySelector('.tool-call-group-label')
   );
   if(label){
-    const text=typeof t==='function'?t('worklog_thinking'):'Thinking';
+    const text=typeof t==='function'?t('thought_process'):'Thought process';
     label.textContent=text;
     label.setAttribute('data-sweep-label', text);
   }
@@ -19280,7 +19830,7 @@ function _thinkingMarkup(text=''){
   const clean=_sanitizeThinkingDisplayText(text);
   const openClass=_worklogDetailsExpandedDefault()?' open':'';
   return (clean&&String(clean).trim())
-    ? `<div class="thinking-card${openClass}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thinking')}</span><span class="thinking-card-toggle">${li('chevron-right',12)}</span></div><div class="thinking-card-body"><pre>${esc(String(clean).trim())}</pre></div></div>`
+    ? `<div class="thinking-card${openClass}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thought_process')}</span><span class="thinking-card-toggle">${li('chevron-right',12)}</span></div><div class="thinking-card-body"><pre>${esc(String(clean).trim())}</pre></div></div>`
     : `<div class="thinking"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
 }
 function _renderThinkingInto(row,text=''){
@@ -19607,11 +20157,11 @@ function _syncWorkspaceHiddenToggle(){
 }
 function toggleWorkspaceHiddenFiles(value){
   S.showHiddenWorkspaceFiles=!!value;
-  try{localStorage.setItem('hermes-workspace-show-hidden-files',S.showHiddenWorkspaceFiles?'1':'0');}catch(_){}
+  try{localStorage.setItem('ares-workspace-show-hidden-files',S.showHiddenWorkspaceFiles?'1':'0');}catch(_){}
   _syncWorkspaceHiddenToggle();
   renderFileTree();
 }
-try{S.showHiddenWorkspaceFiles=localStorage.getItem('hermes-workspace-show-hidden-files')==='1';}catch(_){}
+try{S.showHiddenWorkspaceFiles=localStorage.getItem('ares-workspace-show-hidden-files')==='1';}catch(_){}
 
 // ── Workspace preferences kebab menu (#1793 UX refinement) ───────────────
 // The "Show hidden files" toggle used to live as a permanent inline row

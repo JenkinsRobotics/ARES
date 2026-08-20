@@ -11,7 +11,7 @@ def test_root_installer_performs_real_dependency_and_frontend_install():
     source = INSTALLER.read_text(encoding="utf-8")
 
     assert 'pip install -r "$CONTROLLER/requirements.txt"' in source
-    assert "Hermes vanilla UI is pre-built" in source
+    assert "ARES WebUI is pre-built" in source
     assert "ARES installation verified" in source
     assert "pip install -e" not in source
 

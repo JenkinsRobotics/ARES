@@ -40,6 +40,7 @@ from api.providers.jaeger.bridge_client import (
     minimal_bridge_environment,
 )
 from api.providers.jaeger.paths import jaeger_home, jaeger_instance_name
+from api.providers.jaeger.sse_events import tool_sse_event
 from api.run_journal import RunJournalWriter
 
 logger = logging.getLogger(__name__)
@@ -385,17 +386,18 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: 
             or frame.get("state")
             or ""
         ).strip().lower()
-        event_type = "tool.completed" if status in ("done", "complete", "completed", "ok") else "tool.running"
         preview = str(
             frame.get("preview")
             or frame.get("message")
             or frame.get("label")
+            or frame.get("detail")
             or frame.get("text")
             or name
         ).strip()
         is_error = bool(frame.get("is_error") or frame.get("error") or status in ("error", "failed", "fail"))
+        sse_event, event_type = tool_sse_event(status, is_error=is_error)
         payload = {
-            "event_type": "tool.failed" if is_error else event_type,
+            "event_type": event_type,
             "name": name,
             "preview": preview,
             "is_error": is_error,
@@ -404,7 +406,7 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: 
             payload["args"] = frame["args"]
         if stream_id in STREAM_LIVE_TOOL_CALLS:
             calls = STREAM_LIVE_TOOL_CALLS[stream_id]
-            done = payload["event_type"] != "tool.running"
+            done = sse_event == "tool_complete"
             # Jaeger emits start/done as separate frames. Fold the terminal
             # frame into the most recent matching call so structured path args
             # from the start frame survive in the persisted session artifact.
@@ -426,7 +428,7 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: 
                     "args": payload.get("args") or {"preview": preview},
                     "done": done,
                 })
-        put_jaeger_event("tool", payload)
+        put_jaeger_event(sse_event, payload)
         return
     if kind == "delta":
         # The turn's text, live. The WebUI's ``token`` handler APPENDS

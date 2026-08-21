@@ -131,6 +131,73 @@ async def events(request: Request, identity: Annotated[RequestIdentity, Depends(
     return await _call(identity, _events_payload, _parsed(request))
 
 
+@router.get("/events/stream")
+async def events_stream(
+    request: Request,
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
+):
+    """SSE feed the restored WebUI EventSource opens for live Kanban."""
+    import json
+    import time
+
+    from fastapi.responses import StreamingResponse
+
+    from api.kanban_bridge import (
+        _KANBAN_SSE_HEARTBEAT_SECONDS,
+        _KANBAN_SSE_POLL_SECONDS,
+        _kanban_sse_fetch_new,
+        _resolve_board,
+    )
+
+    try:
+        board = _resolve_board(_parsed(request))
+    except LookupError as exc:
+        raise CoreApiError(404, str(exc)) from exc
+    except ValueError as exc:
+        raise CoreApiError(400, str(exc)) from exc
+
+    since_raw = request.query_params.get("since")
+    if since_raw is None:
+        since_raw = request.headers.get("last-event-id")
+    try:
+        cursor = int(since_raw) if since_raw is not None else 0
+    except (TypeError, ValueError):
+        cursor = 0
+    if cursor < 0:
+        cursor = 0
+
+    async def frames():
+        nonlocal cursor
+        yield (
+            "event: hello\ndata: "
+            + json.dumps({"cursor": cursor, "board": board})
+            + "\n\n"
+        ).encode()
+        last_heartbeat = time.monotonic()
+        while True:
+            if await request.is_disconnected():
+                break
+
+            def _fetch(current=cursor):
+                return _kanban_sse_fetch_new(board, current)
+
+            cursor, events = await _call(identity, _fetch)
+            if events:
+                payload = json.dumps({"events": events, "cursor": cursor})
+                yield f"id: {cursor}\nevent: events\ndata: {payload}\n\n".encode()
+                last_heartbeat = time.monotonic()
+            elif (time.monotonic() - last_heartbeat) >= _KANBAN_SSE_HEARTBEAT_SECONDS:
+                yield b": keepalive\n\n"
+                last_heartbeat = time.monotonic()
+            await asyncio.sleep(_KANBAN_SSE_POLL_SECONDS)
+
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/dispatch")
 async def dispatch(request: Request, identity: Annotated[RequestIdentity, Depends(require_mutation_identity)]):
     from api.kanban_bridge import _dispatch_payload

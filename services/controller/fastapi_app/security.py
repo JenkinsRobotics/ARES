@@ -56,7 +56,10 @@ async def security_headers_middleware(
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Vary"] = "Origin"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Headers"] = (
+                "Content-Type, Authorization, X-Ares-CSRF-Token, "
+                "X-Hermes-CSRF-Token, X-CSRF-Token"
+            )
     else:
         response = await call_next(request)
     extra_connect = _csp_extra_connect_src()

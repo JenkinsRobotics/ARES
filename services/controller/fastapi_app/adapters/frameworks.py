@@ -370,20 +370,6 @@ class JaegerAdapter(JournaledFrameworkAdapter):
             pass
 
         if not descriptors:
-            try:
-                from jaeger_ai.core.models.model_resolver import list_registered_models
-                for m in list_registered_models():
-                    mid = str(m.get("name") or "").strip()
-                    prov = str(m.get("provider") or "").strip() or None
-                    key = (prov or "", mid)
-                    if not mid or key in seen:
-                        continue
-                    seen.add(key)
-                    descriptors.append(ModelDescriptor(mid, mid, prov, self.adapter_id))
-            except Exception:
-                pass
-
-        if not descriptors:
             health = self.check_health(profile=None)
             model_id = str(health.details.get("model") or "").strip()
             provider = str(health.details.get("provider") or "").strip() or None

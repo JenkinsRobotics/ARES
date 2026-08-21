@@ -158,9 +158,9 @@ def require_mutation_identity(
     if not identity.auth_enabled:
         return identity
 
-    from api.auth import CSRF_HEADER_NAME, verify_csrf_token
+    from api.auth import csrf_token_from_headers, verify_csrf_token
 
-    csrf_token = request.headers.get(CSRF_HEADER_NAME, "")
+    csrf_token = csrf_token_from_headers(request.headers)
     if not identity.session_cookie or not verify_csrf_token(identity.session_cookie, csrf_token):
         raise CoreApiError(403, "Invalid CSRF token")
     return identity

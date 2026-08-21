@@ -63,6 +63,21 @@ PUBLIC_PATHS = frozenset({
 
 COOKIE_NAME = 'ares_session'
 CSRF_HEADER_NAME = 'X-Ares-CSRF-Token'
+# Restored Hermes WebUI still sends the donor header; accept both.
+CSRF_HEADER_ALIASES = (
+    'X-Ares-CSRF-Token',
+    'X-Hermes-CSRF-Token',
+    'X-CSRF-Token',
+)
+
+
+def csrf_token_from_headers(headers) -> str:
+    """First non-empty CSRF header the restored WebUI or ARES clients send."""
+    for name in CSRF_HEADER_ALIASES:
+        value = str(headers.get(name) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 # RFC 6265 cookie-name token: a non-empty run of token chars

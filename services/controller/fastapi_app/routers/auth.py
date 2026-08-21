@@ -184,7 +184,7 @@ def _passkey_enabled() -> None:
 
 
 def _registration_identity(request: Request, response: Response) -> RequestIdentity:
-    from api.auth import CSRF_HEADER_NAME, is_auth_enabled, verify_csrf_token
+    from api.auth import csrf_token_from_headers, is_auth_enabled, verify_csrf_token
     from api.network_trust import onboarding_gate_allows
 
     identity = resolve_request_identity(request, response, allow_anonymous=True)
@@ -194,7 +194,7 @@ def _registration_identity(request: Request, response: Response) -> RequestIdent
         return identity
     if not identity.session_cookie:
         raise CoreApiError(401, "Authentication required")
-    token = request.headers.get(CSRF_HEADER_NAME) or request.headers.get("X-CSRF-Token", "")
+    token = csrf_token_from_headers(request.headers)
     if not verify_csrf_token(identity.session_cookie, token):
         raise CoreApiError(403, "Invalid CSRF token")
     return identity

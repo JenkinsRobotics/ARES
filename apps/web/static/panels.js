@@ -982,43 +982,26 @@ function _gatewayStatusReason(status) {
   return typeof health.reason === 'string' ? health.reason.trim() : '';
 }
 
-function _cronGatewayNoticeHtml(status) {
-  if (!status || (status.configured && status.running)) return '';
-  const reason = _gatewayStatusReason(status);
-  const isStaleMetadata = reason === 'gateway_stale_running_state';
-  const isRemoteUnreachable = reason === 'remote_gateway_unreachable';
-  const notConfigured = !status.configured;
-  const title = notConfigured
-    ? 'Gateway not configured'
-    : isStaleMetadata
-      ? 'Gateway metadata stale'
-      : isRemoteUnreachable
-        ? 'Gateway endpoint not reachable'
-        : 'Gateway not running';
-  const body = notConfigured
-    ? 'In Hermes WebUI, scheduled jobs require the Hermes gateway daemon. If this is a single-container Docker install, jobs can be created and run manually here, but scheduled ticks need a gateway container or `hermes gateway` running outside the WebUI.'
-    : isStaleMetadata
-      ? 'The gateway is marked as configured, but its health metadata has gone stale. In Docker, scheduled jobs require a live gateway daemon that refreshes runtime metadata while ticking cron.'
-      : isRemoteUnreachable
-        ? 'The gateway health endpoint is not reachable from WebUI. Verify the configured gateway URL env var (`GATEWAY_HEALTH_URL`, `HERMES_GATEWAY_HEALTH_URL`, `HERMES_API_URL`, or `HERMES_WEBUI_GATEWAY_BASE_URL`) points to a reachable gateway service and network path before relying on cron ticking.'
-        : 'In Hermes WebUI, scheduled jobs require the Hermes gateway daemon to be running. Start the gateway container or `hermes gateway` before relying on offline scheduled runs.';
-  const docsHref = 'https://github.com/nesquena/hermes-webui/blob/master/docs/docker.md#scheduled-jobs-and-the-gateway-daemon';
-  const helpLink = notConfigured || isRemoteUnreachable || isStaleMetadata
-    ? `<p><a href="${docsHref}" target="_blank" rel="noopener">How to enable scheduled jobs in Docker ↗</a></p>`
-    : '';
+function _cronRuntimeNoticeHtml(status) {
+  if (status && status.available && status.running) return '';
+  const detail = status && status.message ? String(status.message) : '';
+  const locked = /lock/i.test(detail);
+  const title = locked ? 'JaegerAI is busy' : 'JaegerAI scheduler unavailable';
+  const body = locked
+    ? 'Scheduled jobs run inside JaegerAI. Close the other Jaeger window so ARES can attach to the companion, then refresh this list.'
+    : 'Scheduled jobs are stored and fired by JaegerAI through the ARES adapter. Start ARES with JaegerAI reachable, then create or run jobs here — no separate messaging gateway is required.';
   return `
     <div class="detail-alert-title">${esc(title)}</div>
     <p>${esc(body)}</p>
-    ${helpLink}
   `;
 }
 
-async function loadCronGatewayNotice() {
-  const box = $('cronGatewayNotice');
+async function loadCronRuntimeNotice() {
+  const box = $('cronRuntimeNotice');
   if (!box) return;
   try {
-    const status = await api('/api/gateway/status');
-    const html = _cronGatewayNoticeHtml(status);
+    const status = await api('/api/crons/runtime');
+    const html = _cronRuntimeNoticeHtml(status);
     if (html) {
       box.innerHTML = html;
       box.style.display = '';
@@ -1027,15 +1010,15 @@ async function loadCronGatewayNotice() {
       box.style.display = 'none';
     }
   } catch (_) {
-    box.innerHTML = '';
-    box.style.display = 'none';
+    box.innerHTML = _cronRuntimeNoticeHtml({available:false, running:false});
+    box.style.display = '';
   }
 }
 
 async function loadCrons(animate) {
   const box = $('cronList');
   const refreshBtn = $('cronRefreshBtn');
-  loadCronGatewayNotice();
+  loadCronRuntimeNotice();
   if (animate && refreshBtn) {
     refreshBtn.style.opacity = '0.5';
     refreshBtn.disabled = true;
@@ -9711,7 +9694,7 @@ async function loadSettingsPanel(){
     // Bot name — debounced autosave (text input)
     const botNameField=$('settingsBotName');
     if(botNameField){
-      botNameField.value=settings.bot_name||'Hermes';
+      botNameField.value=settings.bot_name||'ARES';
       let botNameTimer=null;
       botNameField.addEventListener('input',()=>{
         if(botNameTimer) clearTimeout(botNameTimer);
@@ -12047,7 +12030,7 @@ function _applySavedSettingsUi(saved, body, opts){
   if(Object.prototype.hasOwnProperty.call(body,'structured_code_default_view')){
     _applyStructuredCodeViewSettings(body.structured_code_default_view,body.structured_code_auto_tree_lines,false);
   }
-  window._botName=body.bot_name||'Hermes';
+  window._botName=body.bot_name||'ARES';
   if(typeof applyBotName==='function') applyBotName();
   else if(typeof _applyBusyComposerPlaceholder==='function') _applyBusyComposerPlaceholder();
   if(typeof setLocale==='function') setLocale(language);
@@ -12722,7 +12705,7 @@ async function saveSettings(andClose){
   body.default_message_mode=defaultMessageMode;
   body.auto_title_refresh_every=(($('settingsAutoTitleRefresh')||{}).value||'0');
   const botName=(($('settingsBotName')||{}).value||'').trim();
-  body.bot_name=botName||'Hermes';
+  body.bot_name=botName||'ARES';
   // Password: only act if the field has content; blank = leave auth unchanged
   if(pw && pw.trim()){
     const currentPwField=$('settingsCurrentPassword');

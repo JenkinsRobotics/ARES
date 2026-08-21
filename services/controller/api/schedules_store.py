@@ -118,7 +118,31 @@ def selected_profile_snapshot_updates(
 _selected_profile_snapshot_updates = selected_profile_snapshot_updates
 
 
+def _jaeger_jobs() -> list[dict] | None:
+    try:
+        from api.providers.jaeger.schedules import list_jobs, runtime_status
+
+        if not runtime_status().get("available"):
+            return None
+        return list_jobs()
+    except Exception:
+        logger.debug("Jaeger schedule list unavailable", exc_info=True)
+        return None
+
+
 def list_schedules(*, all_profiles: bool = False) -> dict:
+    jaeger_jobs = _jaeger_jobs()
+    if jaeger_jobs is not None:
+        from api.profiles import get_active_profile_name
+
+        active = get_active_profile_name() or "default"
+        return {
+            "jobs": [_job_for_api(row) for row in jaeger_jobs],
+            "all_profiles": bool(all_profiles),
+            "active_profile": active,
+            "other_profile_count": 0,
+            "owner": "jaeger",
+        }
     ensure_schedule_runtime()
     try:
         from api.schedule_jobs import list_jobs
@@ -175,6 +199,15 @@ def list_schedules(*, all_profiles: bool = False) -> dict:
 
 
 def create_schedule(payload: dict[str, Any]) -> dict:
+    try:
+        from api.providers.jaeger.schedules import create_job as create_jaeger_job
+        from api.providers.jaeger.schedules import runtime_status
+
+        if runtime_status().get("available"):
+            job = create_jaeger_job(payload)
+            return {"ok": True, "job": _job_for_api(job), "owner": "jaeger"}
+    except Exception as exc:
+        logger.warning("Jaeger schedule create failed; using local store: %s", exc)
     ensure_schedule_runtime()
     from api.schedule_jobs import create_job, update_job
 
@@ -229,6 +262,14 @@ def update_schedule(job_id: str, updates: dict[str, Any]) -> dict:
 
 
 def delete_schedule(job_id: str) -> dict:
+    try:
+        from api.providers.jaeger.schedules import cancel_job, runtime_status
+
+        if runtime_status().get("available"):
+            cancel_job(job_id)
+            return {"ok": True, "job_id": job_id, "owner": "jaeger"}
+    except Exception as exc:
+        logger.debug("Jaeger schedule delete failed: %s", exc)
     ensure_schedule_runtime()
     from api.schedule_jobs import remove_job
 
@@ -467,6 +508,15 @@ def schedule_status(job_id: str | None = None) -> dict:
 
 
 def pause_schedule(job_id: str, reason: str | None = None) -> dict:
+    try:
+        from api.providers.jaeger.schedules import list_jobs, pause_job, runtime_status
+
+        if runtime_status().get("available"):
+            pause_job(job_id)
+            job = next((row for row in list_jobs() if row.get("id") == job_id), {"id": job_id, "paused": True})
+            return {"ok": True, "job": _job_for_api(job), "owner": "jaeger"}
+    except Exception as exc:
+        logger.debug("Jaeger schedule pause failed: %s", exc)
     ensure_schedule_runtime()
     from api.schedule_jobs import pause_job
 
@@ -477,6 +527,15 @@ def pause_schedule(job_id: str, reason: str | None = None) -> dict:
 
 
 def resume_schedule(job_id: str) -> dict:
+    try:
+        from api.providers.jaeger.schedules import list_jobs, resume_job, runtime_status
+
+        if runtime_status().get("available"):
+            resume_job(job_id)
+            job = next((row for row in list_jobs() if row.get("id") == job_id), {"id": job_id, "paused": False})
+            return {"ok": True, "job": _job_for_api(job), "owner": "jaeger"}
+    except Exception as exc:
+        logger.debug("Jaeger schedule resume failed: %s", exc)
     ensure_schedule_runtime()
     from api.schedule_jobs import resume_job
 

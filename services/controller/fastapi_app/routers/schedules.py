@@ -84,6 +84,13 @@ async def schedules(
     return await _call(identity, list_schedules, all_profiles=all_profiles)
 
 
+@router.get("/runtime")
+async def runtime(_identity: Annotated[RequestIdentity, Depends(require_identity)]):
+    from api.providers.jaeger.schedules import runtime_status
+
+    return runtime_status()
+
+
 @router.get("/status")
 async def status(
     identity: Annotated[RequestIdentity, Depends(require_identity)],

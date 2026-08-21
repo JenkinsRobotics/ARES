@@ -2,11 +2,35 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 import logging
 import uuid
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_QUERY_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="jaeger-sched")
+_QUERY_TIMEOUT_S = 3.0
+
+
+def _query_with_timeout(what: str, args: dict[str, Any] | None = None) -> Any:
+    from api.providers.jaeger.streaming import query_local_companion
+
+    future = _QUERY_POOL.submit(query_local_companion, what, args or {})
+    try:
+        return future.result(timeout=_QUERY_TIMEOUT_S)
+    except FuturesTimeout as exc:
+        raise JaegerScheduleError("Jaeger schedule query timed out", 504) from exc
+
+
+def _command_with_timeout(cmd: str, args: dict[str, Any] | None = None) -> Any:
+    from api.providers.jaeger.streaming import command_local_companion
+
+    future = _QUERY_POOL.submit(command_local_companion, cmd, args or {})
+    try:
+        return future.result(timeout=_QUERY_TIMEOUT_S)
+    except FuturesTimeout as exc:
+        raise JaegerScheduleError("Jaeger schedule command timed out", 504) from exc
 
 
 class JaegerScheduleError(RuntimeError):
@@ -47,9 +71,7 @@ def _job_from_jaeger(row: dict[str, Any]) -> dict[str, Any]:
 def runtime_status() -> dict[str, Any]:
     """Status for the scheduled-jobs banner: Jaeger scheduler, not a Hermes gateway."""
     try:
-        from api.providers.jaeger.streaming import query_local_companion
-
-        payload = query_local_companion("cron", {})
+        payload = _query_with_timeout("cron", {})
         if not isinstance(payload, dict):
             payload = {}
         jobs = payload.get("jobs") if isinstance(payload.get("jobs"), list) else []
@@ -76,9 +98,7 @@ def runtime_status() -> dict[str, Any]:
 
 
 def list_jobs() -> list[dict[str, Any]]:
-    from api.providers.jaeger.streaming import query_local_companion
-
-    payload = query_local_companion("list_schedules", {})
+    payload = _query_with_timeout("list_schedules", {})
     rows = payload.get("schedules") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         raise JaegerScheduleError("Jaeger returned an invalid schedule list")
@@ -86,10 +106,8 @@ def list_jobs() -> list[dict[str, Any]]:
 
 
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
-    from api.providers.jaeger.streaming import command_local_companion
-
     name = str(payload.get("name") or "").strip() or f"job_{uuid.uuid4().hex[:10]}"
-    command_local_companion(
+    _command_with_timeout(
         "create_schedule",
         {
             "name": name,
@@ -107,18 +125,12 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def cancel_job(job_id: str) -> None:
-    from api.providers.jaeger.streaming import command_local_companion
-
-    command_local_companion("cancel_schedule", {"name": job_id, "id": job_id})
+    _command_with_timeout("cancel_schedule", {"name": job_id, "id": job_id})
 
 
 def pause_job(job_id: str) -> None:
-    from api.providers.jaeger.streaming import command_local_companion
-
-    command_local_companion("pause_schedule", {"name": job_id, "id": job_id})
+    _command_with_timeout("pause_schedule", {"name": job_id, "id": job_id})
 
 
 def resume_job(job_id: str) -> None:
-    from api.providers.jaeger.streaming import command_local_companion
-
-    command_local_companion("resume_schedule", {"name": job_id, "id": job_id})
+    _command_with_timeout("resume_schedule", {"name": job_id, "id": job_id})

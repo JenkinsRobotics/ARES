@@ -20,6 +20,7 @@ reads or writes another product's private state.
 ## Source map
 
 - `apps/web/static/`: browser UI
+- `apps/desktop/static/`: Mac app UI, served at `/desktop`
 - `apps/macos/`: native shell and native macOS tools
 - `services/controller/`: FastAPI routes and product services
 - `integrations/providers/jaeger/`: Jaeger bridge adapter

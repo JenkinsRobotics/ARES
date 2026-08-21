@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARES</title>
+<base href="/desktop/">
+<link rel="stylesheet" href="style.css?v=__WEBUI_VERSION__">
+<script>window.__ARES_CONFIG__={maxUploadBytes:__MAX_UPLOAD_BYTES__,csrfToken:__CSRF_TOKEN_JSON__};</script>
+<script>window.__ARES_WEBUI_BUNDLE_VERSION__='__WEBUI_VERSION__';</script>
+<script>(function(){
+  var cfg=window.__ARES_CONFIG__||{},token=cfg.csrfToken||'';
+  if(token&&typeof token==='object')token=token.csrfToken||'';
+  if(!token||!window.fetch)return;
+  var originalFetch=window.fetch.bind(window);
+  function sameOriginUnsafe(input,init){
+    var method=((init&&init.method)||(input&&input.method)||'GET').toUpperCase();
+    if(!/^(POST|PUT|PATCH|DELETE)$/.test(method))return false;
+    try{
+      var raw=(typeof input==='string'||input instanceof URL)?input:(input&&input.url)||'';
+      var url=new URL(raw,document.baseURI||location.href);
+      if(url.origin!==location.origin)return false;
+      return !/\/api\/(auth\/login|csp-report)$/.test(url.pathname);
+    }catch(_){return false;}
+  }
+  window.fetch=function(input,init){
+    if(sameOriginUnsafe(input,init)){
+      var opts=init?Object.assign({},init):{};
+      var headers=new Headers(opts.headers!==undefined?opts.headers:((input&&input.headers)||{}));
+      if(!headers.has('X-ARES-CSRF-Token'))headers.set('X-ARES-CSRF-Token',token);
+      opts.headers=headers;
+      return originalFetch(input,opts);
+    }
+    return originalFetch(input,init);
+  };
+})()</script>
+</head>
+<body>
+<div class="desktop" id="desktop">
+  <nav class="rail" data-pane="rail" aria-label="Activity bar">
+    <button type="button" class="rail-btn is-active" title="Explorer" aria-current="page">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M2 2h5l1 2h6v9H2z"/></svg>
+      <span class="rail-label">Files</span>
+    </button>
+    <button type="button" class="rail-btn" title="Search">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="none" stroke="currentColor" stroke-width="1.4" d="M10.5 10.5 14 14"/></svg>
+      <span class="rail-label">Search</span>
+    </button>
+    <button type="button" class="rail-btn" title="Source control">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="12" cy="8" r="2" fill="currentColor"/><circle cx="4" cy="12" r="2" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.2" d="M4 6v4M6 4h4.2A1.8 1.8 0 0 1 12 5.8"/></svg>
+      <span class="rail-label">Git</span>
+    </button>
+    <button type="button" class="rail-btn" title="Settings">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.5 1.5h3l.5 2.1 1.6.9 2.1-.5 1.5 2.6-1.6 1.4v1.8l1.6 1.4-1.5 2.6-2.1-.5-1.6.9-.5 2.1h-3l-.5-2.1-1.6-.9-2.1.5L1 11.1l1.6-1.4V7.9L1 6.5 2.5 3.9l2.1.5 1.6-.9zM8 6.2A1.8 1.8 0 1 0 8 9.8 1.8 1.8 0 0 0 8 6.2z"/></svg>
+      <span class="rail-label">Settings</span>
+    </button>
+  </nav>
+  <aside class="sidebar" data-pane="sidebar" aria-label="Explorer">
+    <header class="pane-head">Explorer</header>
+    <div class="pane-body muted">No folder open</div>
+  </aside>
+  <main class="main" data-pane="main" aria-label="Editor">
+    <header class="pane-head">Editor</header>
+    <div class="pane-body muted">No file selected</div>
+  </main>
+  <aside class="right" data-pane="right" aria-label="Inspector">
+    <header class="pane-head">Inspector</header>
+    <div class="pane-body muted">No selection</div>
+  </aside>
+  <section class="bottom" data-pane="bottom" aria-label="Panel">
+    <header class="pane-head">Problems</header>
+    <div class="pane-body muted">No problems</div>
+  </section>
+</div>
+</body>
+</html>

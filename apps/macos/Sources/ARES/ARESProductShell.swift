@@ -63,7 +63,7 @@ struct ARESProductShell: View {
     var body: some View {
         let host = WebUIServerManager.loopbackIfNetworkBind(config.webuiHost)
         if serverManager.isRunning,
-           let url = URL(string: "http://\(host):\(config.webuiPort)/") {
+           let url = URL(string: "http://\(host):\(config.webuiPort)/desktop") {
             WebViewRepresentable(url: url, serverManager: serverManager)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(.all, edges: .bottom)

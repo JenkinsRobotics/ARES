@@ -18,7 +18,11 @@ from fastapi.responses import JSONResponse
 
 from .adapters import AdapterRegistry
 from .errors import CoreApiError
-from .frontend import CsrfTokenResolver, create_frontend_router
+from .frontend import (
+    CsrfTokenResolver,
+    DEFAULT_DESKTOP_ROOT,
+    create_frontend_router,
+)
 from .lifecycle import ares_lifespan
 from .routers import install_core_routers
 from .realtime import RealtimeService
@@ -57,6 +61,7 @@ async def request_diagnostics_middleware(request: Request, call_next):
 def create_app(
     *,
     frontend_root: Path | None = None,
+    desktop_root: Path | None = None,
     csrf_resolver: CsrfTokenResolver | None = None,
     install_api_routes: ApiInstaller | None = None,
     core_service: AresCoreService | None = None,
@@ -114,6 +119,16 @@ def create_app(
 
     if install_api_routes is not None:
         install_api_routes(application)
+
+    # Isolated Mac-app surface. Must be registered before the web catch-all
+    # so /desktop is never SPA-fallback of the browser UI.
+    application.include_router(
+        create_frontend_router(
+            frontend_root=desktop_root or DEFAULT_DESKTOP_ROOT,
+            csrf_resolver=csrf_resolver,
+            url_prefix="/desktop",
+        )
+    )
 
     # Keep this last. Route order is part of the API-not-swallowed invariant.
     application.include_router(

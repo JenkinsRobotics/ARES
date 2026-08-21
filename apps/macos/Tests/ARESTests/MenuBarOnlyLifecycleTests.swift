@@ -44,6 +44,16 @@ final class MenuBarOnlyLifecycleTests: XCTestCase {
         }
     }
 
+    func testProductShellLoadsDesktopSurface() throws {
+        let source = try repositoryFile("apps/macos/Sources/ARES/ARESProductShell.swift")
+        XCTAssertTrue(source.contains("/desktop"))
+        XCTAssertTrue(source.contains("webuiPort)/desktop"))
+        XCTAssertFalse(
+            source.contains("webuiPort)/\")"),
+            "the Mac product shell must not load the browser UI at /"
+        )
+    }
+
     func testBundleDeclaresLSUIElement() throws {
         let script = try repositoryFile("apps/macos/build-app.sh")
         XCTAssertTrue(script.contains("<key>LSUIElement</key>"))

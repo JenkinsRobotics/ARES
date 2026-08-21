@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 
 DEFAULT_FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "apps" / "web" / "static"
+DEFAULT_DESKTOP_ROOT = Path(__file__).resolve().parents[3] / "apps" / "desktop" / "static"
 
 # Frontend template tokens (substituted in index.html at request time)
 _WEBUI_VERSION_PLACEHOLDER = "__WEBUI_VERSION__"
@@ -312,11 +313,31 @@ def create_frontend_router(
     *,
     frontend_root: Path | None = None,
     csrf_resolver: CsrfTokenResolver | None = None,
+    url_prefix: str = "",
 ) -> APIRouter:
-    """Create the final catch-all router for the ARES UI."""
+    """Create a static SPA router for one frontend root.
+
+    ``url_prefix`` mounts the same serving logic under a path such as
+    ``/desktop``. Empty-prefix routers stay a catch-all and must be included
+    last so they cannot swallow API routes. A non-empty prefix registers
+    explicit ``/prefix`` and ``/prefix/`` handlers because Starlette's
+    ``/{path:path}`` does not match the prefix with no remainder.
+    """
     root = Path(frontend_root or DEFAULT_FRONTEND_ROOT)
     resolve_csrf = csrf_resolver or csrf_token_for_request
-    router = APIRouter(include_in_schema=False)
+    prefix = str(url_prefix or "").rstrip("/")
+    router = APIRouter(prefix=prefix, include_in_schema=False)
+
+    async def serve_frontend_root(request: Request) -> Response:
+        return _spa_shell(root, request, resolve_csrf)
+
+    if prefix:
+        router.add_api_route(
+            "", serve_frontend_root, methods=["GET", "HEAD"], include_in_schema=False,
+        )
+        router.add_api_route(
+            "/", serve_frontend_root, methods=["GET", "HEAD"], include_in_schema=False,
+        )
 
     @router.api_route("/{path:path}", methods=["GET", "HEAD"])
     async def serve_frontend(request: Request, path: str) -> Response:

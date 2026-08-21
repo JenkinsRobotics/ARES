@@ -1,0 +1,137 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  width: 100%;
+  min-width: 1024px;
+  min-height: 700px;
+  overflow: hidden;
+  background: #101014;
+  color: #e6e6ea;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+.desktop {
+  display: grid;
+  grid-template-columns: 48px max-content minmax(0, 1fr) max-content;
+  grid-template-rows: minmax(0, 1fr) max-content;
+  width: 100%;
+  height: 100%;
+  min-width: 1024px;
+  min-height: 700px;
+}
+
+.rail {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  background: #0b0b0e;
+  border-right: 1px solid #2a2a32;
+}
+
+.rail-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #8a8a96;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.rail-btn.is-active,
+.rail-btn:hover {
+  color: #f2f2f5;
+}
+
+.rail-btn.is-active {
+  border-left-color: #c9a227;
+  background: #17171d;
+}
+
+.rail-label {
+  font-size: 8px;
+  letter-spacing: 0.02em;
+}
+
+.sidebar,
+.right,
+.bottom,
+.main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: #14141a;
+  border-color: #2a2a32;
+  border-style: solid;
+  border-width: 0;
+}
+
+.sidebar {
+  grid-column: 2;
+  grid-row: 1;
+  width: 220px;
+  min-width: 140px;
+  max-width: 360px;
+  resize: horizontal;
+  overflow: auto;
+  border-right-width: 1px;
+}
+
+.main {
+  grid-column: 3;
+  grid-row: 1;
+  background: #101014;
+}
+
+.right {
+  grid-column: 4;
+  grid-row: 1;
+  width: 240px;
+  min-width: 140px;
+  max-width: 360px;
+  resize: horizontal;
+  overflow: auto;
+  border-left-width: 1px;
+}
+
+.bottom {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  height: 140px;
+  min-height: 72px;
+  max-height: 280px;
+  resize: vertical;
+  overflow: auto;
+  border-top-width: 1px;
+}
+
+.pane-head {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9a9aa6;
+  background: #17171d;
+  border-bottom: 1px solid #2a2a32;
+}
+
+.pane-body {
+  flex: 1 1 auto;
+  padding: 12px;
+  overflow: auto;
+}
+
+.muted { color: #7a7a86; }

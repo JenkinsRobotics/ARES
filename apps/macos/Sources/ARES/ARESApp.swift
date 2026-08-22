@@ -300,14 +300,21 @@ struct WebViewRepresentable: NSViewRepresentable {
 
 @MainActor
 final class ARESAppDelegate: NSObject, NSApplicationDelegate {
+    /// SwiftUI's adaptor is what `NSApp.delegate` actually is, so menu actions
+    /// that cast that property to `ARESAppDelegate` get nil and silently no-op.
+    /// The status item and popover must go through this handle instead.
+    static private(set) var shared: ARESAppDelegate?
+
     private var menuBarController: ARESMenuBarController?
     private let quickLaunchMonitor = ARESGlobalQuickLaunchMonitor()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        Self.shared = self
         NSWindow.allowsAutomaticWindowTabbing = false
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.shared = self
         // ARES lives in the menu bar. `.accessory` keeps it out of the Dock and
         // the app switcher; the status item is the entry point for opening the
         // window, controlling the controller process, and quitting.
@@ -377,7 +384,10 @@ final class ARESAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Re-launching keeps the app silently in the menu bar unless explicitly requested
+        // `ares open`, Spotlight, and a second `open ARES.app` all land here
+        // once the status item is already running. Launch itself stays silent
+        // (no WindowGroup, accessory policy); reopen is the explicit request.
+        openMainWindow()
         return true
     }
 
@@ -386,7 +396,7 @@ final class ARESAppDelegate: NSObject, NSApplicationDelegate {
         // Honoring a request to hide it would strand the app with no entry
         // point, so it stays on and the effective value reports that.
         if menuBarController == nil {
-            menuBarController = ARESMenuBarController()
+            menuBarController = ARESMenuBarController(owner: self)
         }
         return true
     }
@@ -396,11 +406,13 @@ final class ARESAppDelegate: NSObject, NSApplicationDelegate {
 
 @MainActor
 final class ARESMenuBarController: NSObject, NSMenuDelegate {
+    private weak var owner: ARESAppDelegate?
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private let menu = NSMenu()
 
-    override init() {
+    init(owner: ARESAppDelegate) {
+        self.owner = owner
         super.init()
         setupStatusItem()
     }
@@ -551,7 +563,7 @@ final class ARESMenuBarController: NSObject, NSMenuDelegate {
     // MARK: Actions
 
     private var appDelegate: ARESAppDelegate? {
-        NSApp.delegate as? ARESAppDelegate
+        owner ?? ARESAppDelegate.shared
     }
 
     @objc private func openWindow() {
@@ -741,7 +753,7 @@ struct MenuBarPopoverView: View {
 
             HStack {
                 Button("Open ARES") {
-                    (NSApp.delegate as? ARESAppDelegate)?.openMainWindow()
+                    ARESAppDelegate.shared?.openMainWindow()
                 }
                 .buttonStyle(.borderedProminent)
 

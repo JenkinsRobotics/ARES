@@ -2607,10 +2607,19 @@
   .composer-ws-wrap,
   .composer-reasoning-wrap,
   .composer-toolsets-wrap,
-  .composer-model-wrap{position:relative;flex:0 0 auto;}
-  .composer-profile-chip{display:inline-flex;align-items:center;gap:8px;max-width:180px;padding:8px 10px 8px 12px;border-radius:999px;border:1px solid transparent;background-color:transparent;font-weight:500;cursor:pointer;transition:color .15s,background-color .15s,border-color .15s;}
-  .composer-profile-chip:hover{background-color:var(--hover-bg);}
-  .composer-profile-chip.active{background:var(--accent-bg);border-color:var(--accent-bg-strong);}
+  .composer-profile-group{display:inline-flex;align-items:stretch;max-width:284px;border-radius:999px;overflow:hidden;background-color:transparent;border:1px solid var(--border2);transition:background-color .15s,border-color .15s;}
+  .composer-profile-group:hover{background-color:var(--hover-bg);border-color:var(--border2);}
+  .composer-profile-group:hover .composer-profile-avatar-btn,
+  .composer-profile-group:hover .composer-profile-chip{color:var(--text);}
+  .composer-profile-avatar-btn{display:inline-flex;align-items:center;justify-content:center;padding:8px 10px 8px 12px;background-color:transparent;border:none;border-left:1px solid transparent;border-radius:999px 0 0 999px;color:var(--muted);cursor:pointer;transition:color .15s,background-color .15s,border-color .15s;-webkit-tap-highlight-color:transparent;}
+  .composer-profile-avatar-btn:disabled{opacity:.45;cursor:not-allowed;}
+  .composer-profile-avatar-btn:hover{color:var(--text);}
+  .composer-profile-avatar-btn.active{color:var(--accent-text);background:var(--accent-bg);}
+  .composer-profile-avatar-btn .ares-character-face{width:16px;height:16px;border-radius:50%;object-fit:cover;display:block;}
+  .composer-profile-chip{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:200px;padding:8px 12px 8px 10px;border:none;border-left:1px solid transparent;border-radius:0 999px 999px 0;background-color:transparent;color:var(--muted);font-weight:500;cursor:pointer;transition:color .15s,border-color .15s;}
+  .composer-profile-group:hover .composer-profile-avatar-btn+.composer-profile-chip{border-left-color:var(--border2);}
+  .composer-profile-chip:hover{background-color:transparent;}
+  .composer-profile-chip.active{color:var(--text);background:var(--accent-bg);}
   .composer-profile-chip.switching{opacity:.65;cursor:wait;pointer-events:none;}
   .composer-profile-chip.switching .composer-profile-icon::after{content:'';display:inline-block;width:10px;height:10px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;position:absolute;left:50%;top:50%;margin-left:-5px;margin-top:-5px;}
   .composer-profile-chip.switching .composer-profile-icon{position:relative;}
@@ -4936,9 +4945,11 @@ main.main > #mainTasks,
 main.main > #mainKanban,
 main.main > #mainWorkspaces,
 main.main > #mainProfiles,
+main.main > #mainCharacters,
 main.main > #mainInsights,
-main.main > #mainLogs{display:none;}
-main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex;}
+main.main > #mainLogs,
+main.main > #mainPlugin{display:none;}
+main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-characters):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex;}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto;}
 main.main.showing-skills > #mainSkills{display:flex;}
 main.main.showing-memory > #mainMemory{display:flex;}
@@ -4946,9 +4957,9 @@ main.main.showing-tasks > #mainTasks{display:flex;}
 main.main.showing-kanban > #mainKanban{display:flex;overflow-y:auto;}
 main.main.showing-workspaces > #mainWorkspaces{display:flex;}
 main.main.showing-profiles > #mainProfiles{display:flex;}
+main.main.showing-characters > #mainCharacters{display:flex;}
 main.main.showing-logs > #mainLogs{display:flex;}
 main.main.showing-plugin > #mainPlugin{display:flex;}
-main.main > #mainPlugin{display:none;}
 #mainPlugin .main-view-body{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #pluginPageContainer{flex:1;display:flex;flex-direction:column;min-height:0;}
 #mainSettings{overflow-y:auto;}

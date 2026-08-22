@@ -154,7 +154,7 @@ def _ollama_cloud_models(discovered: dict | None = None) -> list[dict]:
         live = [
             {
                 "id": str(row.get("id") or "").strip(),
-                "label": str(row.get("label") or row.get("id") or "").strip(),
+                "label": str(row.get("label") or row.get("id") or "").split(" · ")[0].strip(),
                 "provider": "ollama-cloud",
                 "provider_id": "ollama-cloud",
                 "location": "cloud",

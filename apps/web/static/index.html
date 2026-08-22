@@ -70,6 +70,7 @@
   }
 })()</script>
 <link rel="stylesheet" href="static/style.css?v=__WEBUI_VERSION__">
+<link rel="stylesheet" href="static/characters.css?v=__WEBUI_VERSION__">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" integrity="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh" crossorigin="anonymous">
   <!-- KaTeX math rendering CSS (loaded eagerly from vendored assets to prevent font CSP noise) -->
   <link rel="stylesheet" href="static/vendor/katex/0.16.22/katex.min.css">
@@ -159,6 +160,7 @@
     <button class="rail-btn nav-tab has-tooltip" data-panel="memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory" aria-label="Memory"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="workspaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces" aria-label="Spaces"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles" aria-label="Agent profiles"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="characters" onclick="switchPanel('characters',{fromRailClick:true})" data-tooltip="Characters" data-i18n-title="tab_characters" aria-label="Characters"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos" aria-label="Todos"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights" aria-label="Insights"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
     <button class="rail-btn nav-tab dashboard-link has-tooltip" id="dashboardRailBtn" data-dashboard-link style="display:none" onclick="openHermesDashboard(event)" data-tooltip="ARES Dashboard" data-i18n-title="tab_dashboard" aria-label="ARES Dashboard"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
@@ -178,6 +180,7 @@
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="memory" data-label="Memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="workspaces" data-label="Spaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="profiles" data-label="Profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="characters" data-label="Characters" onclick="switchPanel('characters',{fromRailClick:true})" data-tooltip="Characters" data-i18n-title="tab_characters"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="todos" data-label="Todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="insights" data-label="Insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
       <button class="nav-tab dashboard-link has-tooltip has-tooltip--bottom" id="dashboardMobileBtn" data-dashboard-link data-label="Dashboard" style="display:none" onclick="openHermesDashboard(event)" data-tooltip="ARES Dashboard" data-i18n-title="tab_dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
@@ -307,6 +310,17 @@
         </div>
       </div>
       <div style="flex:1;overflow-y:auto;padding:8px" id="profilesPanel"><div style="color:var(--muted);font-size:12px" data-i18n="loading">Loading...</div></div>
+    </div>
+    <!-- Characters panel -->
+    <div class="panel-view" id="panelCharacters">
+      <div class="panel-head">
+        <span data-i18n="tab_characters">Characters</span>
+        <div class="panel-head-actions">
+          <button class="panel-head-btn has-tooltip has-tooltip--bottom" onclick="AresCharacters.load()" data-tooltip="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+        </div>
+      </div>
+      <div class="sidebar-search" style="padding:8px"><svg class="sidebar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input id="charsSearch" placeholder="Search characters..." oninput="AresCharacters.filter()" autocomplete="off"></div>
+      <div class="chars-list" id="charsList" style="flex:1;overflow-y:auto;padding:8px"><div style="padding:12px;color:var(--muted);font-size:12px" data-i18n="loading">Loading...</div></div>
     </div>
     <!-- Logs panel -->
     <div class="panel-view" id="panelLogs">
@@ -628,11 +642,16 @@
               <span class="yolo-pill-label" data-i18n="yolo_pill_label">YOLO</span>
             </button>
             <div id="profileChipWrap" class="composer-profile-wrap">
-              <button class="composer-profile-chip profile-chip" id="profileChip" type="button" onclick="toggleProfileDropdown()" title="Switch profile">
-                <span class="composer-profile-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                <span class="composer-profile-label" id="profileChipLabel">default</span>
-                <span class="composer-profile-chevron" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
-              </button>
+              <div class="composer-profile-group profile-chip-group" id="composerProfileGroup" role="group" aria-label="Profile and character controls">
+                <button class="composer-profile-avatar-btn" id="profileIconBtn" type="button" onclick="toggleProfileDropdown(event)" title="Select profile" aria-label="Select profile">
+                  <span class="composer-profile-icon" id="composerProfileAvatarIcon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                </button>
+                <button class="composer-profile-chip ares-character-chip" id="aresCharacterChip" type="button" onclick="AresCharacters.toggleDropdown()" title="Select character" aria-label="Select character" aria-haspopup="true">
+                  <span class="composer-profile-label" id="aresCharacterLabel">ARES</span>
+                  <span class="composer-profile-chevron" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+                </button>
+              </div>
+              <div id="aresCharacterDropdown" class="profile-dropdown" style="display:none"></div>
             </div>
             <div class="composer-ws-wrap">
               <div class="composer-workspace-group ws-chip" id="composerWorkspaceGroup" role="group" aria-label="Workspace controls">
@@ -680,14 +699,14 @@
               <span class="provider-quota-chip-dot" aria-hidden="true"></span>
               <span class="provider-quota-chip-label" id="providerQuotaChipLabel"></span>
             </button>
-            <div class="composer-reasoning-wrap" id="composerReasoningWrap" style="display:none">
+            <div class="composer-reasoning-wrap" id="composerReasoningWrap" style="display:none" hidden>
               <button class="composer-reasoning-chip" id="composerReasoningChip" type="button" onclick="toggleReasoningDropdown()" title="Reasoning effort level">
                 <span class="composer-reasoning-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg></span>
                 <span class="composer-reasoning-label" id="composerReasoningLabel"></span>
                 <span class="composer-reasoning-chevron" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
               </button>
             </div>
-            <div class="composer-toolsets-wrap" id="composerToolsetsWrap">
+            <div class="composer-toolsets-wrap" id="composerToolsetsWrap" style="display:none" hidden>
               <button class="composer-toolsets-chip" id="composerToolsetsChip" type="button" onclick="toggleToolsetsDropdown()" title="Session toolsets">
                 <span class="composer-toolsets-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
                 <span class="composer-toolsets-label" id="composerToolsetsLabel">Global</span>
@@ -895,6 +914,20 @@
         <svg class="main-view-empty-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <div class="main-view-empty-title" data-i18n="profiles_empty_title">Select a profile</div>
         <div class="main-view-empty-sub" data-i18n="profiles_empty_sub">Pick an agent profile from the sidebar to view and edit its settings, or create a new one.</div>
+      </div>
+    </div>
+    <div id="mainCharacters" class="main-view">
+      <div class="main-view-header">
+        <div class="main-view-title" id="characterDetailTitle"></div>
+        <div class="main-view-actions">
+          <button id="btnCharSelect" class="panel-head-btn primary has-tooltip has-tooltip--bottom" data-tooltip="Set as active character" onclick="AresCharacters.selectCurrent()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></button>
+        </div>
+      </div>
+      <div class="main-view-body" id="characterDetailBody" style="display:none"></div>
+      <div class="main-view-empty" id="characterDetailEmpty">
+        <svg class="main-view-empty-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <div class="main-view-empty-title">Select a character</div>
+        <div class="main-view-empty-sub">Pick a character from the sidebar. This is Jaeger's live roster — the same one the floating pill uses.</div>
       </div>
     </div>
     <div id="mainInsights" class="main-view">
@@ -1780,6 +1813,7 @@
 <script src="static/messages.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/extension_settings.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/panels.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/characters.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/onboarding.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/boot.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/outline.js?v=__WEBUI_VERSION__" defer></script>

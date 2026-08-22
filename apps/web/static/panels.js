@@ -42,9 +42,9 @@ let _logsSeverityFilter = 'all';
 const APP_TITLEBAR_KEYS = {
   chat: 'tab_chat', tasks: 'tab_tasks', skills: 'tab_skills',
   memory: 'tab_memory', workspaces: 'tab_workspaces',
-  profiles: 'tab_profiles', todos: 'tab_todos', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
+  profiles: 'tab_profiles', characters: 'tab_characters', todos: 'tab_todos', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
 };
-const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','workspaces','profiles','insights','logs','plugin'];
+const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','workspaces','profiles','characters','insights','logs','plugin'];
 const MAIN_VIEW_SIDEBAR_PANEL_FALLBACKS = { plugin: 'settings' };
 
 /**
@@ -456,6 +456,7 @@ async function switchPanel(name, opts = {}) {
   if (nextPanel === 'memory') await loadMemory();
   if (nextPanel === 'workspaces') await loadWorkspacesPanel();
   if (nextPanel === 'profiles') await loadProfilesPanel();
+  if (nextPanel === 'characters' && window.AresCharacters) await AresCharacters.load();
   if (nextPanel === 'todos') loadTodos();
   if (nextPanel === 'insights') await loadInsights();
   if (nextPanel === 'logs') await loadLogs();
@@ -6881,9 +6882,11 @@ function toggleProfileDropdown(e) {
   if (!dd) return;
   if (dd.classList.contains('open')) { closeProfileDropdown(); return; }
   closeWsDropdown(); // close workspace dropdown if open
-  if(typeof closeModelDropdown==='function') closeModelDropdown();
+  if (typeof closeModelDropdown === 'function') closeModelDropdown();
+  const charDd = $('aresCharacterDropdown');
+  if (charDd) charDd.style.display = 'none';
   // Track which element triggered the dropdown for positioning
-  _profileDropdownTrigger = (e && e.currentTarget) || $('profileChip');
+  _profileDropdownTrigger = (e && e.currentTarget) || $('profileIconBtn') || $('profileChip') || $('profileChipWrap');
   const openGen = ++_profileDropdownOpenGeneration;
   const cached = _profileDropdownBestCachedData();
 
@@ -6919,10 +6922,10 @@ function closeProfileDropdown() {
   _profileDropdownOpenGeneration++;
   const dd = $('profileDropdown');
   if (dd) dd.classList.remove('open');
-  const chip=$('profileChip');
-  if(chip) chip.classList.remove('active');
-  const tbtn=$('titlebarProfileBtn');
-  if(tbtn) tbtn.classList.remove('active');
+  const chip = $('profileIconBtn') || $('profileChip');
+  if (chip) chip.classList.remove('active');
+  const tbtn = $('titlebarProfileBtn');
+  if (tbtn) tbtn.classList.remove('active');
 }
 document.addEventListener('click', e => {
   if (!e.target.closest('#profileChipWrap') && !e.target.closest('#titlebarProfileBtn') && !e.target.closest('#profileDropdown')) closeProfileDropdown();

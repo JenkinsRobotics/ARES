@@ -7,6 +7,7 @@ through HTTP.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import threading
@@ -17,6 +18,8 @@ from typing import Any
 from .errors import CoreApiError
 from .request_context import profile_scope
 from .schemas import SessionCreate, SettingsUpdate
+
+logger = logging.getLogger(__name__)
 
 
 class AresCoreService:
@@ -247,25 +250,40 @@ class AresCoreService:
                 for row in deduped.values()
                 if _profiles_match(row.get("profile"), active_profile)
             ]
-            try:
-                from api.backend_catalog import JAEGER_BACKEND_ID
-                from api.session_contract import (
-                    SESSION_CONTRACT_VERSION,
-                    backend_for_session,
-                    require_operation,
-                    runtime_owns_transcript,
-                    runtime_query,
-                )
+            from api.backend_catalog import JAEGER_BACKEND_ID
+            from api.providers.jaeger.bridge_client import JaegerError
+            from api.session_contract import (
+                SESSION_CONTRACT_VERSION,
+                SessionCapabilityError,
+                backend_for_session,
+                require_operation,
+                runtime_owns_transcript,
+                runtime_query,
+            )
 
-                jaeger_rows = [
-                    row
-                    for row in rows
-                    if backend_for_session(row) == JAEGER_BACKEND_ID
-                    and runtime_owns_transcript(row)
-                ]
-                if jaeger_rows:
+            jaeger_rows = [
+                row
+                for row in rows
+                if backend_for_session(row) == JAEGER_BACKEND_ID
+                and runtime_owns_transcript(row)
+            ]
+            if jaeger_rows:
+                try:
                     require_operation("list", backend=JAEGER_BACKEND_ID)
                     runtime_rows = runtime_query("list", limit=10_000)
+                except (SessionCapabilityError, JaegerError) as exc:
+                    # Listing the sidebar must not 500 because the selected
+                    # Jaeger model cannot boot. The projection still has the
+                    # ARES rows; mark them missing so the UI can explain.
+                    logger.warning(
+                        "Jaeger session listing unavailable; showing ARES projection: %s",
+                        exc,
+                    )
+                    for row in jaeger_rows:
+                        row["transcript_owner"] = "jaeger"
+                        row["session_contract_version"] = SESSION_CONTRACT_VERSION
+                        row["runtime_missing"] = True
+                else:
                     runtime_by_id = {
                         str(item.get("id")): item
                         for item in (runtime_rows or [])
@@ -276,7 +294,11 @@ class AresCoreService:
                         if runtime is None:
                             row["transcript_owner"] = "jaeger"
                             row["session_contract_version"] = SESSION_CONTRACT_VERSION
-                            row["message_count"] = 0
+                            row["message_count"] = int(
+                                row.get("message_count")
+                                or row.get("runtime_message_count")
+                                or 0
+                            )
                             row["runtime_missing"] = True
                             continue
                         row["transcript_owner"] = "jaeger"
@@ -288,14 +310,41 @@ class AresCoreService:
                             row["model"] = runtime["model"]
                         if runtime.get("provider"):
                             row["model_provider"] = runtime["provider"]
-            except Exception as exc:
-                from api.session_contract import SessionCapabilityError
+                    if settings.get("show_cli_sessions"):
+                        from api.models import DEFAULT_WORKSPACE, get_last_workspace
 
-                if isinstance(exc, SessionCapabilityError):
-                    raise CoreApiError(
-                        503, str(exc), code="session_operation_unavailable"
-                    ) from exc
-                raise
+                        existing_ids = {
+                            str(r.get("session_id") or "")
+                            for r in rows
+                            if r.get("session_id")
+                        }
+                        for sid, item in runtime_by_id.items():
+                            if sid not in existing_ids and (int(item.get("messages") or 0) > 0 or item.get("preview")):
+                                origin = str(item.get("origin") or item.get("source") or "cli").strip().lower()
+                                preview = str(item.get("preview") or item.get("title") or "Session").strip()
+                                preview_title = preview.split("\n")[0][:80]
+                                rows.append({
+                                    "session_id": sid,
+                                    "title": item.get("title") or preview_title,
+                                    "workspace": str(get_last_workspace() or DEFAULT_WORKSPACE),
+                                    "model": item.get("model"),
+                                    "model_provider": item.get("provider"),
+                                    "message_count": int(item.get("messages") or 0),
+                                    "created_at": item.get("created_at") or item.get("last_active") or 0,
+                                    "updated_at": item.get("last_active") or 0,
+                                    "last_message_at": item.get("last_active"),
+                                    "pinned": False,
+                                    "archived": False,
+                                    "project_id": None,
+                                    "profile": active_profile,
+                                    "source_tag": origin,
+                                    "raw_source": origin,
+                                    "session_source": "cli" if origin != "webui" else "webui",
+                                    "is_cli_session": origin != "webui",
+                                    "transcript_owner": "jaeger",
+                                    "session_contract_version": SESSION_CONTRACT_VERSION,
+                                    "runtime_execution_state": item.get("execution_state") or "idle",
+                                })
             archived_count = sum(1 for row in rows if row.get("archived"))
             if not include_archived:
                 rows = [row for row in rows if not row.get("archived")]
@@ -344,6 +393,44 @@ class AresCoreService:
                 from api.session_access import claim_or_synthesize_cli_session
 
                 session, _reason = claim_or_synthesize_cli_session(session_id)
+                if session is None:
+                    from api.backend_catalog import JAEGER_BACKEND_ID
+                    from api.session_contract import is_operation_available, runtime_query
+
+                    if is_operation_available("list", backend=JAEGER_BACKEND_ID):
+                        r_rows = runtime_query("list", limit=10_000)
+                        matching = next(
+                            (
+                                item
+                                for item in (r_rows or [])
+                                if isinstance(item, dict) and str(item.get("id")) == str(session_id)
+                            ),
+                            None,
+                        )
+                        if matching:
+                            from api.models import DEFAULT_WORKSPACE, Session, get_last_workspace
+
+                            origin = str(matching.get("origin") or matching.get("source") or "cli").strip().lower()
+                            preview = str(matching.get("preview") or matching.get("title") or "Session").strip()
+                            preview_title = preview.split("\n")[0][:80]
+                            active_prof = profile or get_active_profile_name()
+                            session = Session(
+                                session_id=session_id,
+                                title=matching.get("title") or preview_title,
+                                workspace=str(get_last_workspace() or DEFAULT_WORKSPACE),
+                                model=matching.get("model") or "unknown",
+                                model_provider=matching.get("provider"),
+                                messages=[],
+                                created_at=matching.get("created_at") or matching.get("last_active") or 0,
+                                updated_at=matching.get("last_active") or 0,
+                                profile=active_prof,
+                                is_cli_session=origin != "webui",
+                                source_tag=origin,
+                                raw_source=origin,
+                                session_source="cli" if origin != "webui" else "webui",
+                                read_only=False,
+                                transcript_owner="jaeger",
+                            )
                 if session is None:
                     raise CoreApiError(404, "Session not found") from exc
             from api.session_runtime_state import clear_stale_stream_state

@@ -9,7 +9,7 @@ const S={session:null,messages:[],entries:[],busy:false,pendingFiles:[],toolCall
 
 function assistantDisplayName(){
   if(S.activeProfile&&S.activeProfile!=='default') return S.activeProfile.charAt(0).toUpperCase()+S.activeProfile.slice(1);
-  return window._botName||'Hermes';
+  return window._botName||'ARES';
 }
 const INFLIGHT={};  // keyed by session_id while request in-flight
 const SESSION_QUEUES={};  // keyed by session_id for queued follow-up turns
@@ -3856,8 +3856,14 @@ function _getConfiguredModelBadge(modelId,badgeMap,providerId){
 
 function _compactComposerModelChipLabel(modelId,labelText){
   const id=String(modelId||'').trim();
-  const raw=String(labelText||'').trim();
-  if(!raw) return getModelLabel(id);
+  let raw=String(labelText||'').trim();
+  if(!raw) raw = getModelLabel(id);
+  if(raw.includes(' · ')){
+    raw = raw.split(' · ')[0].trim();
+  }
+  if(raw.includes(' via ')){
+    raw = raw.split(' via ')[0].trim();
+  }
   const idLower=id.toLowerCase();
   const rawLower=raw.toLowerCase();
   const slash=id.indexOf('/');
@@ -3904,9 +3910,8 @@ function syncModelChip(){
   const text=opt?opt.textContent:getModelLabel(sel.value||'');
   const compactText=_compactComposerModelChipLabel(sel.value||'', text);
   const gatewayRouting=_latestGatewayRoutingForSession(S.session);
-  const displayText=_formatGatewayModelLabel(sel.value||'',compactText,gatewayRouting)||compactText;
-  label.textContent=displayText;
-  if(mobileLabel) mobileLabel.textContent=displayText;
+  label.textContent=compactText;
+  if(mobileLabel) mobileLabel.textContent=compactText;
   chip.title=gatewayRouting?`${sel.value||'Conversation model'} ${_gatewayRoutingLabel(gatewayRouting)}`:(sel.value||'Conversation model');
   chip.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
   if(mobileAction) mobileAction.classList.toggle('active',!!(dd&&dd.classList.contains('open')));
@@ -6933,9 +6938,20 @@ document.addEventListener('DOMContentLoaded',function(){
   if(!wrap||!tooltip)return;
   const btn=document.getElementById('ctxIndicator');
   if(!btn)return;
-  btn.addEventListener('click',openComposerContextMenu);
+  btn.addEventListener('click',function(e){
+    if(e){e.preventDefault();e.stopPropagation();}
+    const active=tooltip.classList.contains('ctx-tooltip-active');
+    if(active){
+      tooltip.classList.remove('ctx-tooltip-active');
+      tooltip.setAttribute('aria-hidden','true');
+    }else{
+      tooltip.classList.add('ctx-tooltip-active');
+      tooltip.setAttribute('aria-hidden','false');
+    }
+  });
   // Close on outside tap
-  document.addEventListener('click',function(){
+  document.addEventListener('click',function(e){
+    if(e&&e.target&&e.target.closest&&e.target.closest('#ctxIndicatorWrap'))return;
     tooltip.classList.remove('ctx-tooltip-active');
     tooltip.setAttribute('aria-hidden','true');
   },{passive:true});

@@ -247,6 +247,10 @@ def project_session_detail(
     runtime_tool_calls: list[dict] | None = None
     if canonical_runtime is not None:
         all_messages, runtime_tool_calls = canonical_runtime
+        if not all_messages:
+            sidecar = webui_sidecar_lineage_messages_for_display(session)
+            if sidecar:
+                all_messages = sidecar
     elif messaging:
         all_messages = merged_session_messages_for_display(
             session,

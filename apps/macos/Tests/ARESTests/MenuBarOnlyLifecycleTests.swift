@@ -66,4 +66,27 @@ final class MenuBarOnlyLifecycleTests: XCTestCase {
         XCTAssertTrue(source.contains("sendAction(on: [.leftMouseUp, .rightMouseUp])"))
         XCTAssertTrue(source.contains("statusItem.menu = nil"))
     }
+
+    func testOpenARESDoesNotCastNSAppDelegate() throws {
+        let source = try repositoryFile("apps/macos/Sources/ARES/ARESApp.swift")
+        XCTAssertTrue(source.contains("ARESAppDelegate.shared"))
+        XCTAssertTrue(source.contains("init(owner: ARESAppDelegate)"))
+        XCTAssertFalse(
+            source.contains("NSApp.delegate as? ARESAppDelegate"),
+            "SwiftUI's adaptor is NSApp.delegate; casting it to ARESAppDelegate makes Open ARES a no-op"
+        )
+    }
+
+    func testReopenOpensTheMainWindow() throws {
+        let source = try repositoryFile("apps/macos/Sources/ARES/ARESApp.swift")
+        guard let reopenRange = source.range(of: "func applicationShouldHandleReopen") else {
+            XCTFail("applicationShouldHandleReopen is missing")
+            return
+        }
+        let reopenBody = String(source[reopenRange.lowerBound...].prefix(500))
+        XCTAssertTrue(
+            reopenBody.contains("openMainWindow()"),
+            "ares open / a second launch must request the window once the status item is already running"
+        )
+    }
 }

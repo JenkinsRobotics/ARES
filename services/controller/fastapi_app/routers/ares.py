@@ -151,6 +151,10 @@ def set_persona(
     try:
         with profile_scope(identity.profile):
             save_config_values({"ares_persona": persona_id})
+            if persona_id:
+                from api.providers.jaeger.companion_control import update_companion
+
+                update_companion(character_id=persona_id)
     except Exception as exc:
         raise CoreApiError(400, f"Failed to save persona: {exc}") from exc
     return {"ok": True, "persona_id": persona_id}

@@ -519,6 +519,11 @@ def read_importable_agent_session_rows(
     db_path = Path(db_path)
     if not db_path.exists():
         return []
+    try:
+        if db_path.stat().st_size == 0:
+            return []
+    except OSError:
+        return []
 
     log = log or logger
     # Open read-only for this projection/listing path: it is a pure read, and

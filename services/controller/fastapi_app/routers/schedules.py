@@ -212,3 +212,13 @@ async def resume(
     from api.schedules_store import resume_schedule
 
     return await _call(identity, resume_schedule, payload.job_id)
+
+
+@router.post("/ensure-defaults")
+async def ensure_default_routines(
+    identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
+):
+    """Ensure system maintenance and synchronization routines exist."""
+    from api.schedule_jobs import ensure_system_routines
+    created = _profile_call(identity.profile, ensure_system_routines, (), {})
+    return {"ok": True, "created_count": len(created), "created_jobs": created}

@@ -162,3 +162,34 @@ def save_job_output(job_id: str, output: str) -> Path:
 def _compute_provider_model_snapshots(**_kwargs) -> tuple[None, None]:
     """Unpinned jobs resolve the elected runtime/model when they execute."""
     return None, None
+
+
+def ensure_system_routines() -> list[dict[str, Any]]:
+    """Register default system maintenance and synchronization routines if missing."""
+    existing = list_jobs(include_disabled=True)
+    existing_names = {j.get("name") for j in existing}
+    created = []
+
+    defaults = [
+        {
+            "name": "Cross-Agent Memory Synchronization",
+            "schedule": "0 */6 * * *",
+            "prompt": "Run cross-agent memory ingestion and distill developer preferences across Claude Code, Hermes, Codex, and ARES into person.md.",
+            "deliver": "session",
+            "toast_notifications": False,
+        },
+        {
+            "name": "Local Model Orchestrator Evaluation Probe",
+            "schedule": "0 0 * * *",
+            "prompt": "Run evaluation benchmark suite across local models to verify latency and accuracy.",
+            "deliver": "session",
+            "toast_notifications": False,
+        },
+    ]
+
+    for d in defaults:
+        if d["name"] not in existing_names:
+            job = create_job(**d)
+            created.append(job)
+
+    return created

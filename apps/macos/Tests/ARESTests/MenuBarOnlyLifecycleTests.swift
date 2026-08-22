@@ -77,6 +77,28 @@ final class MenuBarOnlyLifecycleTests: XCTestCase {
         )
     }
 
+    func testQuitReapsTheControllerTree() throws {
+        let manager = try repositoryFile("apps/macos/Sources/ARES/WebUIServerManager.swift")
+        XCTAssertTrue(manager.contains("ProcessTree.terminate"))
+        XCTAssertTrue(manager.contains("startParentDeathWatchdog"))
+        XCTAssertTrue(manager.contains("descendants(of:"))
+        let bridge = try repositoryFile("apps/macos/Sources/ARESCore/Utilities/ProcessTree.swift")
+        XCTAssertTrue(bridge.contains("SIGKILL"))
+    }
+
+    func testQuitWaitsForTheControllerToStop() throws {
+        let source = try repositoryFile("apps/macos/Sources/ARES/ARESApp.swift")
+        XCTAssertTrue(source.contains("func applicationShouldTerminate"))
+        XCTAssertTrue(source.contains("return .terminateLater"))
+        XCTAssertTrue(source.contains("await WebUIServerManager.shared.stop()"))
+        XCTAssertTrue(source.contains("await NodeProcessManager.shared.stopAllNodes()"))
+        XCTAssertTrue(source.contains("sender.reply(toApplicationShouldTerminate: true)"))
+        XCTAssertFalse(
+            source.contains("func applicationWillTerminate"),
+            "applicationWillTerminate returns into process exit; stop() must run from applicationShouldTerminate"
+        )
+    }
+
     func testReopenOpensTheMainWindow() throws {
         let source = try repositoryFile("apps/macos/Sources/ARES/ARESApp.swift")
         guard let reopenRange = source.range(of: "func applicationShouldHandleReopen") else {

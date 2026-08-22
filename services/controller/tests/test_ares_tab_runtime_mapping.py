@@ -32,6 +32,21 @@ def test_visible_runtime_labels_do_not_send_users_back_to_hermes() -> None:
     assert "Hermes agent is not responding" not in ui
 
 
+def test_composer_exposes_agent_mode_and_slash_command_browser() -> None:
+    index = _read("index.html")
+    commands = _read("commands.js")
+
+    assert 'id="composerModeChip"' in index
+    assert 'data-mode="plan"' in index
+    assert 'data-mode="manual"' in index
+    assert 'data-mode="auto"' in index
+    assert 'id="btnSlashCommands"' in index
+    assert 'id="slashCommandsPopup"' in index
+    assert "function setAgentMode" in commands
+    assert "function toggleSlashCommandsPopup" in commands
+    assert "function applyAgentModeToOutboundMessage" in commands
+
+
 def test_dashboard_handler_exposes_only_the_ares_name() -> None:
     ui = _read("ui.js")
 

@@ -75,18 +75,19 @@ public final class NodeProcessManager: @unchecked Sendable {
         }
     }
     
-    /// Stops a running node gracefully, or forces kill if it hangs
+    /// Stops a running node and every descendant.
     public func stopNode(_ nodeName: String) {
-        guard let process = runningProcesses[nodeName] else { return }
+        guard let process = runningProcesses.removeValue(forKey: nodeName) else { return }
         print("🛑 [NODE_MANAGER] Stopping '\(nodeName)'...")
-        process.terminate()
-        runningProcesses.removeValue(forKey: nodeName)
+        Task { await ProcessTree.terminate(root: process.processIdentifier, graceSeconds: 2) }
     }
-    
+
     /// Stops all running nodes. Called during app teardown.
-    public func stopAllNodes() {
-        for (name, _) in runningProcesses {
-            stopNode(name)
+    public func stopAllNodes() async {
+        let snapshot = runningProcesses
+        runningProcesses.removeAll()
+        for (_, process) in snapshot {
+            await ProcessTree.terminate(root: process.processIdentifier, graceSeconds: 2)
         }
     }
     

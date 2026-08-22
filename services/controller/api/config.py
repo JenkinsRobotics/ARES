@@ -8940,6 +8940,8 @@ _SETTINGS_DEFAULTS = {
     "worklog_details_expanded_default": False,  # opt-in: expand Worklog details by default; default remains folded
     "hide_composer_attach": False,  # hide attach button in composer footer
     "hide_composer_saved_prompts": False,  # hide saved prompts button in composer footer
+    "hide_composer_slash": False,  # hide slash-command browser in composer footer
+    "hide_composer_mode": False,  # hide Plan/Manual/Auto chip in composer footer
     "hide_composer_mic": False,  # hide dictation mic button in composer footer
     "show_titlebar_profile": False,  # show profile switcher in app titlebar (opt-in)
     "hide_composer_voice_mode": False,  # hide hands-free voice-mode button in composer footer
@@ -9249,6 +9251,8 @@ _SETTINGS_BOOL_KEYS = {
     "auth_disabled_acknowledged",
     "hide_composer_attach",
     "hide_composer_saved_prompts",
+    "hide_composer_slash",
+    "hide_composer_mode",
     "hide_composer_mic",
     "show_titlebar_profile",
     "hide_composer_voice_mode",

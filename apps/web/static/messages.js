@@ -802,7 +802,7 @@ function _appendComposerText(text){
   if(!composer||!text)return;
   const current=String(composer.value||'');
   composer.value=current.trim()?`${current.replace(/\s+$/,'')}\n\n${text}`:String(text);
-  composer.focus();
+  try{composer.focus({preventScroll:true});}catch(_){composer.focus();}
   try{composer.setSelectionRange(composer.value.length, composer.value.length);}catch(_e){}
   composer.dispatchEvent(new Event('input',{bubbles:true}));
   if(typeof autoResize==='function') autoResize();
@@ -1073,7 +1073,7 @@ function _flushSelectionBlocksToComposer(){
   if(!composer)return;
   composer.value=_composerTextWithPendingSelections();
   _clearPendingSelections();
-  composer.focus();
+  try{composer.focus({preventScroll:true});}catch(_){composer.focus();}
   try{ composer.setSelectionRange(composer.value.length, composer.value.length); }catch(_e){}
   composer.dispatchEvent(new Event('input',{bubbles:true}));
   if(typeof autoResize==='function') autoResize();
@@ -1416,7 +1416,7 @@ async function send(){
       // cmdSteer / cmdInterrupt say "No active task to stop."
       if(text.startsWith('/')&&!literalSlash){
         const _pc=typeof parseCommand==='function'&&parseCommand(text);
-        if(_pc&&['steer','interrupt','queue','terminal','goal','yolo'].includes(_pc.name)){
+        if(_pc&&['steer','interrupt','queue','terminal','goal','yolo','plan','manual','auto'].includes(_pc.name)){
           const _bc=COMMANDS.find(c=>c.name===_pc.name);
           if(_bc){
             $('msg').value='';autoResize();
@@ -1797,6 +1797,9 @@ async function send(){
     // pick. (#3739/#3737, Codex catch)
     if(_pendingPickMatch && typeof _clearPendingSessionModel==='function') _clearPendingSessionModel(activeSid);
     explicitPickForPostStart=_explicitPick;
+    if(typeof applyAgentModeToOutboundMessage==='function'){
+      msgText=applyAgentModeToOutboundMessage(msgText);
+    }
     const startData=await api('/api/chat/start',{method:'POST',body:JSON.stringify({
       session_id:activeSid,message:msgText,
       // S.session.model remains authoritative; the helper only resolves a
@@ -2082,6 +2085,7 @@ function _dispatchExtensionTurnLifecycle(type,sessionId,streamId,details={}){
 
 function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   if(!activeSid||!streamId) return;
+  if(typeof setSystemStatusDot==='function') setSystemStatusDot('busy');
   const reconnecting=!!options.reconnecting;
   const _extensionTurnStartedAt=(S.session&&S.session.session_id===activeSid&&Number.isFinite(S.session.pending_started_at))
     ?S.session.pending_started_at
@@ -2369,6 +2373,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     _persistTimer=setTimeout(()=>{_persistTimer=null;persistInflightState();},2000);
   }
   function _closeSource(source){
+    if(typeof setSystemStatusDot==='function') setSystemStatusDot('online');
     closeLiveStream(activeSid, streamId, source);
   }
   function _clearStreamEndRecovery(){
@@ -7253,11 +7258,12 @@ async function _fetchYoloState(sid) {
 
 function _updateYoloPill() {
   const pill = $('yoloPill');
-  if (!pill) return;
-  pill.style.display = _yoloEnabled ? '' : 'none';
-  if (_yoloEnabled) {
-    pill.title = t('yolo_pill_title_active');
-    pill.setAttribute('data-i18n-title', 'yolo_pill_title_active');
+  if (pill) {
+    pill.style.display = 'none';
+    pill.hidden = true;
+  }
+  if (_yoloEnabled && typeof currentAgentMode==='function' && currentAgentMode()!=='auto' && typeof setAgentMode==='function') {
+    setAgentMode('auto',{syncYolo:false,toast:false});
   }
   if (typeof applyLocaleToDOM === 'function') applyLocaleToDOM();
 }
@@ -7272,6 +7278,7 @@ async function toggleYoloFromApproval() {
     });
     _yoloEnabled = true;
     _updateYoloPill();
+    if(typeof setAgentMode==='function') setAgentMode('auto',{syncYolo:false});
     hideApprovalCard(true);
     showToast(t('yolo_enabled'));
   } catch (e) { showToast('YOLO: ' + e.message); }

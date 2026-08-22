@@ -1738,6 +1738,7 @@ async function loadSession(sid){
   stopApprovalPolling();hideApprovalCard(forceReload);
   if(typeof stopSessionStream==='function') stopSessionStream();
   _yoloEnabled=false;_updateYoloPill();
+  if(typeof restoreAgentModeForSession==='function') restoreAgentModeForSession(sid);
   if(typeof stopClarifyPolling==='function') stopClarifyPolling();
   if(typeof hideClarifyCard==='function') hideClarifyCard(forceReload, forceReload?'external-refresh':'dismissed');
   // #6572: clear stale compression state when switching sessions.

@@ -136,6 +136,58 @@
     </span>
     <span class="app-titlebar-title" id="appTitlebarTitle">ARES</span>
     <span class="app-titlebar-sub" id="appTitlebarSub" hidden></span>
+    <div class="mode-pill-dropdown-wrap" id="modePillWrap">
+      <button class="mode-pill-btn has-tooltip has-tooltip--bottom" id="btnModePill" onclick="toggleModeDropdown(event)" type="button" data-tooltip="System Status & Cognitive Mode" aria-label="System Status & Cognitive Mode">
+        <span class="system-status-dot status-online" id="systemStatusDot" title="System Online"></span>
+        <span class="mode-pill-label" id="modePillLabel">💤 Standby</span>
+        <span class="mode-pill-chevron" aria-hidden="true"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+      </button>
+      <div class="mode-dropdown-menu" id="modeDropdownMenu" style="display:none">
+        <div class="mode-dropdown-header">COGNITIVE OPERATING MODE</div>
+        <button type="button" class="mode-dropdown-item active" data-mode="standby" onclick="selectCognitiveMode('standby')">
+          <span class="mode-item-icon">💤</span>
+          <div class="mode-item-content">
+            <span class="mode-item-name">Standby Mode</span>
+            <span class="mode-item-desc">Passive listening, triage & background watching</span>
+          </div>
+        </button>
+        <button type="button" class="mode-dropdown-item" data-mode="focus" onclick="selectCognitiveMode('focus')">
+          <span class="mode-item-icon">🎯</span>
+          <div class="mode-item-content">
+            <span class="mode-item-name">Focus Mode</span>
+            <span class="mode-item-desc">Deep autonomous execution & test verification loop</span>
+          </div>
+        </button>
+        <button type="button" class="mode-dropdown-item" data-mode="wondering" onclick="selectCognitiveMode('wondering')">
+          <span class="mode-item-icon">🌌</span>
+          <div class="mode-item-content">
+            <span class="mode-item-name">Wondering Mode</span>
+            <span class="mode-item-desc">Curious exploration, architecture & dead-code discovery</span>
+          </div>
+        </button>
+        <button type="button" class="mode-dropdown-item" data-mode="dream" onclick="selectCognitiveMode('dream')">
+          <span class="mode-item-icon">🌙</span>
+          <div class="mode-item-content">
+            <span class="mode-item-name">Dream Mode</span>
+            <span class="mode-item-desc">Background synthesis, memory consolidation & AST indexing</span>
+          </div>
+        </button>
+        <button type="button" class="mode-dropdown-item" data-mode="research" onclick="selectCognitiveMode('research')">
+          <span class="mode-item-icon">🔬</span>
+          <div class="mode-item-content">
+            <span class="mode-item-name">Research Mode</span>
+            <span class="mode-item-desc">Deep multi-source investigation & doc synthesis</span>
+          </div>
+        </button>
+        <button type="button" class="mode-dropdown-item" data-mode="audit" onclick="selectCognitiveMode('audit')">
+          <span class="mode-item-icon">🛡️</span>
+          <div class="mode-item-content">
+            <span class="mode-item-name">Audit Mode</span>
+            <span class="mode-item-desc">Security review, doctrine compliance & quality gate</span>
+          </div>
+        </button>
+      </div>
+    </div>
   </div>
   <div class="app-titlebar-spacer" aria-hidden="true"></div>
   <button class="app-titlebar-new-chat" id="btnTitlebarNewChat" onclick="$('btnNewChat') && $('btnNewChat').click()" type="button" aria-label="New conversation" data-i18n-title="new_conversation" data-i18n-aria-label="new_conversation" title="New conversation">
@@ -617,6 +669,9 @@
             <button type="button" class="icon-btn has-tooltip" id="btnSavedPrompts" data-tooltip="Saved prompts" data-i18n-title="composer_control_saved_prompts" data-i18n-aria-label="composer_control_saved_prompts" onclick="toggleSavedPromptsPopup()" aria-haspopup="menu" aria-expanded="false" aria-controls="savedPromptsPopup" aria-label="Saved prompts">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
             </button>
+            <button type="button" class="icon-btn has-tooltip" id="btnSlashCommands" data-tooltip="Slash commands" data-i18n-title="composer_control_slash" data-i18n-aria-label="composer_control_slash" onclick="toggleSlashCommandsPopup()" aria-haspopup="menu" aria-expanded="false" aria-controls="slashCommandsPopup" aria-label="Slash commands">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="15" x2="15" y2="9"/></svg>
+            </button>
             <button class="icon-btn mic-btn has-tooltip" id="btnMic" data-tooltip="Dictate" data-i18n-title="voice_dictate" style="display:none">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="1" width="6" height="12" rx="3"/>
@@ -637,10 +692,31 @@
               </svg>
             </button>
             <div class="composer-divider" aria-hidden="true"></div>
-            <button class="yolo-pill" id="yoloPill" type="button" onclick="cmdYolo()" style="display:none" title="YOLO mode — click to disable" data-i18n-title="yolo_pill_title_active">
+            <button class="yolo-pill" id="yoloPill" type="button" onclick="cmdYolo()" style="display:none" title="YOLO mode — click to disable" data-i18n-title="yolo_pill_title_active" hidden>
               <span class="yolo-pill-icon" aria-hidden="true">⚡</span>
               <span class="yolo-pill-label" data-i18n="yolo_pill_label">YOLO</span>
             </button>
+            <div class="composer-mode-wrap" id="composerModeWrap">
+              <button class="composer-mode-chip" id="composerModeChip" type="button" onclick="toggleAgentModeDropdown()" title="Agent mode — Shift+Tab to cycle" data-i18n-title="composer_mode_title" aria-label="Agent mode" aria-haspopup="true" aria-expanded="false" aria-controls="composerModeDropdown">
+                <span class="composer-mode-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2.5 1.5"/></svg></span>
+                <span class="composer-mode-label" id="composerModeLabel">Manual</span>
+                <span class="composer-mode-chevron" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+              </button>
+              <div class="composer-mode-dropdown" id="composerModeDropdown">
+                <button type="button" class="mode-option" data-mode="plan">
+                  <span class="mode-option-name" data-i18n="composer_mode_plan">Plan</span>
+                  <span class="mode-option-desc" data-i18n="composer_mode_plan_desc">Explore and write a plan. Wait for you before doing the work.</span>
+                </button>
+                <button type="button" class="mode-option selected" data-mode="manual">
+                  <span class="mode-option-name" data-i18n="composer_mode_manual">Manual</span>
+                  <span class="mode-option-desc" data-i18n="composer_mode_manual_desc">One turn at a time. Ask before risky actions.</span>
+                </button>
+                <button type="button" class="mode-option" data-mode="auto">
+                  <span class="mode-option-name" data-i18n="composer_mode_auto">Auto</span>
+                  <span class="mode-option-desc" data-i18n="composer_mode_auto_desc">Keep going until done. Skip approval prompts.</span>
+                </button>
+              </div>
+            </div>
             <div id="profileChipWrap" class="composer-profile-wrap">
               <div class="composer-profile-group profile-chip-group" id="composerProfileGroup" role="group" aria-label="Profile and character controls">
                 <button class="composer-profile-avatar-btn" id="profileIconBtn" type="button" onclick="toggleProfileDropdown(event)" title="Select profile" aria-label="Select profile">
@@ -715,6 +791,7 @@
             </div>
           </div>
           <div id="savedPromptsPopup" class="saved-prompts-popup" style="display:none" role="menu" aria-label="Saved prompts" data-i18n-aria-label="composer_control_saved_prompts"></div>
+          <div id="slashCommandsPopup" class="slash-commands-popup" style="display:none" role="menu" aria-label="Slash commands" data-i18n-aria-label="composer_control_slash"></div>
           <div class="composer-right">
             <span class="composer-status" id="composerStatus" style="display:none"></span>
             <div class="ctx-indicator-wrap" id="ctxIndicatorWrap" style="display:none">
@@ -744,6 +821,10 @@
             </button>
           </div>
           <div class="composer-mobile-config-panel" id="composerMobileConfigPanel" aria-label="Workspace, model, quota, reasoning, and context settings">
+            <button class="composer-mobile-config-action" id="composerMobileModeAction" type="button" onclick="toggleAgentModeDropdown()" title="Agent mode" aria-label="Agent mode" aria-haspopup="true" aria-expanded="false" aria-controls="composerModeDropdown">
+              <span class="composer-mode-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2.5 1.5"/></svg></span>
+              <span class="composer-mobile-config-copy"><span class="composer-mobile-config-kicker" data-i18n="composer_mobile_mode">Mode</span><span class="composer-mobile-config-value" id="composerMobileModeLabel">Manual</span></span>
+            </button>
             <button class="composer-mobile-config-action" id="composerMobileWorkspaceAction" type="button" onclick="toggleComposerWsDropdown()" title="Switch workspace" aria-label="Switch workspace" aria-haspopup="true" aria-expanded="false" aria-controls="composerWsDropdown">
               <span class="composer-workspace-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
               <span class="composer-mobile-config-copy"><span class="composer-mobile-config-kicker" data-i18n="composer_mobile_workspace">Workspace</span><span class="composer-mobile-config-value" id="composerMobileWorkspaceLabel"></span></span>

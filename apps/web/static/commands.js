@@ -32,6 +32,9 @@ const COMMANDS=[
   {name:'voice',     desc:t('cmd_voice'),    fn:cmdVoice,     noEcho:true},
   {name:'reasoning', desc:t('cmd_reasoning'), fn:cmdReasoning, arg:'show|hide|none|minimal|low|medium|high|xhigh|max', subArgs:['show','hide','none','minimal','low','medium','high','xhigh','max'], noEcho:true},
   {name:'yolo', desc:t('cmd_yolo'), fn:cmdYolo, noEcho:true},
+  {name:'plan', desc:t('cmd_plan'), fn:()=>setAgentMode('plan'), noEcho:true},
+  {name:'manual', desc:t('cmd_manual'), fn:()=>setAgentMode('manual'), noEcho:true},
+  {name:'auto', desc:t('cmd_auto'), fn:()=>setAgentMode('auto'), noEcho:true},
   {name:'branch', desc:t('cmd_branch'), fn:cmdBranch, arg:'[name]', noEcho:true},
 ];
 
@@ -562,6 +565,18 @@ function _compressionAnchorMessageKey(m){
 // ── Command handlers ────────────────────────────────────────────────────────
 
 function cmdHelp(){
+  const popup=typeof $==='function'?$('slashCommandsPopup'):null;
+  if(popup&&popup.style.display==='flex'){
+    const search=popup.querySelector('.slash-commands-search');
+    if(search) search.focus();
+    showToast(t('type_slash'));
+    return;
+  }
+  if(typeof toggleSlashCommandsPopup==='function'){
+    toggleSlashCommandsPopup();
+    showToast(t('type_slash'));
+    return;
+  }
   const lines=COMMANDS.map(c=>{
     const usage=c.arg ? (String(c.arg).startsWith('[') ? ` ${c.arg}` : ` <${c.arg}>`) : '';
     return `  /${c.name}${usage} — ${c.desc}`;
@@ -1911,6 +1926,7 @@ async function cmdYolo(){
     });
     _yoloEnabled=enable;
     _updateYoloPill();
+    if(typeof setAgentMode==='function') setAgentMode(enable?'auto':'manual',{syncYolo:false,toast:false});
     showToast(enable?t('yolo_enabled'):t('yolo_disabled'));
     if(enable){
       // Dismiss any visible approval card
@@ -1918,6 +1934,298 @@ async function cmdYolo(){
     }
   }catch(e){showToast('YOLO: '+e.message);}
 }
+
+const AGENT_MODES=[
+  {id:'plan',labelKey:'composer_mode_plan',fallback:'Plan'},
+  {id:'manual',labelKey:'composer_mode_manual',fallback:'Manual'},
+  {id:'auto',labelKey:'composer_mode_auto',fallback:'Auto'},
+];
+let _agentMode='manual';
+
+function currentAgentMode(){
+  return AGENT_MODES.some(m=>m.id===_agentMode)?_agentMode:'manual';
+}
+
+function _agentModeStorageKey(sid){
+  return 'ares-agent-mode:'+String(sid||'');
+}
+
+function _agentModeLabel(id){
+  const spec=AGENT_MODES.find(m=>m.id===id)||AGENT_MODES[1];
+  return (typeof t==='function'&&t(spec.labelKey))||spec.fallback;
+}
+
+function _renderAgentModeChip(){
+  const mode=currentAgentMode();
+  const chip=$('composerModeChip');
+  const label=$('composerModeLabel');
+  const mobile=$('composerMobileModeLabel');
+  if(chip){
+    chip.dataset.mode=mode;
+    chip.classList.toggle('active',mode!=='manual');
+    chip.setAttribute('aria-label',_agentModeLabel(mode));
+  }
+  if(label) label.textContent=_agentModeLabel(mode);
+  if(mobile) mobile.textContent=_agentModeLabel(mode);
+  document.querySelectorAll('#composerModeDropdown .mode-option').forEach(el=>{
+    el.classList.toggle('selected',el.dataset.mode===mode);
+  });
+}
+
+function closeAgentModeDropdown(){
+  const dd=$('composerModeDropdown');
+  const chip=$('composerModeChip');
+  const mobile=$('composerMobileModeAction');
+  if(dd) dd.classList.remove('open');
+  if(chip) chip.setAttribute('aria-expanded','false');
+  if(mobile) mobile.setAttribute('aria-expanded','false');
+}
+
+function toggleAgentModeDropdown(){
+  const dd=$('composerModeDropdown');
+  if(!dd)return;
+  const open=dd.classList.contains('open');
+  if(open){closeAgentModeDropdown();return;}
+  if(typeof hideCmdDropdown==='function') hideCmdDropdown();
+  const slash=$('slashCommandsPopup');
+  if(slash) slash.style.display='none';
+  dd.classList.add('open');
+  const chip=$('composerModeChip');
+  if(chip) chip.setAttribute('aria-expanded','true');
+  const mobile=$('composerMobileModeAction');
+  if(mobile) mobile.setAttribute('aria-expanded','true');
+}
+
+async function _syncYoloForAgentMode(mode){
+  const sid=S.session&&S.session.session_id;
+  if(!sid||typeof api!=='function') return;
+  const enable=mode==='auto';
+  try{
+    await api('/api/session/yolo',{
+      method:'POST',
+      body:JSON.stringify({session_id:sid,enabled:enable}),
+    });
+    _yoloEnabled=enable;
+    if(typeof _updateYoloPill==='function') _updateYoloPill();
+    if(enable&&typeof hideApprovalCard==='function') hideApprovalCard(true);
+  }catch(_){ /* yolo is best-effort; the chip still reflects the user's choice */ }
+}
+
+function setAgentMode(mode,opts){
+  const next=AGENT_MODES.some(m=>m.id===mode)?mode:'manual';
+  const options=opts||{};
+  const changed=_agentMode!==next;
+  _agentMode=next;
+  const sid=S.session&&S.session.session_id;
+  if(sid){
+    try{localStorage.setItem(_agentModeStorageKey(sid),next);}catch(_){}
+  }
+  _renderAgentModeChip();
+  closeAgentModeDropdown();
+  if(options.syncYolo!==false) _syncYoloForAgentMode(next);
+  if(changed&&options.toast!==false){
+    const toasts={
+      plan:(typeof t==='function'&&t('composer_mode_plan_toast'))||'Plan mode — it will wait for you before doing the work',
+      manual:(typeof t==='function'&&t('composer_mode_manual_toast'))||'Manual mode — one turn at a time',
+      auto:(typeof t==='function'&&t('composer_mode_auto_toast'))||'Auto mode — keep going, skip approvals',
+    };
+    if(typeof showToast==='function') showToast(toasts[next]);
+  }
+  return next;
+}
+
+function cycleAgentMode(){
+  const ids=AGENT_MODES.map(m=>m.id);
+  const idx=Math.max(0,ids.indexOf(currentAgentMode()));
+  return setAgentMode(ids[(idx+1)%ids.length]);
+}
+
+function restoreAgentModeForSession(sid){
+  let stored='';
+  try{stored=localStorage.getItem(_agentModeStorageKey(sid))||'';}catch(_){stored='';}
+  const next=AGENT_MODES.some(m=>m.id===stored)?stored:'manual';
+  _agentMode=next;
+  _renderAgentModeChip();
+  if(next==='auto') _syncYoloForAgentMode('auto');
+}
+
+function applyAgentModeToOutboundMessage(text){
+  const body=String(text||'').trim();
+  if(!body) return body;
+  const mode=currentAgentMode();
+  if(mode==='plan'){
+    if(/^PLAN MODE/i.test(body)) return body;
+    return 'PLAN MODE — Do not execute. Explore only as needed, write a short numbered plan, then stop and wait for approval. Do not edit files or run commands that change state.\n\nUser request:\n'+body;
+  }
+  if(mode==='auto'){
+    if(/^AUTO MODE/i.test(body)) return body;
+    return 'AUTO MODE — Keep working until the objective is done. Do not stop after narrating a plan. Call tools and continue until finished, then summarise.\n\nUser request:\n'+body;
+  }
+  return body;
+}
+
+document.addEventListener('click',e=>{
+  const opt=e.target.closest&&e.target.closest('.mode-option');
+  if(opt&&opt.dataset.mode){
+    setAgentMode(opt.dataset.mode);
+    return;
+  }
+  const dd=$('composerModeDropdown');
+  if(!dd||!dd.classList.contains('open')) return;
+  const wrap=$('composerModeWrap');
+  const mobile=$('composerMobileModeAction');
+  if(wrap&&wrap.contains(e.target)) return;
+  if(mobile&&mobile.contains(e.target)) return;
+  closeAgentModeDropdown();
+});
+_renderAgentModeChip();
+
+function closeSlashCommandsPopup(){
+  const popup=$('slashCommandsPopup');
+  const btn=$('btnSlashCommands');
+  if(popup) popup.style.display='none';
+  if(btn) btn.setAttribute('aria-expanded','false');
+}
+
+function _slashCommandCatalog(){
+  const seen=new Set();
+  const rows=[];
+  for(const c of COMMANDS){
+    const name=String(c.name||'').toLowerCase();
+    if(!name||seen.has(name)) continue;
+    seen.add(name);
+    rows.push({
+      name,
+      arg:c.arg||'',
+      desc:c.desc||'',
+      source:'builtin',
+    });
+  }
+  for(const cmd of (_agentCommandCache||[])){
+    const name=String(cmd&&cmd.name||'').toLowerCase();
+    if(!name||seen.has(name)) continue;
+    if(cmd.cli_only&&name!=='pet') continue;
+    seen.add(name);
+    rows.push({
+      name,
+      arg:'',
+      desc:String(cmd&&cmd.description||'').trim()||'Agent command',
+      source:cmd.category==='Plugin'?'plugin':'agent',
+    });
+  }
+  for(const bundle of (_bundleCommandCache||[])){
+    const name=String(bundle&&bundle.name||'').toLowerCase();
+    if(!name||seen.has(name)) continue;
+    seen.add(name);
+    rows.push({
+      name,
+      arg:'',
+      desc:String(bundle&&bundle.desc||bundle.description||'').trim()||'Bundle',
+      source:'bundle',
+    });
+  }
+  rows.sort((a,b)=>a.name.localeCompare(b.name));
+  return rows;
+}
+
+function _renderSlashCommandsPopup(filter){
+  const popup=$('slashCommandsPopup');
+  if(!popup) return;
+  const q=String(filter||'').trim().toLowerCase();
+  const rows=_slashCommandCatalog().filter(c=>{
+    if(!q) return true;
+    return c.name.includes(q)||String(c.desc||'').toLowerCase().includes(q);
+  });
+  const search=document.createElement('input');
+  search.type='search';
+  search.className='slash-commands-search';
+  search.placeholder=(typeof t==='function'&&t('slash_commands_search'))||'Search commands…';
+  search.value=filter||'';
+  search.setAttribute('aria-label',search.placeholder);
+  const list=document.createElement('div');
+  list.className='slash-commands-list';
+  if(!rows.length){
+    const empty=document.createElement('div');
+    empty.className='slash-commands-empty';
+    empty.textContent=(typeof t==='function'&&t('slash_commands_empty'))||'No matching commands';
+    list.appendChild(empty);
+  }else{
+    for(const c of rows){
+      const row=document.createElement('button');
+      row.type='button';
+      row.className='slash-cmd-row';
+      row.setAttribute('role','menuitem');
+      const usage=c.arg?` <span class="slash-cmd-arg">${esc(String(c.arg).startsWith('[')?c.arg:'<'+c.arg+'>')}</span>`:'';
+      const badge=c.source&&c.source!=='builtin'
+        ? ` <span class="slash-cmd-badge">${esc(c.source)}</span>`
+        : '';
+      row.innerHTML=`<span class="slash-cmd-name">/${esc(c.name)}${usage}${badge}</span><span class="slash-cmd-desc">${esc(c.desc||'')}</span>`;
+      row.onclick=()=>{
+        const ta=$('msg');
+        if(ta){
+          ta.value='/'+c.name+(c.arg?' ':'');
+          ta.focus();
+          const pos=ta.value.length;
+          ta.setSelectionRange(pos,pos);
+          ta.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+        closeSlashCommandsPopup();
+      };
+      list.appendChild(row);
+    }
+  }
+  popup.innerHTML='';
+  popup.appendChild(search);
+  popup.appendChild(list);
+  search.addEventListener('input',()=>_renderSlashCommandsPopup(search.value));
+  search.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){e.preventDefault();closeSlashCommandsPopup();}
+    if(e.key==='Enter'){
+      const first=list.querySelector('.slash-cmd-row');
+      if(first){e.preventDefault();first.click();}
+    }
+  });
+  setTimeout(()=>search.focus(),0);
+}
+
+async function toggleSlashCommandsPopup(){
+  const popup=$('slashCommandsPopup');
+  const btn=$('btnSlashCommands');
+  if(!popup) return;
+  if(popup.style.display!=='none'&&popup.style.display){
+    closeSlashCommandsPopup();
+    return;
+  }
+  if(typeof hideCmdDropdown==='function') hideCmdDropdown();
+  closeAgentModeDropdown();
+  const saved=$('savedPromptsPopup');
+  if(saved) saved.style.display='none';
+  popup.style.display='flex';
+  if(btn) btn.setAttribute('aria-expanded','true');
+  try{
+    if(typeof loadAgentCommandMetadata==='function') await loadAgentCommandMetadata();
+    if(typeof loadBundleCommands==='function') await loadBundleCommands();
+  }catch(_){ }
+  _renderSlashCommandsPopup('');
+}
+
+document.addEventListener('click',e=>{
+  const popup=$('slashCommandsPopup');
+  const btn=$('btnSlashCommands');
+  if(!popup||popup.style.display==='none') return;
+  if(popup.contains(e.target)||(btn&&(e.target===btn||btn.contains(e.target)))) return;
+  closeSlashCommandsPopup();
+});
+
+window.setAgentMode=setAgentMode;
+window.cycleAgentMode=cycleAgentMode;
+window.currentAgentMode=currentAgentMode;
+window.toggleAgentModeDropdown=toggleAgentModeDropdown;
+window.closeAgentModeDropdown=closeAgentModeDropdown;
+window.restoreAgentModeForSession=restoreAgentModeForSession;
+window.applyAgentModeToOutboundMessage=applyAgentModeToOutboundMessage;
+window.toggleSlashCommandsPopup=toggleSlashCommandsPopup;
+window.closeSlashCommandsPopup=closeSlashCommandsPopup;
 
 // ── Branch / fork command ──
 // Forks the current conversation into a new session (#465).

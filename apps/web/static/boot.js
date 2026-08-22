@@ -2387,6 +2387,15 @@ $('msg').addEventListener('keydown',e=>{
   // Autocomplete navigation when dropdown is open
   const dd=$('cmdDropdown');
   const dropdownOpen=dd&&dd.classList.contains('open');
+  if(e.key==='Escape'){
+    if(typeof closeAgentModeDropdown==='function') closeAgentModeDropdown();
+    if(typeof closeSlashCommandsPopup==='function') closeSlashCommandsPopup();
+  }
+  if(e.key==='Tab'&&e.shiftKey&&!dropdownOpen){
+    e.preventDefault();
+    if(typeof cycleAgentMode==='function') cycleAgentMode();
+    return;
+  }
   if(dropdownOpen){
     if(e.key==='ArrowUp'){e.preventDefault();navigateCmdDropdown(-1);return;}
     if(e.key==='ArrowDown'){e.preventDefault();navigateCmdDropdown(1);return;}
@@ -3052,7 +3061,9 @@ function applyBotName(){
 const _COMPOSER_CONTROL_TOGGLE_DEFS=[
   {key:'hide_composer_attach',label:'Attach',labelKey:'composer_control_attach',selectors:['#btnAttach'],orderSelector:'#btnAttach',orderGroup:'left'},
   {key:'hide_composer_saved_prompts',label:'Saved prompts',labelKey:'composer_control_saved_prompts',selectors:['#btnSavedPrompts'],orderSelector:'#btnSavedPrompts',orderGroup:'left'},
+  {key:'hide_composer_slash',label:'Slash commands',labelKey:'composer_control_slash',selectors:['#btnSlashCommands'],orderSelector:'#btnSlashCommands',orderGroup:'left'},
   {key:'hide_composer_mic',label:'Mic',labelKey:'composer_control_mic',selectors:['#btnMic'],orderSelector:'#btnMic',orderGroup:'left'},
+  {key:'hide_composer_mode',label:'Mode',labelKey:'composer_control_mode',selectors:['#composerModeWrap','#composerMobileModeAction'],orderSelector:'#composerModeWrap',orderGroup:'left'},
   {key:'hide_composer_profile',label:'Profile',labelKey:'composer_control_profile',selectors:['#profileChipWrap'],orderSelector:'#profileChipWrap',orderGroup:'left'},
   {key:'hide_composer_workspace',label:'Workspace',labelKey:'composer_control_workspace',selectors:['.composer-ws-wrap','#composerMobileWorkspaceAction'],orderSelector:'.composer-ws-wrap',orderGroup:'left'},
   {key:'hide_composer_model',label:'Model',labelKey:'composer_control_model',selectors:['.composer-model-wrap','#composerMobileModelAction'],orderSelector:'.composer-model-wrap',orderGroup:'left'},
@@ -3164,6 +3175,8 @@ function _applyComposerFooterVisibilitySettings(){
     savedPopup.style.display='none';
     if(savedBtn) savedBtn.setAttribute('aria-expanded','false');
   }
+  if(hidden.hide_composer_slash&&typeof closeSlashCommandsPopup==='function') closeSlashCommandsPopup();
+  if(hidden.hide_composer_mode&&typeof closeAgentModeDropdown==='function') closeAgentModeDropdown();
 
   if(hidden.hide_composer_workspace&&typeof closeWsDropdown==='function') closeWsDropdown();
   if(hidden.hide_composer_profile&&typeof closeProfileDropdown==='function') closeProfileDropdown();
@@ -3176,7 +3189,7 @@ function _applyComposerFooterVisibilitySettings(){
   // Stops a lone vertical separator from appearing when attach/saved-prompts/mic/voice are all hidden.
   const _divider=document.querySelector('.composer-divider');
   if(_divider){
-    const _leftBtnSelectors=['#btnAttach','#btnSavedPrompts','#btnMic','#btnVoiceMode'];
+    const _leftBtnSelectors=['#btnAttach','#btnSavedPrompts','#btnSlashCommands','#btnMic','#btnVoiceMode'];
     const _allLeftHidden=_leftBtnSelectors.every(sel=>{
       const el=document.querySelector(sel);
       return !el||el.classList.contains('composer-control-hidden')||el.style.display==='none';

@@ -372,16 +372,33 @@ final class ARESAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Closing the window is not quitting: the status item stays, and the
     /// controller keeps running unless the user turned background operation off.
+    /// Quit is a different door — it always stops the controller.
     private func mainWindowDidClose() {
         guard !NativeSystemBridge.shared.desired.backgroundOperation else { return }
         Task { await WebUIServerManager.shared.stop() }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    /// Hold process exit until the WebUI controller (and its Jaeger bridge /
+    /// native MCP children) actually stop. `applicationWillTerminate` is too
+    /// late: AppKit kills the app as soon as that method returns, so a
+    /// fire-and-forget `Task { await stop() }` leaves uvicorn reparented to
+    /// launchd and still bound on :8788.
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        if shutdownStarted { return .terminateNow }
+        shutdownStarted = true
         NativeSystemBridge.shared.stop()
         quickLaunchMonitor.stop()
-        Task { await WebUIServerManager.shared.stop() }
+        Task { @MainActor in
+            await WebUIServerManager.shared.stop()
+            await NodeProcessManager.shared.stopAllNodes()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
+
+    private var shutdownStarted = false
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // `ares open`, Spotlight, and a second `open ARES.app` all land here

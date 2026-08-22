@@ -45,6 +45,10 @@ public final class WebUIServerManager: ObservableObject {
     @Published public var recentLogs = ""
 
     private var process: Process?
+    /// Root PID this app is responsible for reaping on Quit — the owned
+    /// uvicorn child, or an adopted listener on the WebUI port.
+    private var supervisedPid: pid_t?
+    private var watchdog: Process?
     private var healthCheckTimer: Timer?
     private var logTimer: Timer?
 
@@ -105,6 +109,7 @@ public final class WebUIServerManager: ObservableObject {
                 adoptedExternalController = true
                 isRunning = true
                 serverHealth = "Running (External)"
+                attachSupervisor(to: ProcessTree.listeningPids(port: port).first)
                 print("[ARES] Adopted existing ARES controller on \(probeHost):\(port) (runtime_owner=\(owner))")
                 return
             }
@@ -183,6 +188,7 @@ public final class WebUIServerManager: ObservableObject {
             self.process = process
             self.isRunning = true
             self.serverHealth = "Starting..."
+            attachSupervisor(to: process.processIdentifier)
             print("[ARES] WebUI server started on http://\(host):\(port)")
         } catch {
             self.serverHealth = "Failed: \(error.localizedDescription)"
@@ -295,58 +301,48 @@ public final class WebUIServerManager: ObservableObject {
         return fileManager.isExecutableFile(atPath: launcher.path)
     }
 
-    /// Stop the controller and wait for it to actually exit before returning.
-    ///
-    /// A prior version sent SIGTERM and immediately reported "Stopped"
-    /// without confirming the process had died. `restart()` then raced a
-    /// fresh `start()` against a controller (and its grandchild JaegerAI
-    /// bridge subprocess) that was still mid-shutdown — the bridge subprocess
-    /// could outlive the controller and orphan-hold its instance lock,
-    /// producing "instance is locked by pid X (still running)" on every
-    /// subsequent chat until a human ran `jaeger kill` by hand. Waiting here,
-    /// bounded, closes that race at the source.
-    ///
-    /// The bound (~9.5s) is deliberately a little longer than the
-    /// controller's own graceful-shutdown budget — FastAPI's lifespan
-    /// shutdown chain runs bridge-client teardown last of five best-effort
-    /// steps, and closing the bridge client itself budgets up to ~9s (three
-    /// quit/terminate/kill stages). Giving Python's shutdown enough room to
-    /// run means the grandchild bridge process exits cleanly through its own
-    /// lock-release path instead of being orphaned by an early SIGKILL here.
+    /// Stop the controller and every descendant (Jaeger bridge, native MCP)
+    /// before returning. SIGTERM on the uvicorn handle alone leaves
+    /// grandchildren reparented to launchd; the tree snapshot is taken
+    /// while those processes still parent to uvicorn.
     public func stop() async {
-        // An adopted controller has no `Process` handle here — this app did
-        // not spawn it — so stopping it goes through ctl.sh, which owns the
-        // PID file and the same graceful-shutdown path every other start
-        // route uses. Without this, Stop silently did nothing for exactly the
-        // controllers the user could see running.
-        if process == nil && adoptedExternalController {
-            await stopExternalController()
-            return
-        }
-        guard let p = process else { return }
-        process = nil
         serverHealth = "Stopping..."
-        p.terminate()
+        let config = ARESConfiguration.shared
+        let port = config.webuiPort
+        var pids = Set<pid_t>()
+        let ownedPid = process?.processIdentifier
+        if let ownedPid { pids.insert(ownedPid) }
+        if let supervised = supervisedPid { pids.insert(supervised) }
+        pids.formUnion(process.map { ProcessTree.descendants(of: $0.processIdentifier) } ?? [])
+        if let supervised = supervisedPid {
+            pids.formUnion(ProcessTree.descendants(of: supervised))
+        }
+        let listeningAsAres: Bool
+        if adoptedExternalController {
+            listeningAsAres = true
+        } else {
+            listeningAsAres = await isAresControllerListening()
+        }
+        if listeningAsAres {
+            pids.formUnion(ProcessTree.listeningPids(port: port))
+        }
+        let rescanRoot = ownedPid ?? supervisedPid ?? pids.first
 
-        let deadline = Date().addingTimeInterval(9.5)
-        while p.isRunning && Date() < deadline {
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s poll
+        process = nil
+        detachSupervisor()
+
+        if !pids.isEmpty {
+            await ProcessTree.terminate(pids: pids, graceSeconds: 4, rescanRoot: rescanRoot)
         }
 
-        if p.isRunning {
-            // Graceful shutdown didn't finish in time — escalate. This must
-            // never leave the manager claiming "Stopped" while the PID is
-            // still alive, since that mismatch is exactly what let the
-            // restart race happen before.
-            kill(p.processIdentifier, SIGKILL)
-            let killDeadline = Date().addingTimeInterval(1.0)
-            while p.isRunning && Date() < killDeadline {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
+        if await isAresControllerListening() {
+            await stopExternalController()
         }
 
+        let leftovers = pids.filter { ProcessTree.isAlive($0) }
         isRunning = false
-        serverHealth = p.isRunning ? "Stop timed out" : "Stopped"
+        adoptedExternalController = false
+        serverHealth = leftovers.isEmpty ? "Stopped" : "Stop timed out"
     }
 
     public func restart() async {
@@ -368,6 +364,21 @@ public final class WebUIServerManager: ObservableObject {
     public func stopConflictingStandaloneInstance() async {
         guard conflictingStandaloneInstance || adoptedExternalController else { return }
         await stopExternalController()
+    }
+
+    /// True when the configured WebUI port answers an ARES health check.
+    private func isAresControllerListening() async -> Bool {
+        let config = ARESConfiguration.shared
+        let host = Self.loopbackIfNetworkBind(config.webuiHost)
+        guard let url = URL(string: "http://\(host):\(config.webuiPort)/health") else {
+            return false
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 1.0
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse
+        else { return false }
+        return Self.isAresHealthResponse(statusCode: http.statusCode, data: data)
     }
 
     /// Stop a controller this app did not spawn, via ctl.sh.
@@ -510,6 +521,20 @@ public final class WebUIServerManager: ObservableObject {
         adoptedExternalController = true
         isRunning = true
         serverHealth = "Running (External)"
+        attachSupervisor(to: ProcessTree.listeningPids(port: config.webuiPort).first)
+    }
+
+    private func attachSupervisor(to pid: pid_t?) {
+        detachSupervisor()
+        guard let pid, pid > 1 else { return }
+        supervisedPid = pid
+        watchdog = ProcessTree.startParentDeathWatchdog(parent: getpid(), root: pid)
+    }
+
+    private func detachSupervisor() {
+        watchdog?.terminate()
+        watchdog = nil
+        supervisedPid = nil
     }
 
     private func recordHealthFailure(exitedProcess: Process?, fallback: String) {

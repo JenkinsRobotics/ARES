@@ -162,3 +162,39 @@ def set_model(
 
 
 __all__ = ["router"]
+
+
+@router.get("/api/models/eval/results")
+def get_eval_results(identity: Annotated[RequestIdentity, Depends(require_identity)]):
+    """Retrieve the latest local model orchestrator evaluation scorecard."""
+    from core.evaluation.eval_suite import load_latest_eval_results, generate_eval_markdown_report
+
+    with profile_scope(identity.profile):
+        latest = load_latest_eval_results()
+        if not latest:
+            return {"status": "none", "message": "No evaluations recorded yet", "results": None}
+        return {
+            "status": "success",
+            "summary": latest,
+            "markdown": generate_eval_markdown_report(latest),
+        }
+
+
+@router.post("/api/models/eval/run")
+def run_eval_suite(
+    payload: dict[str, Any],
+    identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
+):
+    """Run local model evaluation benchmark across designated models."""
+    from core.evaluation.eval_suite import run_orchestrator_evaluation_suite, generate_eval_markdown_report
+
+    models = payload.get("models")
+    base_url = str(payload.get("base_url") or "http://localhost:11434")
+
+    with profile_scope(identity.profile):
+        summary = run_orchestrator_evaluation_suite(model_names=models, base_url=base_url)
+        return {
+            "status": "success",
+            "summary": summary,
+            "markdown": generate_eval_markdown_report(summary),
+        }

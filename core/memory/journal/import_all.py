@@ -31,11 +31,12 @@ def import_all(sources: list[str] | None = None) -> dict:
     results = {}
 
     all_sources = {
-        "claude_code": ("api.journal.import_claude_code", "import_claude_code"),
-        "grok": ("api.journal.import_grok", "import_grok"),
-        "codex": ("api.journal.import_codex", "import_codex"),
-        "gemini": ("api.journal.import_gemini", "import_gemini"),
-        "sam": ("api.journal.import_sam", "import_sam"),
+        "hermes": ("import_hermes", "import_hermes"),
+        "claude_code": ("import_claude_code", "import_claude_code"),
+        "grok": ("import_grok", "import_grok"),
+        "codex": ("import_codex", "import_codex"),
+        "gemini": ("import_gemini", "import_gemini"),
+        "sam": ("import_sam", "import_sam"),
     }
 
     target_sources = sources or list(all_sources.keys())
@@ -45,10 +46,24 @@ def import_all(sources: list[str] | None = None) -> dict:
             print(f"  ⚠ Unknown source: {source_name}")
             continue
 
-        module_name, func_name = all_sources[source_name]
+        mod_base, func_name = all_sources[source_name]
+        func = None
+        for prefix in ["core.memory.journal.", "api.journal.", "."]:
+            try:
+                if prefix == ".":
+                    module = __import__(f"{mod_base}", globals(), locals(), [func_name], level=1)
+                else:
+                    module = __import__(f"{prefix}{mod_base}", fromlist=[func_name])
+                func = getattr(module, func_name)
+                break
+            except Exception:
+                pass
+
+        if not func:
+            print(f"  ⚠ Could not import handler for {source_name}")
+            continue
+
         try:
-            module = __import__(module_name, fromlist=[func_name])
-            func = getattr(module, func_name)
             result = func(batch_id=batch_id)
             results[source_name] = result
 

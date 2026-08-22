@@ -129,4 +129,40 @@ def update_memory(
         raise CoreApiError(exc.status_code, str(exc)) from exc
 
 
+@router.get("/cross-agent/status")
+def get_cross_agent_memory_status(
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
+):
+    """Return status and available data sources for cross-agent memory sync."""
+    from core.memory.cross_agent_sync import get_cross_agent_status
+
+    with profile_scope(identity.profile):
+        return get_cross_agent_status()
+
+
+@router.post("/cross-agent/sync")
+def sync_cross_agent_memory_endpoint(
+    identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
+    limit: int = 250,
+    distill: bool = True,
+):
+    """Trigger cross-agent memory ingestion and profile distillation."""
+    from core.memory.cross_agent_sync import sync_cross_agent_memory
+
+    with profile_scope(identity.profile):
+        return sync_cross_agent_memory(limit=limit, distill=distill)
+
+
+@router.get("/cross-agent/profile")
+def get_cross_agent_profile_endpoint(
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
+):
+    """Retrieve the distilled personal profile in JSON and Markdown formats."""
+    from core.memory.cross_agent_sync import get_cross_agent_profile
+
+    with profile_scope(identity.profile):
+        return get_cross_agent_profile()
+
+
 __all__ = ["router"]
+

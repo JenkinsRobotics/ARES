@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ARES Journal — Universal path discovery.
 
@@ -8,6 +9,7 @@ Environment variables:
     ARES_HOME      — base directory for ARES data (default: ~/.ares)
     XDG_DATA_HOME  — freedesktop.org data dir (default: ~/.local/share on Linux)
     CLAUDE_HOME    — Claude Code config directory (default: ~/.claude)
+    HERMES_HOME    — Hermes config directory (default: ~/.hermes)
     CODEX_HOME     — Codex config directory (default: ~/.codex)
     GEMINI_HOME    — Gemini/Antigravity config directory (default: ~/.gemini)
 """
@@ -25,6 +27,20 @@ def _home() -> Path:
 def ares_home() -> Path:
     """Base ARES data directory."""
     return Path(os.environ.get("ARES_HOME", _home() / ".ares"))
+
+
+def ares_memory_dir() -> Path:
+    """ARES persistent memory directory."""
+    d = ares_home() / "memory"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def memory_imports_dir() -> Path:
+    """Directory for manual conversation export drops (ChatGPT, Claude, Gemini)."""
+    d = ares_memory_dir() / "imports"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def journal_dir() -> Path:
@@ -45,6 +61,16 @@ def claude_home() -> Path:
 def claude_projects_dir() -> Path:
     """Claude Code projects directory."""
     return claude_home() / "projects"
+
+
+def hermes_home() -> Path:
+    """Hermes config/state directory."""
+    return Path(os.environ.get("HERMES_HOME", _home() / ".hermes"))
+
+
+def hermes_db() -> Path:
+    """Hermes state SQLite database."""
+    return hermes_home() / "state.db"
 
 
 def codex_dir() -> Path:

@@ -4427,12 +4427,13 @@ async function loadInsights(animate) {
   }
   const period = ($('insightsPeriod') || {}).value || '30';
   try {
-    const [data, wikiStatus, skillUsage] = await Promise.all([
+    const [data, wikiStatus, skillUsage, evalData] = await Promise.all([
       api(`/api/insights?days=${period}`),
       api('/api/wiki/status').catch(err => ({status:'error', error: err.message || String(err)})),
       api('/api/skills/usage').catch(() => ({usage:{}, skill_names:[], total_invocations:0, unique_skills_used:0})),
+      api('/api/models/eval/results').catch(() => ({status:'none'})),
     ]);
-    _renderInsights(data, box, wikiStatus, skillUsage);
+    _renderInsights(data, box, wikiStatus, skillUsage, evalData);
     if (typeof _syncSystemHealthMonitorVisibility === 'function') _syncSystemHealthMonitorVisibility();
     if (typeof pollSystemHealth === 'function') void pollSystemHealth();
   } catch(e) {
@@ -4693,7 +4694,7 @@ function _renderSkillUsage(d) {
   return `<div class="insights-card" id="skillUsageCard"><div class="insights-card-title">${esc(t('insights_skill_usage_title'))}</div><div class="skill-usage-grid" style="margin-bottom:8px"><div><span>${esc(t('insights_skill_usage_total'))}</span><strong>${totalInvocations.toLocaleString()}</strong></div><div><span>${esc(t('insights_skill_usage_skills_used'))}</span><strong>${uniqueUsed}/${skillNames.length}</strong></div></div><div class="insights-table skill-usage-table"><div class="insights-table-head"><span>${esc(t('insights_skill_usage_col_skill'))}</span><span>${esc(t('insights_skill_usage_col_uses'))}</span><span>${esc(t('insights_skill_usage_col_views'))}</span><span>${esc(t('insights_skill_usage_col_patches'))}</span><span>${esc(t('insights_skill_usage_col_share'))}</span></div>${rows}</div><div class="wiki-status-footer" style="margin-top:8px">${esc(t('insights_skill_usage_footer'))}</div></div>`;
 }
 
-function _renderInsights(d, box, wikiStatus, skillUsage) {
+function _renderInsights(d, box, wikiStatus, skillUsage, evalData) {
   const fmtNum = n => Number(n || 0).toLocaleString();
   const fmtCost = c => {
     const value = Number(c || 0);
@@ -4807,6 +4808,7 @@ function _renderInsights(d, box, wikiStatus, skillUsage) {
 
   box.innerHTML = `
     ${_renderSystemHealthPanel()}
+    ${_renderLocalModelBenchmarkPanel(evalData)}
     ${_renderLlmWikiStatus(wikiStatus)}
     ${_renderSkillUsage(skillUsage)}
     <div class="insights-grid">
@@ -5271,6 +5273,7 @@ let _memoryMode = 'empty'; // 'empty' | 'read' | 'edit'
 const MEMORY_SECTIONS = [
   { key: 'memory', labelKey: 'my_notes', emptyKey: 'no_notes_yet', iconKey: 'brain' },
   { key: 'user',   labelKey: 'user_profile', emptyKey: 'no_profile_yet', iconKey: 'user' },
+  { key: 'cross_agent', label: 'Cross-Agent Profile', empty: 'No cross-agent memory synchronized yet.', iconKey: 'users' },
   { key: 'soul',   labelKey: 'agent_soul', emptyKey: 'no_soul_yet', iconKey: 'sparkles' },
   { key: 'project_context', label: 'Project Context', empty: 'No project context file found for this workspace.', iconKey: 'file-text', readOnly: true },
   { key: 'external_notes', labelKey: 'external_notes_sources', emptyKey: 'external_notes_empty', iconKey: 'book-open' },
@@ -5403,6 +5406,10 @@ function _renderExternalNotesSources() {
 }
 
 function _renderMemoryDetail(section) {
+  if (section === 'cross_agent') {
+    _renderCrossAgentMemoryDetail();
+    return;
+  }
   if (section === 'external_notes') {
     _renderExternalNotesSources();
     return;
@@ -13374,4 +13381,269 @@ function updateNotificationPermissionStatus(){
     btn.setAttribute('aria-disabled', granted?'true':'false');
   }
   if(btnWrap) btnWrap.title=label;
+}
+
+// ── Cognitive Operating Modes ─────────────────────────────────────────────
+let _currentCognitiveMode = 'standby';
+
+async function initCognitiveModes() {
+  try {
+    const res = await api('/api/modes/status');
+    if (res && res.state && res.state.current_mode) {
+      _applyCognitiveModeUi(res.state.current_mode);
+    }
+  } catch (_e) {}
+}
+
+function _applyCognitiveModeUi(mode) {
+  _currentCognitiveMode = mode || 'standby';
+  const label = $('modePillLabel');
+  const dd = $('modeDropdownMenu');
+  if (label) {
+    const labels = {
+      standby: '💤 Standby',
+      focus: '🎯 Focus',
+      wondering: '🌌 Wondering',
+      wonder: '🌌 Wondering',
+      dream: '🌙 Dream',
+      research: '🔬 Research',
+      audit: '🛡️ Audit',
+    };
+    label.textContent = labels[_currentCognitiveMode] || _currentCognitiveMode;
+  }
+  if (dd) {
+    dd.querySelectorAll('.mode-dropdown-item').forEach(item => {
+      const itemMode = item.getAttribute('data-mode');
+      const isMatch = itemMode === _currentCognitiveMode || (itemMode === 'wondering' && _currentCognitiveMode === 'wonder');
+      item.classList.toggle('active', isMatch);
+    });
+  }
+}
+
+function setSystemStatusDot(status) {
+  const dot = $('systemStatusDot');
+  if (!dot) return;
+  const cls = status === 'busy' ? 'status-busy' : (status === 'offline' ? 'status-offline' : 'status-online');
+  dot.className = `system-status-dot ${cls}`;
+  dot.title = status === 'busy' ? 'System Active / Streaming' : (status === 'offline' ? 'System Offline' : 'System Online & Ready');
+}
+
+function toggleModeDropdown(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const dd = $('modeDropdownMenu');
+  if (!dd) return;
+  const isShown = dd.style.display !== 'none';
+  if (isShown) {
+    closeModeDropdown();
+  } else {
+    if (typeof closeWsDropdown === 'function') closeWsDropdown();
+    if (typeof closeProfileDropdown === 'function') closeProfileDropdown();
+    dd.style.display = 'flex';
+  }
+}
+
+function closeModeDropdown() {
+  const dd = $('modeDropdownMenu');
+  if (dd) dd.style.display = 'none';
+}
+
+async function selectCognitiveMode(mode) {
+  closeModeDropdown();
+  if (mode === _currentCognitiveMode) return;
+  try {
+    const res = await api('/api/modes/switch', {
+      method: 'POST',
+      body: JSON.stringify({ mode: mode })
+    });
+    if (res && res.ok) {
+      _applyCognitiveModeUi(mode);
+      if (typeof showToast === 'function') {
+        const labels = {
+          standby: 'Standby Mode 💤',
+          focus: 'Focus Mode 🎯',
+          wondering: 'Wondering Mode 🌌',
+          wonder: 'Wondering Mode 🌌',
+          dream: 'Dream Mode 🌙',
+          research: 'Research Mode 🔬',
+          audit: 'Audit Mode 🛡️',
+        };
+        showToast(`Switched to ${labels[mode] || mode}`);
+      }
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Failed to switch mode');
+  }
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', e => {
+    if (e && e.target && e.target.closest && !e.target.closest('#modePillWrap')) {
+      closeModeDropdown();
+    }
+  });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCognitiveModes);
+  } else {
+    setTimeout(initCognitiveModes, 100);
+  }
+}
+
+
+let _crossAgentViewMode = 'facts';
+let _crossAgentSyncing = false;
+
+async function triggerSyncCrossAgent() {
+  if (_crossAgentSyncing) return;
+  _crossAgentSyncing = true;
+  const btn = document.getElementById('crossAgentSyncBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin">⏳</span> Syncing...';
+  }
+  try {
+    await api('/api/memory/cross-agent/sync', { method: 'POST', body: JSON.stringify({ limit: 250, distill: true }) });
+    await _renderCrossAgentMemoryDetail();
+  } catch (err) {
+    alert('Failed to sync cross-agent memory: ' + (err.message || String(err)));
+  } finally {
+    _crossAgentSyncing = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '🔄 Sync Agents';
+    }
+  }
+}
+
+function setCrossAgentViewMode(mode) {
+  _crossAgentViewMode = mode;
+  _renderCrossAgentMemoryDetail();
+}
+
+async function _renderCrossAgentMemoryDetail() {
+  const title = document.getElementById('memoryDetailTitle');
+  const body = document.getElementById('memoryDetailBody');
+  if (!title || !body) return;
+  title.textContent = 'Cross-Agent Profile';
+
+  body.innerHTML = '<div style="padding:24px;color:var(--muted);font-size:13px"><span class="spin">⏳</span> Loading synthesized memory...</div>';
+
+  try {
+    const [profileData, statusData] = await Promise.all([
+      api('/api/memory/cross-agent/profile').catch(() => ({ profile: {}, markdown: '' })),
+      api('/api/memory/cross-agent/status').catch(() => ({ available_sources: {}, distilled_counts: {} })),
+    ]);
+
+    const profile = profileData.profile || {};
+    const sources = statusData.available_sources || {};
+    const counts = statusData.distilled_counts || {};
+    const lastSync = statusData.last_sync ? new Date(statusData.last_sync).toLocaleString() : 'Never';
+
+    const sourceBadges = [];
+    if (sources.claude_code && sources.claude_code.available) {
+      sourceBadges.push(`<span class="cross-agent-badge badge-claude">🟣 Claude Code (${sources.claude_code.files_count || 0} projects)</span>`);
+    }
+    if (sources.hermes && sources.hermes.available) {
+      sourceBadges.push(`<span class="cross-agent-badge badge-hermes">🔵 Hermes (Connected)</span>`);
+    }
+    if (sources.codex && sources.codex.available) {
+      sourceBadges.push(`<span class="cross-agent-badge badge-codex">🟢 Codex (Connected)</span>`);
+    }
+    if (sources.ares_journal && sources.ares_journal.available) {
+      sourceBadges.push(`<span class="cross-agent-badge badge-ares">🟡 ARES Journal</span>`);
+    }
+    if (sources.imports && sources.imports.available) {
+      sourceBadges.push(`<span class="cross-agent-badge badge-imports">📁 Manual Imports (${sources.imports.files_count})</span>`);
+    }
+
+    const sourceBadgesHtml = sourceBadges.length
+      ? sourceBadges.join('')
+      : '<span class="cross-agent-badge badge-none">No active external agents found</span>';
+
+    const topStripHtml = `
+      <div class="cross-agent-header">
+        <div>
+          <div class="cross-agent-subtitle">Synthesized memory across Claude Code, Hermes, Codex, and ARES sessions.</div>
+          <div class="cross-agent-meta">Last synchronized: <strong>${esc(lastSync)}</strong></div>
+        </div>
+        <button type="button" class="btn btn-primary cross-agent-sync-btn" id="crossAgentSyncBtn" onclick="triggerSyncCrossAgent()">
+          🔄 Sync Agents
+        </button>
+      </div>
+      <div class="cross-agent-sources-strip">
+        ${sourceBadgesHtml}
+      </div>
+      <div class="cross-agent-tabs">
+        <button type="button" class="cross-agent-tab-btn ${_crossAgentViewMode === 'facts' ? 'active' : ''}" onclick="setCrossAgentViewMode('facts')">
+          Structured Facts (${Object.values(counts).reduce((a, b) => a + b, 0)})
+        </button>
+        <button type="button" class="cross-agent-tab-btn ${_crossAgentViewMode === 'markdown' ? 'active' : ''}" onclick="setCrossAgentViewMode('markdown')">
+          Rendered Markdown (person.md)
+        </button>
+      </div>
+    `;
+
+    if (_crossAgentViewMode === 'markdown') {
+      const mdContent = profileData.markdown || '*No cross-agent profile synthesized yet.*';
+      body.innerHTML = `
+        <div class="cross-agent-container">
+          ${topStripHtml}
+          <div class="memory-content preview-md cross-agent-md-view">${renderMd(mdContent)}</div>
+        </div>
+      `;
+      return;
+    }
+
+    const renderCardList = (items, emptyMsg) => {
+      if (!items || !items.length) {
+        return `<div class="cross-agent-empty-msg">${esc(emptyMsg)}</div>`;
+      }
+      return items.map(it => {
+        const text = it.text || (typeof it === 'string' ? it : JSON.stringify(it));
+        const src = it.source ? `<span class="cross-agent-item-src">${esc(it.source)}</span>` : '';
+        return `
+          <div class="cross-agent-fact-card">
+            <div class="cross-agent-fact-text">${esc(text)}</div>
+            <div class="cross-agent-fact-meta">${src}</div>
+          </div>
+        `;
+      }).join('');
+    };
+
+    const prefsHtml = renderCardList(profile.preferences, 'No preferences distilled yet.');
+    const decisionsHtml = renderCardList(profile.decisions, 'No architectural decisions distilled yet.');
+    const projectsHtml = renderCardList(profile.projects, 'No active projects distilled yet.');
+    const loopsHtml = renderCardList(profile.open_loops, 'No pending blockers or open loops.');
+    const styleHtml = renderCardList(profile.style_notes, 'No style guidelines distilled.');
+
+    body.innerHTML = `
+      <div class="cross-agent-container">
+        ${topStripHtml}
+        <div class="cross-agent-sections">
+          <div class="cross-agent-section">
+            <div class="cross-agent-section-title">🛠️ Core Developer Preferences (${(profile.preferences || []).length})</div>
+            <div class="cross-agent-grid">${prefsHtml}</div>
+          </div>
+          <div class="cross-agent-section">
+            <div class="cross-agent-section-title">🏛️ Architectural Decisions & Doctrine (${(profile.decisions || []).length})</div>
+            <div class="cross-agent-grid">${decisionsHtml}</div>
+          </div>
+          <div class="cross-agent-section">
+            <div class="cross-agent-section-title">🚀 Active Projects & Codebases (${(profile.projects || []).length})</div>
+            <div class="cross-agent-grid">${projectsHtml}</div>
+          </div>
+          <div class="cross-agent-section">
+            <div class="cross-agent-section-title">🔄 Open Loops & Pending Tasks (${(profile.open_loops || []).length})</div>
+            <div class="cross-agent-grid">${loopsHtml}</div>
+          </div>
+          <div class="cross-agent-section">
+            <div class="cross-agent-section-title">🎨 Style & Directness Guidelines (${(profile.style_notes || []).length})</div>
+            <div class="cross-agent-grid">${styleHtml}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+  } catch (err) {
+    body.innerHTML = `<div style="padding:24px;color:var(--accent);font-size:13px">Error loading cross-agent memory: ${esc(err.message)}</div>`;
+  }
 }

@@ -292,3 +292,29 @@ __all__ = [
     "resolve_project_context_workspace",
     "write_memory",
 ]
+
+def get_cross_agent_context(max_chars: int = 1500) -> str:
+    """Retrieve a summary of distilled cross-agent facts."""
+    try:
+        from core.memory.cross_agent_sync import get_cross_agent_profile
+        data = get_cross_agent_profile()
+        profile = data.get("profile", {})
+        if not profile:
+            return ""
+        sections = []
+        prefs = [p.get("text", str(p)) if isinstance(p, dict) else str(p) for p in profile.get("preferences", [])[:4]]
+        if prefs:
+            sections.append("User Preferences:" + chr(10) + chr(10).join(f"- {p}" for p in prefs))
+        decisions = [d.get("text", str(d)) if isinstance(d, dict) else str(d) for d in profile.get("decisions", [])[:4]]
+        if decisions:
+            sections.append("Key Decisions:" + chr(10) + chr(10).join(f"- {d}" for d in decisions))
+        projects = [pr.get("text", str(pr)) if isinstance(pr, dict) else str(pr) for pr in profile.get("projects", [])[:4]]
+        if projects:
+            sections.append("Active Projects:" + chr(10) + chr(10).join(f"- {pr}" for pr in projects))
+        if not sections:
+            return ""
+        full_text = "[Cross-Agent Knowledge]" + chr(10) + (chr(10) + chr(10)).join(sections)
+        return full_text[:max_chars]
+    except Exception as exc:
+        logger.debug("Could not load cross-agent context: %s", exc)
+        return ""

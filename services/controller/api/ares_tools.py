@@ -1,338 +1,199 @@
-"""ARES Tools — callable tool implementations owned by ARES.
+"""ARES Controller Toolpack.
 
-These are the actual functions the agent can call to interact with
-ARES's runtime context and canonical task store.
-
-Each tool returns a JSON string (matching both Ares and JaegerAI tool
-result conventions). They are backend-agnostic and never write worker stores.
+Provides first-class programmatic tools for ARES agent self-management:
+- Workspace registration & listing
+- Cognitive mode switching (Standby, Focus, Wonder)
+- Dream/Wonder reflection cycles
+- Memory updates
+- Codebase AST repo map generation
+- Test suite verification execution
 """
 
 from __future__ import annotations
 
-import json
+import logging
+import os
+import subprocess
+from pathlib import Path
 from typing import Any
-from pydantic import BaseModel, Field
+
+from core.modes import CognitiveMode, get_mode_manager
+from core.knowledge.repomap import build_workspace_repomap
+
+logger = logging.getLogger(__name__)
 
 
-# ── Tool Argument Models ──────────────────────────────────────────
-
-class GetRuntimeContextArgs(BaseModel):
-    """No arguments — returns current ARES operating state."""
-    pass
-
-
-class CreateTaskArgs(BaseModel):
-    """Create a new ARES-owned task."""
-    title: str = Field(description="Short task title")
-    description: str = Field(default="", description="Task description")
-    priority: str = Field(default="medium", description="Priority: low, medium, high")
-
-
-class UpdateTaskArgs(BaseModel):
-    """Update an existing ARES task's status."""
-    task_id: str = Field(description="The task ID to update")
-    status: str = Field(description="New status: open, in_progress, blocked, done")
-
-
-class WorkspacePathArgs(BaseModel):
-    session_id: str = Field(min_length=1, max_length=256)
-    path: str = Field(min_length=1, max_length=2048)
-
-
-class PdfFormArgs(WorkspacePathArgs):
-    fields: dict[str, Any] = Field(min_length=1, max_length=200)
-
-
-class YouTubeArgs(BaseModel):
-    session_id: str = Field(min_length=1, max_length=256)
-    url: str = Field(min_length=1, max_length=2048)
-    languages: list[str] = Field(default_factory=lambda: ["en.*", "en"], max_length=5)
-
-
-class ImageEditArgs(WorkspacePathArgs):
-    operations: list[dict[str, Any]] = Field(min_length=1, max_length=10)
-
-
-class VisualReportArgs(BaseModel):
-    session_id: str = Field(min_length=1, max_length=256)
-    title: str = Field(min_length=1, max_length=200)
-    summary: str = Field(default="", max_length=20_000)
-    sections: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
-
-
-class SessionArtifactsArgs(BaseModel):
-    session_id: str = Field(min_length=1, max_length=256)
-
-
-class ResearchStartArgs(BaseModel):
-    session_id: str = Field(min_length=1, max_length=256)
-    query: str = Field(min_length=1, max_length=20_000)
-    max_time: int = Field(default=300, ge=30, le=600)
-    category: str | None = Field(default=None, max_length=80)
-
-
-class ResearchStatusArgs(BaseModel):
-    session_id: str = Field(min_length=1, max_length=256)
-
-
-# ── Tool Implementations ──────────────────────────────────────────
-
-def ares_get_runtime_context(**kwargs) -> str:
-    """Get the current ARES runtime context.
-
-    Returns the active backend, capabilities, open tasks,
-    and embodiment state as a JSON string.
-    """
-    try:
-        from api.ares_runtime_context import build_runtime_context
-    except ImportError:
-        # Circular import fallback
-        def build_runtime_context(**kw):
-            return {"identity": "ARES", "active_backend": "ares"}
-
-    ctx = build_runtime_context()
-    return json.dumps(ctx, indent=2, default=str)
-
-
-def ares_create_task(
-    title: str = "",
-    description: str = "",
-    priority: str = "medium",
-    **kwargs,
-) -> str:
-    """Create a new ARES-owned task in the persistence layer.
-
-    This is a callable ARES tool — the agent can use it to
-    capture commitments and follow-ups durably.
-    """
-    if not title:
-        return json.dumps({"status": "error", "error": "title is required"})
+def ares_add_workspace(path: str, name: str | None = None) -> dict[str, Any]:
+    """Add a new directory as a registered ARES workspace."""
+    from api.workspace import load_workspaces, save_workspaces, validate_workspace_to_add
 
     try:
-        from api import kanban_store
-
-        priority_value = {"low": 0, "medium": 50, "high": 100}.get(priority.lower())
-        if priority_value is None:
-            return json.dumps({"status": "error", "error": "priority must be low, medium, or high"})
-        kanban_store.init_db()
-        with kanban_store.connect_closing() as conn:
-            task_id = kanban_store.create_task(
-                conn,
-                title=title,
-                body=description or None,
-                priority=priority_value,
-                created_by="ares-agent-tool",
-            )
-            task = kanban_store.get_task(conn, task_id)
+        resolved = validate_workspace_to_add(path)
+        workspaces = load_workspaces()
+        if any(item["path"] == str(resolved) for item in workspaces):
+            return {
+                "ok": False,
+                "error": f"Workspace '{resolved}' is already registered.",
+                "workspaces": workspaces,
+            }
+        ws_name = (name or "").strip() or resolved.name or str(resolved)
+        workspaces.append({"path": str(resolved), "name": ws_name})
+        save_workspaces(workspaces)
+        logger.info("ARES workspace added: %s (%s)", ws_name, resolved)
+        return {
+            "ok": True,
+            "message": f"Successfully registered workspace '{ws_name}' at {resolved}",
+            "workspaces": workspaces,
+        }
     except Exception as exc:
-        return json.dumps({"status": "error", "error": str(exc)})
-
-    return json.dumps({
-        "status": "created",
-        "id": task_id,
-        "title": title,
-        "priority": priority,
-        "task": task.__dict__ if task is not None else None,
-    })
+        return {"ok": False, "error": str(exc)}
 
 
-def ares_update_task(
-    task_id: str = "",
-    status: str = "",
-    **kwargs,
-) -> str:
-    """Update an existing ARES task's status."""
-    if not task_id:
-        return json.dumps({"status": "error", "error": "task_id is required"})
+def ares_list_workspaces() -> dict[str, Any]:
+    """List all registered ARES workspaces."""
+    from api.workspace import load_workspaces
 
     try:
-        from api import kanban_store
-
-        normalized = {"open": "ready", "in_progress": "running"}.get(status, status)
-        kanban_store.init_db()
-        with kanban_store.connect_closing() as conn:
-            updated = kanban_store.set_task_status(conn, task_id, normalized)
-        if not updated:
-            return json.dumps({"status": "error", "error": f"task {task_id} not found"})
+        workspaces = load_workspaces()
+        return {
+            "ok": True,
+            "count": len(workspaces),
+            "workspaces": workspaces,
+        }
     except Exception as exc:
-        return json.dumps({"status": "error", "error": str(exc)})
-
-    return json.dumps({
-        "status": "updated",
-        "id": task_id,
-        "new_status": normalized,
-    })
+        return {"ok": False, "error": str(exc)}
 
 
-def _tool_result(operation, *args, **kwargs) -> str:
+def ares_set_mode(mode: str) -> dict[str, Any]:
+    """Switch ARES cognitive operating mode (standby, focus, wonder)."""
     try:
-        return json.dumps(operation(*args, **kwargs), ensure_ascii=False, default=str)
+        mgr = get_mode_manager()
+        state = mgr.switch_mode(mode)
+        return {
+            "ok": True,
+            "message": f"Cognitive mode switched to '{state.current_mode.value}'",
+            "state": state.as_dict(),
+        }
     except Exception as exc:
-        return json.dumps({"status": "error", "error": str(exc)})
+        return {"ok": False, "error": str(exc)}
 
 
-def ares_extract_pdf(session_id: str, path: str, **_kwargs) -> str:
-    from api.ingestion import extract_pdf
-    return _tool_result(extract_pdf, session_id, path)
+def ares_get_mode() -> dict[str, Any]:
+    """Get the current ARES cognitive operating mode and dream statistics."""
+    try:
+        mgr = get_mode_manager()
+        return {
+            "ok": True,
+            "state": mgr.state.as_dict(),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
-def ares_fill_pdf_form(
-    session_id: str, path: str, fields: dict[str, Any], **_kwargs
-) -> str:
-    from api.ingestion import fill_pdf_form
-    return _tool_result(fill_pdf_form, session_id, path, fields)
+def ares_trigger_dream(workspaces: list[str] | None = None) -> dict[str, Any]:
+    """Trigger an on-demand Wonder/Dream reflection cycle to index codebase symbols and synthesize knowledge."""
+    try:
+        mgr = get_mode_manager()
+        report = mgr.trigger_dream_cycle(workspaces)
+        return {
+            "ok": report.status == "completed",
+            "report": report.as_dict(),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
-def ares_ingest_youtube(
-    session_id: str, url: str, languages: list[str] | None = None, **_kwargs
-) -> str:
-    from api.ingestion import ingest_youtube
-    return _tool_result(ingest_youtube, session_id, url, languages)
+def ares_write_memory_note(section: str, content: str) -> dict[str, Any]:
+    """Write content directly to an ARES memory file ('memory', 'user', or 'soul')."""
+    from api.memory_store import write_memory
+
+    try:
+        res = write_memory(section, content)
+        return {"ok": True, "result": res}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
-def ares_edit_image(
-    session_id: str, path: str, operations: list[dict[str, Any]], **_kwargs
-) -> str:
-    from api.generated_artifacts import edit_image
-    return _tool_result(edit_image, session_id, path, operations)
+def ares_get_repo_map(workspace: str | None = None, max_files: int = 50) -> dict[str, Any]:
+    """Generate an AST codebase symbol map for a workspace."""
+    try:
+        if not workspace:
+            from api.models import get_last_workspace
+            workspace = os.environ.get("TERMINAL_CWD", "") or get_last_workspace() or str(Path.cwd())
+
+        repomap = build_workspace_repomap(workspace, max_files=max_files)
+        return {
+            "ok": True,
+            "workspace": repomap["workspace"],
+            "scanned_files": repomap["scanned_files"],
+            "total_symbols": repomap["total_symbols"],
+            "formatted_map": repomap["formatted_map"],
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
-def ares_create_visual_report(
-    session_id: str,
-    title: str,
-    summary: str = "",
-    sections: list[dict[str, Any]] | None = None,
-    **_kwargs,
-) -> str:
-    from api.generated_artifacts import create_visual_report
-    return _tool_result(
-        create_visual_report,
-        session_id,
-        title=title,
-        summary=summary,
-        sections=sections or [],
-    )
+def ares_run_verification(workspace: str | None = None) -> dict[str, Any]:
+    """Automatically detect and run tests for the active workspace."""
+    try:
+        target_dir = Path(workspace or Path.cwd()).expanduser().resolve()
+        if not target_dir.is_dir():
+            return {"ok": False, "error": f"Directory not found: {target_dir}"}
+
+        # Detect test framework
+        cmd: list[str] = []
+        if (target_dir / "Package.swift").exists():
+            cmd = ["swift", "test"]
+        elif (target_dir / "pytest.ini").exists() or (target_dir / "pyproject.toml").exists() or (target_dir / "setup.py").exists():
+            cmd = ["python3", "-m", "pytest", "-q"]
+        elif (target_dir / "package.json").exists():
+            cmd = ["npm", "test"]
+        elif (target_dir / "Cargo.toml").exists():
+            cmd = ["cargo", "test"]
+        else:
+            return {
+                "ok": False,
+                "error": "No recognized test configuration (Package.swift, pytest, package.json, Cargo.toml) found in workspace.",
+            }
+
+        res = subprocess.run(
+            cmd,
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        return {
+            "ok": res.returncode == 0,
+            "command": " ".join(cmd),
+            "returncode": res.returncode,
+            "stdout": res.stdout[:4000],
+            "stderr": res.stderr[:4000],
+            "passed": res.returncode == 0,
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "Test run timed out after 120s"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
-def ares_list_artifacts(session_id: str, **_kwargs) -> str:
-    from api.workspace_artifacts import list_artifacts
-    return _tool_result(list_artifacts, session_id)
+# Tool registry map for dynamic dispatch
+ARES_TOOLS_REGISTRY: dict[str, Any] = {
+    "ares_add_workspace": ares_add_workspace,
+    "ares_list_workspaces": ares_list_workspaces,
+    "ares_set_mode": ares_set_mode,
+    "ares_get_mode": ares_get_mode,
+    "ares_trigger_dream": ares_trigger_dream,
+    "ares_write_memory_note": ares_write_memory_note,
+    "ares_get_repo_map": ares_get_repo_map,
+    "ares_run_verification": ares_run_verification,
+}
 
 
-_RESEARCH_HANDLER = None
-
-
-def _research_handler():
-    global _RESEARCH_HANDLER
-    if _RESEARCH_HANDLER is None:
-        from api.research.handler import ResearchHandler
-        _RESEARCH_HANDLER = ResearchHandler()
-    return _RESEARCH_HANDLER
-
-
-def ares_start_research(
-    session_id: str,
-    query: str,
-    max_time: int = 300,
-    category: str | None = None,
-    **_kwargs,
-) -> str:
-    return _tool_result(
-        _research_handler().start_research,
-        session_id,
-        query,
-        max_time,
-        category,
-    )
-
-
-def ares_get_research(session_id: str, **_kwargs) -> str:
-    handler = _research_handler()
-    return json.dumps({
-        "session_id": session_id,
-        "status": handler.get_status(session_id),
-        "result": handler.get_result(session_id),
-        "sources": handler.get_sources(session_id) or [],
-    }, ensure_ascii=False, default=str)
-
-
-# ── Tool Definitions Catalog ──────────────────────────────────────
-
-ARES_TOOL_DEFS = [
-    {
-        "name": "ares_get_runtime_context",
-        "description": (
-            "Get the current ARES runtime context: active backend, "
-            "capabilities, open tasks, embodiment state. Use this to "
-            "understand what ARES can do right now."
-        ),
-        "fn": ares_get_runtime_context,
-        "args_model": GetRuntimeContextArgs,
-    },
-    {
-        "name": "ares_create_task",
-        "description": (
-            "Create a new ARES-owned task. Use this when you make a "
-            "commitment or promise that should persist across sessions."
-        ),
-        "fn": ares_create_task,
-        "args_model": CreateTaskArgs,
-    },
-    {
-        "name": "ares_update_task",
-        "description": (
-            "Update an ARES task's status (e.g. mark as done, blocked, "
-            "in_progress)."
-        ),
-        "fn": ares_update_task,
-        "args_model": UpdateTaskArgs,
-    },
-    {
-        "name": "ares_start_research",
-        "description": "Start an ARES deep-research job using the selected runtime and configured search backend.",
-        "fn": ares_start_research,
-        "args_model": ResearchStartArgs,
-    },
-    {
-        "name": "ares_get_research",
-        "description": "Read the status, sources, and result of an ARES deep-research job.",
-        "fn": ares_get_research,
-        "args_model": ResearchStatusArgs,
-    },
-    {
-        "name": "ares_extract_pdf",
-        "description": "Extract text and form-field names from a PDF in the active session workspace.",
-        "fn": ares_extract_pdf,
-        "args_model": WorkspacePathArgs,
-    },
-    {
-        "name": "ares_fill_pdf_form",
-        "description": "Fill known fields in a workspace PDF and save the result as an ARES artifact.",
-        "fn": ares_fill_pdf_form,
-        "args_model": PdfFormArgs,
-    },
-    {
-        "name": "ares_ingest_youtube",
-        "description": "Acquire a YouTube transcript and save it in the active session workspace.",
-        "fn": ares_ingest_youtube,
-        "args_model": YouTubeArgs,
-    },
-    {
-        "name": "ares_edit_image",
-        "description": "Apply validated image operations and save the output as an ARES artifact.",
-        "fn": ares_edit_image,
-        "args_model": ImageEditArgs,
-    },
-    {
-        "name": "ares_create_visual_report",
-        "description": "Create a self-contained visual HTML report in the active session workspace.",
-        "fn": ares_create_visual_report,
-        "args_model": VisualReportArgs,
-    },
-    {
-        "name": "ares_list_artifacts",
-        "description": "List generated artifacts for an ARES session workspace.",
-        "fn": ares_list_artifacts,
-        "args_model": SessionArtifactsArgs,
-    },
-]
+def dispatch_ares_tool(tool_name: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Execute an ARES controller tool by name."""
+    fn = ARES_TOOLS_REGISTRY.get(tool_name)
+    if fn is None:
+        return {"ok": False, "error": f"Unknown ARES tool: {tool_name}"}
+    return fn(**kwargs)

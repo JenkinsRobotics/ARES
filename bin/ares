@@ -296,7 +296,15 @@ case "${cmd}" in
   open)
     _open_ares_window
     ;;
-  stop|restart|status|logs)
+  stop)
+    pkill -x "ARES" 2>/dev/null || true
+    exec bash "${CTL_SCRIPT}" stop "$@"
+    ;;
+  restart)
+    pkill -x "ARES" 2>/dev/null || true
+    exec bash "${CTL_SCRIPT}" restart "$@"
+    ;;
+  status|logs)
     exec bash "${CTL_SCRIPT}" "${cmd}" "$@"
     ;;
   doctor)

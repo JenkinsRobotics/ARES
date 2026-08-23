@@ -106,15 +106,25 @@ def load_active_directives() -> list[str]:
 
 
 def directives_block(directives: list[str]) -> str:
-    """Render directives as a labeled prompt block, or ``""`` when there are none.
+    """Render directives and active cognitive mode as a labeled prompt block, or ``""`` when there are none.
 
     The block is labeled so a worker can tell standing user rules apart from the
     turn's actual request, and so the user can recognize their own rules if a
     worker echoes the prompt back.
     """
-    if not directives:
+    mode_line = ""
+    try:
+        from core.modes import get_mode_manager
+        current_mode = get_mode_manager().state.current_mode.value.upper()
+        mode_line = f"- Active Cognitive Mode: {current_mode}"
+    except Exception:
+        pass
+
+    if not directives and not mode_line:
         return ""
     lines = [BLOCK_HEADER]
+    if mode_line:
+        lines.append(mode_line)
     lines.extend(f"- {directive}" for directive in directives)
     lines.append(BLOCK_FOOTER)
     return "\n".join(lines)

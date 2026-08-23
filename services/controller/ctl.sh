@@ -336,10 +336,13 @@ _proc_args() {
 
 _is_owned_webui_pid() {
   local pid="$1" args args_slash state_repo="" state_repo_slash="" state_repo_win="" state_repo_win_slash="" state_python="" state_python_slash="" state_python_bash=""
-  [[ -f "${STATE_FILE}" ]] || return 1
-  _load_state_if_present
-  state_repo="${REPO_ROOT:-}"
-  state_python="${PYTHON_EXE:-}"
+  if [[ -f "${STATE_FILE}" ]]; then
+    _load_state_if_present
+    state_repo="${REPO_ROOT:-}"
+    state_python="${PYTHON_EXE:-}"
+  else
+    state_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  fi
   state_repo_slash="${state_repo//\\//}"
   state_python_slash="${state_python//\\//}"
   if _is_windows_bash; then
@@ -349,7 +352,6 @@ _is_owned_webui_pid() {
   if [[ -n "${state_python}" ]] && _is_windows_bash; then
     state_python_bash="$(_windows_bash_path "${state_python}")"
   fi
-  [[ "${state_repo}" == "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" ]] || return 1
   args="$(_proc_args "${pid}")"
   [[ -n "${args}" ]] || return 1
   args_slash="${args//\\//}"
@@ -560,15 +562,36 @@ start_cmd() {
 
 stop_cmd() {
   ensure_home
-  local pid
-  if ! pid="$(_pid_from_file 2>/dev/null)"; then
-    echo "[ctl] Ares WebUI is stopped"
-    rm -f "${PID_FILE}" "${STATE_FILE}"
-    return 0
+  _parse_launch_binding "$@"
+  local port="${CTL_PORT:-${ARES_WEBUI_PORT:-8788}}"
+  local pid=""
+
+  if pid="$(_pid_from_file 2>/dev/null)"; then
+    if ! _is_alive "${pid}" || ! _is_owned_webui_pid "${pid}"; then
+      _clear_stale_pid
+      pid=""
+    fi
   fi
 
-  if ! _is_alive "${pid}" || ! _is_owned_webui_pid "${pid}"; then
-    _clear_stale_pid
+  if [[ -z "${pid}" ]]; then
+    local port_owner=""
+    if command -v lsof >/dev/null 2>&1; then
+      port_owner="$(lsof -ti tcp:"${port}" -sTCP:LISTEN 2>/dev/null | head -n 1 || true)"
+    fi
+    if [[ -n "${port_owner}" ]] && _is_alive "${port_owner}" && _is_owned_webui_pid "${port_owner}"; then
+      pid="${port_owner}"
+    else
+      local candidate=""
+      candidate="$(pgrep -f "fastapi_app.main:app" 2>/dev/null | head -n 1 || true)"
+      if [[ -n "${candidate}" ]] && _is_alive "${candidate}" && _is_owned_webui_pid "${candidate}"; then
+        pid="${candidate}"
+      fi
+    fi
+  fi
+
+  if [[ -z "${pid}" ]] || ! _is_alive "${pid}"; then
+    echo "[ctl] Ares WebUI is stopped"
+    rm -f "${PID_FILE}" "${STATE_FILE}"
     return 0
   fi
 

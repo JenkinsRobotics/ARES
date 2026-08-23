@@ -1,0 +1,19 @@
+{
+  "extensions": [
+    {
+      "id": "desktop-companion",
+      "name": "ARES Desktop Companion",
+      "description": "Trusted local desktop companion adapter for ARES.",
+      "scripts": [
+        "assets/companion-adapter.js"
+      ],
+      "stylesheets": [],
+      "sidecar": {
+        "type": "loopback",
+        "origin": "http://127.0.0.1:17787",
+        "health_path": "/health",
+        "proxy_auth": "legacy"
+      }
+    }
+  ]
+}

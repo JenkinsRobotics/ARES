@@ -1,0 +1,330 @@
+import type {
+  AgentHealth,
+  BackendSettings,
+  ConversationMessage,
+  ConversationRole,
+  ConversationSession,
+  RuntimeConnection,
+  SessionSummary,
+  ToolInventory,
+  UsageBreakdownRow,
+  UsageDailyPoint,
+  UsageInsights,
+  WorkspaceEntry,
+  WorkspaceSummary,
+} from "@/shared/contracts";
+import { backendLabel, normalizeBackendId } from "@/shared/backend-catalog";
+
+type Raw = Record<string, unknown>;
+
+function record(value: unknown): Raw {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Raw : {};
+}
+
+function text(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.map((part) => {
+      if (typeof part === "string") return part;
+      const item = record(part);
+      return String(item.text || item.content || "");
+    }).filter(Boolean).join("\n");
+  }
+  const item = record(value);
+  return String(item.text || item.content || "");
+}
+
+function timestamp(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string" && Number.isNaN(Number(value))) return value;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  return new Date(numeric < 10_000_000_000 ? numeric * 1000 : numeric).toISOString();
+}
+
+function role(value: unknown): ConversationRole {
+  const normalized = String(value || "assistant").toLowerCase();
+  if (normalized === "user" || normalized === "system" || normalized === "tool") return normalized;
+  return "assistant";
+}
+
+export function translateMessage(value: unknown, index = 0): ConversationMessage {
+  const raw = record(value);
+  const workerId = String(
+    raw.worker_id || raw.ares_backend || raw.backend_id || raw.connection_id || raw.model_provider || "",
+  );
+  return {
+    id: String(raw.id || raw.message_id || `${raw.timestamp || "message"}-${index}`),
+    role: role(raw.role || raw.type),
+    text: text(raw.content ?? raw.text ?? raw.message),
+    createdAt: timestamp(raw.created_at || raw.timestamp),
+    workerId: workerId || undefined,
+  };
+}
+
+export function translateWorkerRankings(value: unknown): {
+  rankings: import("@/shared/contracts").WorkerRanking[];
+  note?: string;
+} {
+  const raw = record(value);
+  const rows = Array.isArray(raw.rankings) ? raw.rankings : [];
+  return {
+    note: String(raw.note || "") || undefined,
+    rankings: rows.map((item) => {
+      const row = record(item);
+      return {
+        workerId: String(row.worker_id || ""),
+        sampleCount: Number(row.sample_count || 0),
+        effectivenessAvg: Number(row.effectiveness_avg || 0),
+        effectivenessLast: Number(row.effectiveness_last || 0),
+        lastEvaluatedAt: timestamp(row.last_evaluated_at),
+        lastTaskKind: String(row.last_task_kind || "") || undefined,
+      };
+    }).filter((row) => row.workerId),
+  };
+}
+
+/**
+ * Collapse a backend source value into the buckets the sidebar filters on.
+ *
+ * The SessionSidebar tabs only distinguish `cli` vs everything else (WebUI). Live
+ * Claude Code imports arrive as `session_source: "external_agent"` with
+ * `is_cli_session: true` — not `session_source: "cli"`. Prefer the boolean flag
+ * and fold the backend's CLI-origin buckets, never `source_label` (a human
+ * string like "Claude Code" that previously dumped every CLI session into WebUI).
+ */
+function sessionSourceBucket(raw: Record<string, unknown>): string {
+  if (raw.is_cli_session === true) return "cli";
+
+  const sessionSource = String(raw.session_source || "").trim().toLowerCase();
+  if (
+    sessionSource === "cli"
+    || sessionSource === "acp"
+    || sessionSource === "tui"
+    || sessionSource === "external_agent"
+    || sessionSource === "external-agent"
+  ) {
+    return "cli";
+  }
+  if (sessionSource === "messaging") return "messaging";
+  if (sessionSource === "webui") return "webui";
+
+  const rawSource = String(raw.source_tag || raw.raw_source || raw.source || "").trim().toLowerCase();
+  if (rawSource === "acp" || rawSource === "tui" || rawSource === "cli") return "cli";
+  if (rawSource === "webui" || rawSource === "messaging") return rawSource;
+  // Agent tool tags (claude_code, codex, …) are CLI-imported, not WebUI.
+  if (rawSource && rawSource !== "unknown") return "cli";
+
+  if (sessionSource) return sessionSource;
+  return "webui";
+}
+
+/** Map common CLI/agent source tags onto the adapter ids SessionSidebar knows. */
+function resolveBackendId(raw: Record<string, unknown>): string {
+  const explicit = String(raw.ares_backend || raw.backend_id || raw.backend || raw.model_provider || "").trim();
+  if (explicit) return normalizeBackendId(explicit);
+
+  const tag = String(raw.source_tag || raw.raw_source || raw.model || "").trim().toLowerCase();
+  if (!tag) return "";
+  const TAG_TO_BACKEND: Record<string, string> = {
+    claude_code: "claude_local",
+    "claude-code": "claude_local",
+    claude: "claude_local",
+    codex: "codex_local",
+    gemini: "gemini_local",
+    grok: "grok_local",
+    cursor: "cursor_local",
+    opencode: "opencode_local",
+    hermes: "hermes_local",
+    jros: "jaeger_local",
+    jaeger: "jaeger_local",
+    jaegerai: "jaeger_local",
+    ollama: "ollama_local",
+  };
+  if (TAG_TO_BACKEND[tag]) return TAG_TO_BACKEND[tag];
+  if (tag.endsWith("_local") || tag.endsWith("_cloud")) return tag;
+  // e.g. source_tag "claude_code" already handled; fall back to "<tag>_local"
+  return `${tag.replace(/-/g, "_")}_local`;
+}
+
+export function translateSessionSummary(value: unknown): SessionSummary {
+  const raw = record(value);
+  const id = String(raw.session_id || raw.id || "");
+  const backendId = resolveBackendId(raw);
+  const source = sessionSourceBucket(raw);
+  return {
+    id,
+    title: String(raw.title || "New conversation"),
+    workspace: String(raw.workspace || ""),
+    model: String(raw.model || ""),
+    provider: String(raw.model_provider || raw.provider || ""),
+    backendId,
+    profile: String(raw.profile || "default"),
+    source,
+    updatedAt: timestamp(raw.last_message_at || raw.updated_at || raw.created_at),
+    activeStreamId: String(raw.active_stream_id || "") || undefined,
+    messageCount: Number(raw.message_count || 0),
+    pinned: Boolean(raw.pinned),
+    archived: Boolean(raw.archived),
+    isStreaming: Boolean(raw.is_streaming || raw.active_stream_id),
+    readOnly: Boolean(raw.read_only || raw.is_read_only),
+  };
+}
+
+export function translateConversation(value: unknown): ConversationSession {
+  const raw = record(value);
+  return {
+    ...translateSessionSummary(raw),
+    messages: Array.isArray(raw.messages) ? raw.messages.map(translateMessage) : [],
+    pendingStartedAt: timestamp(raw.pending_started_at),
+  };
+}
+
+export function translateSessions(value: unknown): SessionSummary[] {
+  const raw = record(value);
+  return (Array.isArray(raw.sessions) ? raw.sessions : [])
+    .map(translateSessionSummary)
+    .filter((session) => session.id);
+}
+
+export function translateSettings(value: unknown): BackendSettings {
+  const raw = record(value);
+  return {
+    assistantName: String(raw.bot_name || "Companion"),
+    authEnabled: Boolean(raw.auth_enabled),
+    version: String(raw.webui_version || "") || undefined,
+  };
+}
+
+export function translateWorkspaces(value: unknown) {
+  const raw = record(value);
+  const items = Array.isArray(raw.workspaces) ? raw.workspaces : [];
+  const workspaces: WorkspaceSummary[] = items.map((item) => {
+    const data = record(item);
+    const path = typeof item === "string" ? item : String(data.path || data.workspace || "");
+    return { path, label: String(data.name || path.split("/").filter(Boolean).at(-1) || path) };
+  }).filter((item) => item.path);
+  return { workspaces, terminalRemoteBackend: Boolean(raw.terminal_remote_backend) };
+}
+
+export function translateWorkspaceEntries(value: unknown): WorkspaceEntry[] {
+  const raw = record(value);
+  return (Array.isArray(raw.entries) ? raw.entries : []).map((value) => {
+    const item = record(value);
+    const rawKind = String(item.type || item.kind || "other").toLowerCase();
+    const kind: WorkspaceEntry["kind"] = rawKind === "dir" || rawKind === "directory" || item.is_dir === true ? "directory" : rawKind === "file" ? "file" : "other";
+    return {
+      name: String(item.name || item.path || ""),
+      path: String(item.path || item.name || ""),
+      kind,
+      size: typeof item.size === "number" ? item.size : undefined,
+    };
+  }).filter((item) => item.name);
+}
+
+export function translateAgentHealth(value: unknown): AgentHealth {
+  const raw = record(value);
+  if (raw.alive === true) return { availability: "available", detail: "Assistant runtime is responding." };
+  if (raw.alive === false) return { availability: "unavailable", detail: "The configured assistant runtime is not running." };
+  return { availability: "unknown", detail: "No separate assistant runtime is currently reported." };
+}
+
+export function translateTools(value: unknown): ToolInventory {
+  const raw = record(value);
+  const tools = Array.isArray(raw.tools) ? raw.tools : [];
+  return {
+    total: Number(raw.total || tools.length || 0),
+    names: tools.map((value) => String(record(value).name || "")).filter(Boolean),
+    unavailableServers: Array.isArray(raw.unavailable_servers) ? raw.unavailable_servers.map(String) : [],
+  };
+}
+
+function translateBreakdownRow(value: unknown, keyField: "model" | "provider"): UsageBreakdownRow {
+  const raw = record(value);
+  return {
+    key: String(raw[keyField] || "unknown"),
+    sessions: Number(raw.sessions || 0),
+    inputTokens: Number(raw.input_tokens || 0),
+    outputTokens: Number(raw.output_tokens || 0),
+    totalTokens: Number(raw.total_tokens || 0),
+    cacheReadTokens: Number(raw.cache_read_tokens || 0),
+    cacheHitPercent: typeof raw.cache_hit_percent === "number" ? raw.cache_hit_percent : null,
+    cost: Number(raw.cost || 0),
+    sessionShare: Number(raw.session_share || 0),
+    tokenShare: Number(raw.token_share || 0),
+    costShare: Number(raw.cost_share || 0),
+    durationSeconds: Number(raw.duration_seconds || 0),
+    averageDurationSeconds: Number(raw.average_duration_seconds || 0),
+  };
+}
+
+function translateDailyPoint(value: unknown): UsageDailyPoint {
+  const raw = record(value);
+  return {
+    date: String(raw.date || ""),
+    inputTokens: Number(raw.input_tokens || 0),
+    outputTokens: Number(raw.output_tokens || 0),
+    cacheReadTokens: Number(raw.cache_read_tokens || 0),
+    sessions: Number(raw.sessions || 0),
+    cost: Number(raw.cost || 0),
+    durationSeconds: Number(raw.duration_seconds || 0),
+  };
+}
+
+export function translateInsights(value: unknown): UsageInsights {
+  const raw = record(value);
+  return {
+    periodDays: Number(raw.period_days || 30),
+    totalSessions: Number(raw.total_sessions || 0),
+    totalMessages: Number(raw.total_messages || 0),
+    totalInputTokens: Number(raw.total_input_tokens || 0),
+    totalOutputTokens: Number(raw.total_output_tokens || 0),
+    totalTokens: Number(raw.total_tokens || 0),
+    totalCacheReadTokens: Number(raw.total_cache_read_tokens || 0),
+    totalCacheHitPercent: typeof raw.total_cache_hit_percent === "number" ? raw.total_cache_hit_percent : null,
+    totalCost: Number(raw.total_cost || 0),
+    totalDurationSeconds: Number(raw.total_duration_seconds || 0),
+    averageSessionDurationSeconds: Number(raw.average_session_duration_seconds || 0),
+    models: (Array.isArray(raw.models) ? raw.models : []).map((row) => translateBreakdownRow(row, "model")),
+    providers: (Array.isArray(raw.providers) ? raw.providers : []).map((row) => translateBreakdownRow(row, "provider")),
+    dailyTokens: (Array.isArray(raw.daily_tokens) ? raw.daily_tokens : []).map(translateDailyPoint),
+    activityByDay: (Array.isArray(raw.activity_by_day) ? raw.activity_by_day : []).map((item: unknown) => {
+      const d = record(item);
+      return { day: String(d.day || ""), sessions: Number(d.sessions || 0) };
+    }),
+    activityByHour: (Array.isArray(raw.activity_by_hour) ? raw.activity_by_hour : []).map((item: unknown) => {
+      const h = record(item);
+      return { hour: Number(h.hour ?? 0), sessions: Number(h.sessions || 0) };
+    }),
+  };
+}
+
+export function translateConnections(value: unknown): RuntimeConnection[] {
+  const raw = record(value);
+  return (Array.isArray(raw.connections) ? raw.connections : []).map((value) => {
+    const item = record(value);
+    const health = record(item.health);
+    const rawState = String(health.state || "offline");
+    const rawId = String(item.id || "");
+    const id = normalizeBackendId(rawId);
+    const rawName = String(item.name || "").trim();
+    const name = id !== rawId.toLowerCase() || /^(jros|jaegerai)$/i.test(rawName)
+      ? backendLabel(id)
+      : rawName || backendLabel(id) || "Connection";
+    const state: RuntimeConnection["state"] = rawState === "connected"
+      ? "connected"
+      : rawState === "needs_attention"
+        ? "needs_attention"
+        : "offline";
+    return {
+      id,
+      name,
+      kind: String(item.kind || "runtime"),
+      selected: Boolean(item.selected),
+      state,
+      available: Boolean(health.available),
+      detail: String(health.message || "Connection status is unavailable."),
+      capabilities: Array.isArray(item.capabilities) ? item.capabilities.map(String) : [],
+    };
+  }).filter((connection) => connection.id);
+}

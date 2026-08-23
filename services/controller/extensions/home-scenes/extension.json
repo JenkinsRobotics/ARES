@@ -1,0 +1,8 @@
+{
+  "id": "home-scenes",
+  "name": "ARES Home Scenes",
+  "description": "Local lighting scene scripts as an ARES tab",
+  "version": "0.1.0",
+  "scripts": ["dashboard/app.js"],
+  "stylesheets": ["dashboard/style.css"]
+}

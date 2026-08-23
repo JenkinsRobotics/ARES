@@ -1,0 +1,198 @@
+import { webSocketProtocols, webSocketUrl } from "@/shared/api-client";
+
+export interface ToolStepData {
+  id?: string;
+  name: string;
+  args?: Record<string, any>;
+  output?: string;
+  error?: string;
+  status?: "running" | "success" | "error";
+  duration_ms?: number;
+}
+
+export type ChatStreamEvent =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool"; label: string; completed: boolean; step?: ToolStepData }
+  | { type: "warning"; message: string }
+  | { type: "done"; session?: unknown }
+  | { type: "error"; message: string }
+  | { type: "cancelled" }
+  | { type: "ended" }
+  | { type: "unknown"; name: string; data: unknown };
+
+export type TransportState =
+  | { state: "connected" }
+  | { state: "reconnecting"; attempt: number }
+  | { state: "disconnected" };
+
+interface RealtimeEnvelope {
+  event?: string;
+  data?: unknown;
+  event_id?: string | null;
+  stream_id?: string | null;
+  session_id?: string | null;
+  terminal?: boolean;
+}
+
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+export function translateChatStreamEvent(name: string, value: unknown): ChatStreamEvent {
+  if (typeof value === "string") {
+    try { value = JSON.parse(value) as unknown; }
+    catch { /* Plain-text runtime events remain useful. */ }
+  }
+  const data = object(value);
+  if (name === "token" || name === "chat_delta") return { type: "text", text: String(data.text || value || "") };
+  if (name === "interim_assistant") {
+    return data.already_streamed ? { type: "unknown", name, data: value } : { type: "text", text: String(data.text || "") };
+  }
+  if (name === "reasoning" || name === "reasoning_delta") return { type: "reasoning", text: String(data.text || "") };
+  if (["tool", "tool_call", "tool_started", "tool.updated", "tool.started", "tool_complete", "tool_result", "tool.done", "tool_error"].includes(name)) {
+    const isCompleted = ["tool_complete", "tool_result", "tool.done"].includes(name);
+    const isError = name === "tool_error" || Boolean(data.error);
+    const toolName = String(data.name || data.tool_name || data.tool || data.label || "Tool");
+    const step: ToolStepData = {
+      id: data.id ? String(data.id) : undefined,
+      name: toolName,
+      args: typeof data.args === "object" ? (data.args as Record<string, any>) : (typeof data.parameters === "object" ? (data.parameters as Record<string, any>) : undefined),
+      output: data.output ? String(data.output) : (data.result ? String(data.result) : undefined),
+      error: data.error ? String(data.error) : undefined,
+      status: isError ? "error" : (isCompleted ? "success" : "running"),
+      duration_ms: typeof data.duration_ms === "number" ? data.duration_ms : (typeof data.duration === "number" ? data.duration * 1000 : undefined),
+    };
+    return {
+      type: "tool",
+      label: toolName,
+      completed: isCompleted,
+      step,
+    };
+  }
+  if (name === "warning") return { type: "warning", message: String(data.message || value || "Warning") };
+  if (name === "done") return { type: "done", session: data.session };
+  if (name === "error" || name === "apperror") return { type: "error", message: String(data.error || data.message || value || "The response stream failed.") };
+  if (name === "cancel") return { type: "cancelled" };
+  if (name === "stream_end") return { type: "ended" };
+  return { type: "unknown", name, data: value };
+}
+
+const MAX_RECONNECTS = 5;
+
+export function subscribeToChatStream(
+  streamId: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  onTransportState: (state: TransportState) => void,
+) {
+  let socket: WebSocket | null = null;
+  let retryTimer: number | undefined;
+  let stopped = false;
+  let terminal = false;
+  let attempt = 0;
+  let lastEventId = "";
+
+  const connect = () => {
+    if (stopped) return;
+    socket = new WebSocket(
+      webSocketUrl("/api/chat/stream", {
+        stream_id: streamId,
+        after_event_id: lastEventId || undefined,
+      }),
+      webSocketProtocols(),
+    );
+    socket.onopen = () => {
+      attempt = 0;
+      onTransportState({ state: "connected" });
+    };
+    socket.onmessage = (message) => {
+      let envelope: RealtimeEnvelope;
+      try { envelope = JSON.parse(String(message.data || "{}")) as RealtimeEnvelope; }
+      catch { envelope = { event: "warning", data: { message: "ARES received an unreadable stream event." } }; }
+      const name = String(envelope.event || "message");
+      if (envelope.event_id) lastEventId = envelope.event_id;
+      if (name === "heartbeat") return;
+      terminal = Boolean(envelope.terminal) || ["stream_end", "error", "cancel"].includes(name);
+      onEvent(translateChatStreamEvent(name, envelope.data));
+      if (terminal) socket?.close(1000, "terminal event received");
+    };
+    socket.onerror = () => socket?.close();
+    socket.onclose = () => {
+      socket = null;
+      if (stopped || terminal) return;
+      attempt += 1;
+      if (attempt > MAX_RECONNECTS) {
+        onTransportState({ state: "disconnected" });
+        return;
+      }
+      onTransportState({ state: "reconnecting", attempt });
+      retryTimer = window.setTimeout(connect, Math.min(4000, 250 * 2 ** (attempt - 1)));
+    };
+  };
+
+  connect();
+  return () => {
+    stopped = true;
+    if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    socket?.close(1000, "client detached");
+    socket = null;
+  };
+}
+
+export interface SessionActivityEvent {
+  name: string;
+  data: Record<string, unknown>;
+}
+
+export function subscribeToSessionActivity(
+  sessionId: string,
+  onEvent: (event: SessionActivityEvent) => void,
+  onDisconnected: () => void,
+) {
+  let socket: WebSocket | null = null;
+  let stopped = false;
+  let retryTimer: number | undefined;
+  let attempt = 0;
+  /** Backend closed cleanly (read-only import, permission error) — do not thrash reconnects. */
+  let terminal = false;
+
+  const connect = () => {
+    if (stopped || terminal) return;
+    socket = new WebSocket(
+      webSocketUrl(`/api/sessions/${encodeURIComponent(sessionId)}/stream`),
+      webSocketProtocols(),
+    );
+    socket.onopen = () => { attempt = 0; };
+    socket.onmessage = (message) => {
+      try {
+        const envelope = JSON.parse(String(message.data || "{}")) as RealtimeEnvelope;
+        const name = String(envelope.event || "message");
+        if (name === "heartbeat") return;
+        // Imported CLI sessions are not live-streamable; the server ends with a
+        // terminal error. Stop quietly so the chat page does not surface a
+        // "Background activity updates are temporarily unavailable" banner.
+        if (name === "error" || envelope.terminal) {
+          terminal = true;
+          onEvent({ name, data: object(envelope.data) });
+          socket?.close(1000, "terminal session activity event");
+          return;
+        }
+        onEvent({ name, data: object(envelope.data) });
+      } catch { /* A malformed observation event must not break the conversation. */ }
+    };
+    socket.onerror = () => socket?.close();
+    socket.onclose = () => {
+      socket = null;
+      if (stopped || terminal) return;
+      attempt += 1;
+      if (attempt > MAX_RECONNECTS) { onDisconnected(); return; }
+      retryTimer = window.setTimeout(connect, Math.min(4000, 500 * 2 ** (attempt - 1)));
+    };
+  };
+  connect();
+  return () => {
+    stopped = true;
+    if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    socket?.close(1000, "session changed");
+  };
+}

@@ -1,0 +1,1225 @@
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Folder,
+  Globe,
+  MessageCircle,
+  Monitor,
+  MoreVertical,
+  Plus,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Tag,
+  Terminal,
+  Link2,
+  Pencil,
+  Share2,
+  Pin,
+  FolderInput,
+  Archive,
+  Download,
+  Trash2,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
+
+import {
+  hubLink,
+  navigationSections,
+  sectionForPath,
+  type DeckSurface,
+  type NavigationSection,
+} from "@/app-navigation";
+import { APP_ICON_URL } from "@/assets";
+import { normalizeSettingsSection, SETTINGS_SECTIONS } from "@/features/settings/constants";
+import { cn } from "@/lib/utils";
+import { apiFetch } from "@/shared/api-client";
+import { aresApi } from "@/shared/ares-api";
+import { backendColor, backendLabel } from "@/shared/backend-catalog";
+import { useAres } from "@/shared/ares-context";
+import { useLocalProfile } from "@/shared/local-profile";
+
+// ─────────────────────────────────────────────────────────────
+// Types & Metadata
+// ─────────────────────────────────────────────────────────────
+type DeckMode = NavigationSection["id"];
+
+interface DiscoveredBackend {
+  adapter_id: string;
+  display_name: string;
+  detected: boolean;
+}
+
+interface ProjectItem {
+  id: string;
+  name: string;
+}
+
+interface SessionOverride {
+  source?: "webui" | "cli";
+  backendId?: string;
+  title?: string;
+}
+
+/**
+ * Rail order: Chat · Knowledge Hub · Control Center · Telemetry & Security.
+ *
+ * Derived from the navigation registry so the rail can never drift from the
+ * routed surfaces. The previous hand-written list still carried Engineering,
+ * Studio, and Life icons long after those routes were removed, so three of the
+ * six icons led nowhere.
+ */
+const modes: Array<{ id: DeckMode; label: string; icon: LucideIcon; to: string }> =
+  navigationSections.map((section) => ({
+    id: section.id,
+    label: section.label,
+    icon: section.routes[0]?.icon ?? MessageCircle,
+    to: section.home,
+  }));
+
+/**
+ * CLI sessions are frequently persisted with their working directory as the
+ * title, which truncates to an unreadable "/Users/m…" in the sidebar. Show the
+ * final path segment instead so rows stay distinguishable.
+ */
+const PLACEHOLDER_TITLES = new Set([
+  "", "untitled", "new chat", "new conversation", "reply ok",
+  "cli", "cli session", "webui session", "api session", "api_server session",
+  "api-server session", "subagent session", "tool session", "cron session",
+  "webhook session", "recovered webui session",
+]);
+
+function isPlaceholderTitle(title: string | undefined): boolean {
+  const clean = (title ?? "").trim();
+  if (!clean) return true;
+  const low = clean.toLowerCase();
+  if (PLACEHOLDER_TITLES.has(low)) return true;
+  // "{Source} Session" listing fallback
+  if (low.endsWith(" session") && low.length <= 40) return true;
+  return false;
+}
+
+function displayTitle(title: string | undefined): string {
+  const clean = (title ?? "").trim();
+  if (isPlaceholderTitle(clean)) return "New chat";
+  if (!clean.startsWith("/") && !clean.startsWith("~/")) return clean;
+  const segments = clean.replace(/\/+$/, "").split("/").filter(Boolean);
+  return segments.length ? segments[segments.length - 1] : clean;
+}
+
+const DATE_GROUP_ORDER = ["Today", "Yesterday", "Last week", "Older"] as const;
+type DateGroup = (typeof DATE_GROUP_ORDER)[number];
+
+/** Bucket a session by calendar day so the sidebar reads chronologically. */
+function dateGroupFor(iso: string | undefined): DateGroup {
+  if (!iso) return "Older";
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return "Older";
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfThen = new Date(then);
+  startOfThen.setHours(0, 0, 0, 0);
+  const days = Math.round((startOfToday.getTime() - startOfThen.getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "Last week";
+  return "Older";
+}
+
+function relativeTime(iso: string | undefined): string {
+  if (!iso) return "";
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return "now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────
+
+/** Session mutations, owned by SessionSidebar so every row shares one implementation. */
+interface SessionActions {
+  copyLink: (sessionId: string) => void;
+  rename: (sessionId: string, currentTitle: string) => void;
+  share: (sessionId: string) => void;
+  pin: (sessionId: string, pinned: boolean) => void;
+  archive: (sessionId: string) => void;
+  exportHtml: (sessionId: string) => void;
+  regenerateTitle: (sessionId: string) => void;
+  remove: (sessionId: string, title: string) => void;
+}
+
+/** A single session row with a right-click / ⋮ context menu. */
+function SessionRow({
+  sessionId,
+  title,
+  updatedAt,
+  projectName,
+  projects,
+  isActive,
+  isStreaming,
+  readOnly,
+  pinned,
+  source,
+  backendId,
+  onClick,
+  onAssignProject,
+  onOpenEdit,
+  actions,
+}: {
+  sessionId: string;
+  title: string;
+  updatedAt?: string;
+  projectName?: string;
+  projects: ProjectItem[];
+  isActive: boolean;
+  isStreaming?: boolean;
+  readOnly?: boolean;
+  pinned?: boolean;
+  source?: string;
+  backendId?: string;
+  onClick: () => void;
+  onAssignProject: (sessionId: string, projectId: string | null) => void;
+  onOpenEdit: (sessionId: string) => void;
+  actions: SessionActions;
+}) {
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const [showProjects, setShowProjects] = useState(false);
+
+  const closeMenu = useCallback(() => {
+    setMenuAt(null);
+    setShowProjects(false);
+  }, []);
+
+  // Dismiss on outside click, Escape, or any scroll (the menu is fixed-position
+  // so it would otherwise detach from the row it belongs to).
+  useEffect(() => {
+    if (!menuAt) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeMenu(); };
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", closeMenu, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [menuAt, closeMenu]);
+
+  const openMenuAt = (x: number, y: number) => {
+    // Keep the menu on-screen when the row sits near the viewport edge.
+    const width = 200;
+    const height = 340;
+    setMenuAt({
+      x: Math.min(x, window.innerWidth - width - 8),
+      y: Math.min(y, window.innerHeight - height - 8),
+    });
+  };
+
+  const run = (fn: () => void) => {
+    closeMenu();
+    fn();
+  };
+
+  return (
+    <div
+      className="relative group"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        openMenuAt(e.clientX, e.clientY);
+      }}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "w-full text-left px-3 py-[7px] pr-14 flex items-center gap-2 text-[12px] transition-colors border-l-2",
+          isActive
+            ? "border-[#5b7cf6] bg-[#1e2035] text-[#f0f2ff] font-medium"
+            : "border-transparent text-[#92948b] hover:bg-[#1a1b19] hover:text-[#ecebe4]",
+        )}
+      >
+        {isStreaming && (
+          <span className="shrink-0 size-1.5 rounded-full bg-[#08EBF1] animate-pulse" />
+        )}
+        {pinned && <Pin className="size-2.5 shrink-0 text-[#8ba2ff]" aria-label="Pinned" />}
+        <span className="truncate flex-1">{title || "New chat"}</span>
+
+        {(source === "cli" || readOnly) && (
+          <span className="shrink-0 text-[9px] px-1 py-0.5 rounded border border-[#4b4d47] text-[#8f9188] font-medium uppercase tracking-wide">
+            CLI
+          </span>
+        )}
+        {projectName && (
+          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-[#5b7cf6]/20 text-[#8ba2ff] font-medium max-w-[70px] truncate">
+            {projectName}
+          </span>
+        )}
+      </button>
+
+      {/* Kept a sibling of the row button — nesting interactive elements is invalid HTML. */}
+      <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center gap-1">
+        {updatedAt && (
+          <span className="text-[10px] text-[#6f7169]">{relativeTime(updatedAt)}</span>
+        )}
+        <button
+          type="button"
+          title="Session menu"
+          aria-label="Session menu"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            const r = e.currentTarget.getBoundingClientRect();
+            if (menuAt) closeMenu();
+            else openMenuAt(r.right, r.bottom + 4);
+          }}
+          className="pointer-events-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded text-[#6f7169] hover:text-[#ecebe4] hover:bg-[#2a2d3d] transition-all"
+        >
+          <MoreVertical className="size-3" />
+        </button>
+      </div>
+
+      {menuAt && (
+        <div
+          role="menu"
+          style={{ left: menuAt.x, top: menuAt.y }}
+          className="fixed z-50 w-50 rounded-md border border-edge bg-overlay p-1 shadow-2xl text-[11px]"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <MenuItem icon={Link2} label="Copy session link" onClick={() => run(() => actions.copyLink(sessionId))} />
+          <MenuItem
+            icon={Pencil}
+            label="Rename session"
+            disabled={readOnly}
+            hint={readOnly ? "Read-only" : undefined}
+            onClick={() => run(() => actions.rename(sessionId, title))}
+          />
+          <MenuItem icon={Share2} label="Share" onClick={() => run(() => actions.share(sessionId))} />
+          <MenuItem
+            icon={Pin}
+            label={pinned ? "Unpin session" : "Pin session"}
+            disabled={readOnly}
+            hint={readOnly ? "Read-only" : undefined}
+            onClick={() => run(() => actions.pin(sessionId, !pinned))}
+          />
+
+          <div className="my-1 border-t border-[#2d303e]" />
+
+          <MenuItem
+            icon={FolderInput}
+            label="Move to project"
+            trailing={<ChevronRight className="size-3 opacity-60" />}
+            onClick={() => setShowProjects((v) => !v)}
+          />
+          {showProjects && (
+            <div className="mb-1 ml-2 border-l border-[#2d303e] pl-1">
+              <button
+                type="button"
+                onClick={() => run(() => onAssignProject(sessionId, null))}
+                className="w-full text-left px-2 py-1 rounded text-[#8f9188] hover:bg-overlay-hover hover:text-[#ecebe4]"
+              >
+                — Unassigned —
+              </button>
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => run(() => onAssignProject(sessionId, p.id))}
+                  className={cn(
+                    "w-full text-left px-2 py-1 rounded flex items-center gap-1.5 transition-colors",
+                    projectName === p.name
+                      ? "bg-[#5b7cf6]/20 text-[#5b7cf6] font-medium"
+                      : "text-[#8f9188] hover:bg-overlay-hover hover:text-[#ecebe4]",
+                  )}
+                >
+                  <Folder className="size-3 shrink-0" />
+                  <span className="truncate">{p.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <MenuItem
+            icon={Archive}
+            label="Archive session"
+            disabled={readOnly}
+            hint={readOnly ? "Read-only" : undefined}
+            onClick={() => run(() => actions.archive(sessionId))}
+          />
+          <MenuItem icon={Download} label="Export as HTML" onClick={() => run(() => actions.exportHtml(sessionId))} />
+          <MenuItem
+            icon={RefreshCw}
+            label="Regenerate title"
+            disabled={readOnly}
+            hint={readOnly ? "Read-only" : undefined}
+            onClick={() => run(() => actions.regenerateTitle(sessionId))}
+          />
+
+          <div className="my-1 border-t border-[#2d303e]" />
+
+          <MenuItem
+            icon={Settings}
+            label="Properties…"
+            onClick={() => run(() => onOpenEdit(sessionId))}
+          />
+          <MenuItem
+            icon={Trash2}
+            label="Delete session"
+            danger
+            disabled={readOnly}
+            hint={readOnly ? "Imported history" : undefined}
+            onClick={() => run(() => actions.remove(sessionId, title))}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+  danger,
+  hint,
+  trailing,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  hint?: string;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      title={hint}
+      onClick={onClick}
+      className={cn(
+        "w-full text-left px-2 py-1.5 rounded flex items-center gap-2 transition-colors",
+        disabled
+          ? "cursor-not-allowed text-[#4b4d47]"
+          : danger
+            ? "text-[#e06c6c] hover:bg-[#3a2226]"
+            : "text-[#c9cbd4] hover:bg-overlay-hover hover:text-[#ecebe4]",
+      )}
+    >
+      <Icon className="size-3 shrink-0" />
+      <span className="flex-1 truncate">{label}</span>
+      {trailing}
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Main SessionSidebar
+// ─────────────────────────────────────────────────────────────
+export function SessionSidebar({
+  onNavigate,
+  onSessionOpened,
+}: {
+  /** Called after a mode/route NavLink is activated (close mobile drawer). */
+  onNavigate?: () => void;
+  /** Called after a session is selected or a new chat is created. */
+  onSessionOpened?: () => void;
+} = {}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { profile } = useLocalProfile();
+  const { snapshot, currentSession, selectSession, createSession, refresh } = useAres();
+  const activeMode: DeckSurface = sectionForPath(location.pathname);
+  const isSettings = activeMode === "settings";
+  const settingsSection = normalizeSettingsSection(
+    new URLSearchParams(location.search).get("section"),
+  );
+
+  const openChatSession = useCallback(
+    (sessionId: string) => {
+      selectSession(sessionId);
+      if (!location.pathname.startsWith("/chat") && !location.pathname.startsWith("/conversation")) {
+        navigate("/chat");
+      }
+      onSessionOpened?.();
+    },
+    [location.pathname, navigate, selectSession, onSessionOpened],
+  );
+
+  const openNewChat = useCallback(() => {
+    void createSession().then(() => {
+      navigate("/chat");
+      onSessionOpened?.();
+      window.dispatchEvent(new CustomEvent("ares:close-workbench"));
+    });
+  }, [createSession, navigate, onSessionOpened]);
+  const activeSection =
+    activeMode === "settings"
+      ? undefined
+      : navigationSections.find(({ id }) => id === activeMode);
+  /** Which hub tab/view the URL currently points at. */
+  const { activeTabId, activeViewId } = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const tabs = activeSection?.tabs ?? [];
+    const tab = tabs.find((t) => t.id === params.get("tab")) ?? tabs[0];
+    const view = tab?.views.find((v) => v.id === params.get("view")) ?? tab?.views[0];
+    return { activeTabId: tab?.id, activeViewId: view?.id };
+  }, [activeSection, location.search]);
+
+  /**
+   * Sidebar entries for the active surface.
+   *
+   * Every hub tab becomes a heading; tabs that host more than one pane list
+   * their panes beneath it. This keeps each destination one click away even
+   * though they now share a single route.
+   */
+  const sidebarGroups = useMemo(() => {
+    const section = activeSection;
+    if (!section || section.tabs.length === 0) return [];
+    return section.tabs.map((tab) => {
+      const multi = tab.views.length > 1;
+      return {
+        group: multi ? tab.label : "",
+        items: multi
+          ? tab.views.map((view) => ({
+              key: `${tab.id}:${view.id}`,
+              to: hubLink(section.home, tab.id, view.id),
+              label: view.label,
+              icon: tab.icon,
+              active: activeTabId === tab.id && activeViewId === view.id,
+            }))
+          : [
+              {
+                key: tab.id,
+                to: hubLink(section.home, tab.id),
+                label: tab.label,
+                icon: tab.icon,
+                active: activeTabId === tab.id,
+              },
+            ],
+      };
+    });
+  }, [activeSection, activeTabId, activeViewId]);
+
+  // State
+  const [sessionSearch, setSessionSearch] = useState("");
+  const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [sessionSourceFilter, setSessionSourceFilter] = useState<"all" | "webui" | "cli">("all");
+
+  // Modal states
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+
+  // Projects state
+  const [projects, setProjects] = useState<ProjectItem[]>(() => {
+    try {
+      const stored = localStorage.getItem("ares_projects_list");
+      return stored ? (JSON.parse(stored) as ProjectItem[]) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [showAddProject, setShowAddProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+
+  // Map of sessionId -> projectId
+  const [sessionProjectMap, setSessionProjectMap] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem("ares_session_projects_map");
+      return stored ? (JSON.parse(stored) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Session property overrides (source, backendId, title)
+  const [sessionOverrides, setSessionOverrides] = useState<Record<string, SessionOverride>>(() => {
+    try {
+      const stored = localStorage.getItem("ares_session_overrides_map");
+      return stored ? (JSON.parse(stored) as Record<string, SessionOverride>) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Fetch discovered projects from API
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void apiFetch<{ projects?: Array<{ id?: string; name?: string; project_id?: string }> }>("/api/projects", { signal: controller.signal })
+      .then((data) => {
+        if (controller.signal.aborted || !data.projects) return;
+        const fetched: ProjectItem[] = data.projects.map((p) => ({
+          id: String(p.id || p.project_id || p.name),
+          name: String(p.name || "Untitled"),
+        }));
+        setProjects((prev) => {
+          const merged = [...prev];
+          for (const item of fetched) {
+            if (!merged.some((m) => m.id === item.id || m.name === item.name)) {
+              merged.push(item);
+            }
+          }
+          try { localStorage.setItem("ares_projects_list", JSON.stringify(merged)); } catch {}
+          return merged;
+        });
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, []);
+
+  // Save session assignments to localStorage
+  const handleAssignProject = useCallback((sessionId: string, projectId: string | null) => {
+    setSessionProjectMap((prev) => {
+      const next = { ...prev };
+      if (projectId) {
+        next[sessionId] = projectId;
+      } else {
+        delete next[sessionId];
+      }
+      try { localStorage.setItem("ares_session_projects_map", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  // Session mutations. These all hit real endpoints and then refresh, unlike the
+  // local-only overrides below.
+  const [actionNotice, setActionNotice] = useState("");
+
+  const sessionActions = useMemo<SessionActions>(() => {
+    const report = (message: string) => {
+      setActionNotice(message);
+      window.setTimeout(() => setActionNotice(""), 4000);
+    };
+    const fail = (err: unknown, fallback: string) =>
+      report(err instanceof Error ? err.message : fallback);
+
+    return {
+      copyLink: (sessionId) => {
+        const url = `${window.location.origin}/chat?session=${encodeURIComponent(sessionId)}`;
+        void navigator.clipboard.writeText(url)
+          .then(() => report("Session link copied."))
+          .catch(() => report(url));
+      },
+      rename: (sessionId, currentTitle) => {
+        const next = window.prompt("Rename session", currentTitle)?.trim();
+        if (!next || next === currentTitle) return;
+        void aresApi.renameSession(sessionId, next)
+          .then(() => refresh())
+          .catch((err) => fail(err, "Could not rename session"));
+      },
+      share: (sessionId) => {
+        void aresApi.createShare(sessionId)
+          .then((res) => {
+            const url = res?.share?.url || "";
+            if (!url) return report("Share created.");
+            return navigator.clipboard.writeText(url)
+              .then(() => report("Share link copied."))
+              .catch(() => report(url));
+          })
+          .catch((err) => fail(err, "Could not create share link"));
+      },
+      pin: (sessionId, pinned) => {
+        void aresApi.pinSession(sessionId, pinned)
+          .then(() => refresh())
+          .catch((err) => fail(err, "Could not pin session"));
+      },
+      archive: (sessionId) => {
+        void aresApi.archiveSession(sessionId, true)
+          .then(() => refresh())
+          .catch((err) => fail(err, "Could not archive session"));
+      },
+      exportHtml: (sessionId) => {
+        void aresApi.exportSession(sessionId, "html")
+          .then((html) => {
+            const blob = new Blob([String(html)], { type: "text/html" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${sessionId}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+          })
+          .catch((err) => fail(err, "Could not export session"));
+      },
+      regenerateTitle: (sessionId) => {
+        void aresApi.regenerateSessionTitle(sessionId)
+          .then(() => refresh())
+          .catch((err) => fail(err, "Could not regenerate title"));
+      },
+      remove: (sessionId, title) => {
+        // Deletion drops the transcript; the backend has no undo for it.
+        if (!window.confirm(`Delete "${title || "Untitled"}"?\n\nThis permanently removes the session and cannot be undone.`)) return;
+        void aresApi.deleteSession(sessionId)
+          .then(() => refresh())
+          .catch((err) => fail(err, "Could not delete session"));
+      },
+    };
+  }, [refresh]);
+
+  // Create new project
+  const handleCreateProject = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newProjectName.trim();
+    if (!name) return;
+
+    const newProj: ProjectItem = { id: name.toLowerCase().replace(/\s+/g, "-"), name };
+
+    setProjects((prev) => {
+      if (prev.some((p) => p.name.toLowerCase() === name.toLowerCase())) return prev;
+      const next = [...prev, newProj];
+      try { localStorage.setItem("ares_projects_list", JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    setNewProjectName("");
+    setShowAddProject(false);
+    setActiveProject(newProj.id);
+
+    try {
+      await apiFetch("/api/projects/create", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+    } catch {}
+  }, [newProjectName]);
+
+  // Enriched sessions with local overrides
+  const enrichedSessions = useMemo(() => {
+    return snapshot.sessions.map((s) => {
+      const override = sessionOverrides[s.id];
+      return {
+        ...s,
+        title: displayTitle(override?.title ?? s.title),
+        source: override?.source ?? s.source,
+        backendId: override?.backendId ?? s.backendId,
+      };
+    });
+  }, [snapshot.sessions, sessionOverrides]);
+
+  // Filtered session list
+  const filteredSessions = useMemo(() => {
+    const q = sessionSearch.toLowerCase();
+    return enrichedSessions.filter((s) => {
+      // 1. Source filter
+      if (sessionSourceFilter === "webui" && s.source === "cli") return false;
+      if (sessionSourceFilter === "cli" && s.source !== "cli") return false;
+
+      // 2. Search query filter (title + id)
+      if (q && !(s.title?.toLowerCase().includes(q) || s.id.toLowerCase().includes(q))) return false;
+
+      // 3. Project filter. Only an explicit assignment counts: falling back to
+      // s.workspace made every session look assigned, so "Unassigned" matched
+      // nothing and the badge rendered a filesystem path as a project name.
+      const assignedProjId = sessionProjectMap[s.id];
+      if (activeProject === "unassigned") {
+        if (assignedProjId) return false;
+      } else if (activeProject !== null) {
+        const projObj = projects.find((p) => p.id === activeProject);
+        const matchName = projObj?.name;
+        if (assignedProjId !== activeProject && assignedProjId !== matchName) return false;
+      }
+
+      return true;
+    });
+  }, [enrichedSessions, sessionSearch, activeProject, sessionProjectMap, projects, sessionSourceFilter]);
+
+  const handleNewSession = openNewChat;
+
+  const editingSession = useMemo(
+    () => enrichedSessions.find((s) => s.id === editingSessionId),
+    [enrichedSessions, editingSessionId],
+  );
+
+  return (
+    <div className="relative flex h-full min-h-0 bg-shell-root text-[#ecebe4]">
+      {/* ── Icon rail ── */}
+      <nav
+        className="flex w-14 shrink-0 flex-col items-center border-r border-edge py-3"
+        aria-label="Command center modes"
+      >
+        <NavLink
+          to="/companion"
+          onClick={() => onNavigate?.()}
+          className="mb-5 grid size-9 place-items-center overflow-hidden rounded-md border border-edge bg-shell-raised"
+          aria-label="ARES home"
+          title="ARES"
+        >
+          <img
+            src={APP_ICON_URL}
+            alt=""
+            className="size-full object-cover"
+            aria-hidden="true"
+          />
+        </NavLink>
+        <div className="flex flex-1 flex-col gap-1">
+          {modes.map(({ id, label, icon: Icon, to }) => (
+            <NavLink
+              key={id}
+              to={to}
+              onClick={() => onNavigate?.()}
+              aria-label={label}
+              title={label}
+              className={cn(
+                "relative grid size-11 place-items-center rounded-sm text-[#777970] transition-colors hover:bg-shell-elevated hover:text-[#ecebe4] sm:size-9",
+                // Settings is not an environment — never highlight a rail icon for it.
+                !isSettings &&
+                  activeMode === id &&
+                  "bg-shell-hover text-[#ef4444] before:absolute before:-left-2.5 before:h-5 before:w-0.5 before:bg-[#ef4444]",
+              )}
+            >
+              <Icon className="size-4" />
+            </NavLink>
+          ))}
+        </div>
+        <NavLink
+          to="/settings"
+          onClick={() => onNavigate?.()}
+          aria-label="Settings"
+          title="Settings — SI, Appearance, Chat, App"
+          className={({ isActive }) =>
+            cn(
+              "mt-auto grid size-11 place-items-center rounded-sm text-[#777970] transition-colors hover:bg-shell-elevated hover:text-[#ecebe4] sm:size-9",
+              (isActive || isSettings) && "bg-shell-hover text-[#faf9f3]",
+            )
+          }
+        >
+          <Settings className="size-4" />
+        </NavLink>
+      </nav>
+
+      {/* ── Sidebar content ── */}
+      <aside className="flex min-w-0 flex-1 flex-col bg-shell">
+        {/* Header */}
+        <div className="flex h-12 shrink-0 items-center border-b border-edge px-3">
+          <p className="min-w-0 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a7a79d]">
+            {isSettings
+              ? "SETTINGS"
+              : activeMode === "chat"
+                ? "SESSIONS"
+                : activeSection?.label ?? "ARES"}
+          </p>
+          {activeMode === "chat" && (
+            <button
+              type="button"
+              title="New session"
+              onClick={handleNewSession}
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-[#6f7169] transition-colors hover:bg-shell-hover hover:text-[#ecebe4]"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          )}
+          {activeMode !== "chat" && (
+            <SlidersHorizontal className="ml-auto size-3.5 text-[#6f7169]" aria-hidden="true" />
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {isSettings ? (
+            <div className="space-y-0.5 p-2">
+              <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#6f7169]">
+                Preferences
+              </p>
+              {SETTINGS_SECTIONS.map(({ id, label, icon: Icon }) => (
+                <NavLink
+                  key={id}
+                  to={`/settings?section=${id}`}
+                  onClick={() => onNavigate?.()}
+                  className={cn(
+                    "flex min-h-11 items-center gap-2.5 rounded-sm px-2.5 py-2 text-xs text-[#92948b] transition-colors hover:bg-shell-elevated hover:text-[#ecebe4]",
+                    settingsSection === id && "bg-shell-hover text-[#faf9f3]",
+                  )}
+                >
+                  <Icon className="size-3.5 shrink-0" />
+                  <span className="truncate">{label}</span>
+                </NavLink>
+              ))}
+            </div>
+          ) : activeMode === "chat" ? (
+            <div className="flex flex-col h-full">
+
+              {/* 1. Search */}
+              <div className="px-2.5 py-2 border-b border-[#1e1f1d]">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3 text-[#6f7169] pointer-events-none" />
+                  <input
+                    type="search"
+                    placeholder="Filter sessions..."
+                    value={sessionSearch}
+                    onChange={(e) => setSessionSearch(e.target.value)}
+                    className="w-full rounded border border-edge bg-shell-raised py-1 pl-7 pr-2 text-[12px] text-[#ecebe4] outline-none placeholder:text-[#6f7169] focus:border-[#4b4d47]"
+                  />
+                </div>
+              </div>
+
+              {/* 2. Source Filter Chips Bar (WebUI, CLI) */}
+              <div className="px-3 pt-3 pb-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSessionSourceFilter("all")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 border",
+                    sessionSourceFilter === "all"
+                      ? "bg-[#3889fd]/20 text-[#3889fd] border-[#3889fd]/50"
+                      : "border-edge text-[#8f9188] hover:border-[#4b4d47] hover:text-[#ecebe4]",
+                  )}
+                >
+                  All ({enrichedSessions.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSessionSourceFilter(sessionSourceFilter === "webui" ? "all" : "webui")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 border",
+                    sessionSourceFilter === "webui"
+                      ? "bg-[#ef4444]/20 text-[#ef4444] border-[#ef4444]/50"
+                      : "border-edge text-[#8f9188] hover:border-[#4b4d47] hover:text-[#ecebe4]",
+                  )}
+                >
+                  WebUI ({enrichedSessions.filter(s => s.source !== "cli").length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSessionSourceFilter(sessionSourceFilter === "cli" ? "all" : "cli")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 border",
+                    sessionSourceFilter === "cli"
+                      ? "border-[#4b4d47] bg-shell-hover text-[#ecebe4]"
+                      : "border-edge text-[#8f9188] hover:border-[#4b4d47] hover:text-[#ecebe4]",
+                  )}
+                >
+                  CLI ({enrichedSessions.filter(s => s.source === "cli").length})
+                </button>
+              </div>
+
+              {/* 3. Project Filter Chips Bar (All, Unassigned, Projects, +) */}
+              <div className="px-2.5 py-2 border-b border-[#1e1f1d] flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setActiveProject(null)}
+                  className={cn(
+                    "px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-colors shrink-0",
+                    activeProject === null
+                      ? "bg-[#3889fd]/20 border-[#3889fd] text-[#3889fd]"
+                      : "border-edge text-[#8f9188] hover:border-[#4b4d47] hover:text-[#ecebe4]",
+                  )}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveProject("unassigned")}
+                  className={cn(
+                    "px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-dashed transition-colors shrink-0",
+                    activeProject === "unassigned"
+                      ? "bg-[#f5c542]/20 border-[#f5c542] text-[#f5c542]"
+                      : "border-edge text-[#8f9188] hover:border-[#4b4d47] hover:text-[#ecebe4]",
+                  )}
+                >
+                  Unassigned
+                </button>
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setActiveProject(p.id)}
+                    className={cn(
+                      "px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-colors shrink-0 flex items-center gap-1.5",
+                      activeProject === p.id
+                        ? "bg-[#5b7cf6]/20 border-[#5b7cf6] text-[#faf9f3]"
+                        : "border-edge text-[#8f9188] hover:border-[#4b4d47] hover:text-[#ecebe4]",
+                    )}
+                  >
+                    <span className="size-1.5 rounded-full bg-[#5b7cf6]" />
+                    <span className="truncate max-w-[80px]">{p.name}</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowAddProject(true)}
+                  title="Create new project"
+                  className="size-5 rounded-full border border-edge flex items-center justify-center text-[#8f9188] hover:text-[#ecebe4] hover:border-[#5b7cf6] transition-colors shrink-0"
+                >
+                  <Plus className="size-3" />
+                </button>
+              </div>
+
+              {/* Inline Create Project Form */}
+              {showAddProject && (
+                <form onSubmit={(e) => void handleCreateProject(e)} className="m-2 p-2 rounded border border-[#3889fd]/40 bg-overlay-inset">
+                  <div className="text-[11px] font-semibold text-[#a7a79d] mb-1">Create New Project</div>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      placeholder="Project name..."
+                      className="flex-1 rounded border border-edge bg-shell-deep px-2 py-1 text-[11px] text-[#ecebe4] outline-none focus:border-[#5b7cf6]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newProjectName.trim()}
+                      className="px-2.5 py-1 rounded bg-[#5b7cf6] text-white text-[11px] font-medium hover:bg-[#4b6ce6] disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowAddProject(false); setNewProjectName(""); }}
+                      className="px-1.5 py-1 rounded border border-edge text-[#8f9188] text-[11px] hover:text-[#ecebe4]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* 4. Session List Area */}
+              <div className="flex-1 overflow-y-auto py-1">
+                  <div>
+                    {filteredSessions.length === 0 ? (
+                      <p className="px-3 py-6 text-center text-[11px] text-[#6f7169]">
+                        {activeProject === "unassigned" ? "No unassigned sessions." : "No sessions found."}
+                      </p>
+                    ) : (
+                      <>
+                      {(() => {
+                        const pinnedSessions = filteredSessions.filter((s) => s.pinned);
+                        if (!pinnedSessions.length) return null;
+                        return (
+                          <div key="pinned">
+                            <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#8ba2ff]">
+                              Pinned
+                            </p>
+                            {pinnedSessions.map((s) => {
+                              const projId = sessionProjectMap[s.id];
+                              const projObj = projects.find((p) => p.id === projId || p.name === projId);
+                              return (
+                                <SessionRow
+                                  key={`pin-${s.id}`}
+                                  sessionId={s.id}
+                                  title={s.title}
+                                  updatedAt={s.updatedAt}
+                                  projectName={projObj?.name || (projId ? String(projId) : undefined)}
+                                  projects={projects}
+                                  isActive={s.id === currentSession?.id}
+                                  isStreaming={s.isStreaming}
+                                  readOnly={s.readOnly}
+                                  pinned={s.pinned}
+                                  source={s.source}
+                                  backendId={s.backendId}
+                                  onClick={() => openChatSession(s.id)}
+                                  onAssignProject={handleAssignProject}
+                                  onOpenEdit={(id) => setEditingSessionId(id)}
+                                  actions={sessionActions}
+                                />
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                      {DATE_GROUP_ORDER.map((group) => {
+                        const groupSessions = filteredSessions.filter(
+                          (s) => !s.pinned && dateGroupFor(s.updatedAt) === group,
+                        );
+                        if (groupSessions.length === 0) return null;
+                        return (
+                          <div key={group}>
+                            <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#6f7169]">
+                              {group}
+                            </p>
+                            {groupSessions.map((s) => {
+                              // Only an explicit assignment names a project. The
+                              // workspace path is not a project — rendering it
+                              // leaked the full filesystem path into the badge.
+                              const projId = sessionProjectMap[s.id];
+                              const projObj = projects.find((p) => p.id === projId || p.name === projId);
+                              return (
+                                <SessionRow
+                                  key={s.id}
+                                  sessionId={s.id}
+                                  title={s.title}
+                                  updatedAt={s.updatedAt}
+                                  projectName={projObj?.name || (projId ? String(projId) : undefined)}
+                                  projects={projects}
+                                  isActive={s.id === currentSession?.id}
+                                  isStreaming={s.isStreaming}
+                                  readOnly={s.readOnly}
+                                  pinned={s.pinned}
+                                  source={s.source}
+                                  backendId={s.backendId}
+                                  onClick={() => openChatSession(s.id)}
+                                  onAssignProject={handleAssignProject}
+                                  onOpenEdit={(id) => setEditingSessionId(id)}
+                                  actions={sessionActions}
+                                />
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      </>
+                    )}
+                  </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-0.5 p-2">
+              {sidebarGroups.map(({ group, items }, groupIndex) => (
+                <div key={group || `_ungrouped-${groupIndex}`}>
+                  {group && (
+                    <p className="px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#6f7169]">
+                      {group}
+                    </p>
+                  )}
+                  {items.map(({ key, to, label, icon: Icon, active }) => (
+                    <NavLink
+                      key={key}
+                      to={to}
+                      onClick={() => onNavigate?.()}
+                      className={cn(
+                        "flex min-h-11 items-center gap-2.5 rounded-sm px-2.5 py-2 text-xs text-[#92948b] transition-colors hover:bg-shell-elevated hover:text-[#ecebe4]",
+                        active && "bg-shell-hover text-[#faf9f3]",
+                      )}
+                    >
+                      <Icon className="size-3.5 shrink-0" />
+                      <span className="truncate">{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </aside>
+
+      {actionNotice && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 z-50 max-w-md -translate-x-1/2 rounded-md border border-edge bg-overlay px-3 py-2 text-[11px] text-[#ecebe4] shadow-2xl"
+        >
+          {actionNotice}
+        </div>
+      )}
+
+
+
+      {/* ── MODAL 2: Edit Session Properties (Title, Source, Backend) ── */}
+      {editingSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-xl border border-edge bg-overlay p-4 shadow-2xl text-[#ecebe4]">
+            <div className="flex items-center justify-between border-b border-[#2d303e] pb-2 mb-3">
+              <h3 className="text-sm font-semibold text-[#f0f2ff]">Edit Session Details</h3>
+              <button
+                type="button"
+                onClick={() => setEditingSessionId(null)}
+                className="text-[#8f9188] hover:text-[#ecebe4] text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-[12px]">
+              <div>
+                <label className="block text-[11px] font-semibold text-[#8f9188] mb-1" htmlFor="session-title-input">
+                  Title
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    id="session-title-input"
+                    type="text"
+                    defaultValue={editingSession.title}
+                    disabled={editingSession.readOnly}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      (e.currentTarget.nextElementSibling as HTMLButtonElement | null)?.click();
+                    }}
+                    className="w-full rounded border border-edge bg-shell-deep px-2.5 py-1.5 text-[12px] text-[#ecebe4] outline-none focus:border-[#5b7cf6] disabled:text-[#6f7169]"
+                  />
+                  <button
+                    type="button"
+                    disabled={editingSession.readOnly}
+                    onClick={(e) => {
+                      const input = (e.currentTarget.previousElementSibling as HTMLInputElement | null);
+                      const next = input?.value.trim();
+                      if (!next || next === editingSession.title) return;
+                      void aresApi.renameSession(editingSession.id, next)
+                        .then(() => refresh())
+                        .catch(() => {});
+                    }}
+                    className="shrink-0 rounded bg-[#5b7cf6] px-2.5 text-[11px] font-medium text-white disabled:bg-[#2d303e] disabled:text-[#6f7169]"
+                  >
+                    Save
+                  </button>
+                </div>
+                {editingSession.readOnly && (
+                  <p className="mt-1 text-[10px] text-[#6f7169]">
+                    Imported history is read-only.
+                  </p>
+                )}
+              </div>
+
+              {/* Provenance — where this conversation came from and what ran it.
+                  Deliberately not editable: it is a record of what happened, and
+                  the previous editable version only wrote to localStorage, so it
+                  silently disagreed with the backend. */}
+              <div className="rounded border border-[#2d303e] bg-shell-deep p-2.5">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6f7169]">
+                  Provenance
+                </p>
+                <dl className="space-y-1 text-[11px]">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-[#8f9188]">Source</dt>
+                    <dd className="truncate text-[#c9cbd4]">{editingSession.source || "unknown"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-[#8f9188]">Worker</dt>
+                    <dd className="truncate text-[#c9cbd4]">
+                      {editingSession.backendId ? backendLabel(editingSession.backendId) : "—"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-[#8f9188]">Messages</dt>
+                    <dd className="text-[#c9cbd4]">{editingSession.messageCount ?? 0}</dd>
+                  </div>
+                  {editingSession.workspace && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="shrink-0 text-[#8f9188]">Workspace</dt>
+                      <dd className="truncate font-mono text-[10px] text-[#c9cbd4]" title={editingSession.workspace}>
+                        {editingSession.workspace}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setEditingSessionId(null)}
+              className="mt-4 w-full py-1.5 rounded bg-[#5b7cf6] text-white text-xs font-semibold hover:bg-[#4b6ce6]"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

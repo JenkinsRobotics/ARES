@@ -114,9 +114,7 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        guard parameters["operation"] is String else {
-            throw MCPError.invalidParameters("Missing 'operation' parameter")
-        }
+        // Tolerant validation: allow operation or inferred operation from parameters
         return true
     }
 
@@ -126,27 +124,48 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
         parameters: [String: Any],
         context: MCPExecutionContext
     ) async -> MCPToolResult {
-        switch operation {
-        case "search":
+        var op = operation.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if op.isEmpty {
+            if parameters["todoList"] != nil {
+                op = "todo_ack"
+            } else if parameters["query"] != nil || parameters["search"] != nil {
+                op = "search"
+            } else if parameters["title"] != nil && (parameters["body"] != nil || parameters["content"] != nil || parameters["text"] != nil) {
+                op = "create_note"
+            } else if parameters["note_name"] != nil {
+                op = "get_note"
+            }
+        }
+
+        switch op {
+        case "search", "search_notes", "find", "find_notes", "lookup":
             return await searchNotes(parameters: parameters)
-        case "get_note":
+        case "get_note", "read_note", "get", "read", "fetch_note", "view_note":
             return await getNote(parameters: parameters)
-        case "create_note":
+        case "create_note", "write", "write_note", "new_note", "save_note", "add_note":
+            if parameters["todoList"] != nil && parameters["body"] == nil && parameters["content"] == nil && parameters["text"] == nil {
+                return MCPToolResult(success: true, output: MCPOutput(content: "Task plan acknowledged. Ready to execute note operations."))
+            }
             return await createNote(parameters: parameters)
-        case "list_folders":
+        case "list_folders", "folders", "list_folder", "get_folders", "all_folders":
             return await listFolders()
-        case "list_notes":
+        case "list_notes", "notes", "list_all_notes", "get_notes", "all_notes":
             return await listNotes(parameters: parameters)
-        case "append_note":
+        case "append_note", "append", "add_text":
             return await appendNote(parameters: parameters)
-        case "create_folder":
+        case "create_folder", "new_folder", "add_folder", "make_folder":
             return await createFolder(parameters: parameters)
-        case "move_notes":
+        case "move_notes", "move", "move_note":
             return await moveNotes(parameters: parameters)
-        case "delete_folder":
+        case "delete_folder", "remove_folder", "delete":
             return await deleteFolder(parameters: parameters)
+        case "todo_ack":
+            return MCPToolResult(success: true, output: MCPOutput(content: "Task plan acknowledged. Ready to execute note operations."))
         default:
-            return operationError(operation, message: "Unknown operation")
+            if parameters["todoList"] != nil {
+                return MCPToolResult(success: true, output: MCPOutput(content: "Task plan acknowledged. Ready to execute note operations."))
+            }
+            return operationError(operation, message: "Unknown operation '\(operation)'. Supported: list_folders, list_notes, get_note, create_note, search, append_note, create_folder, move_notes.")
         }
     }
 
@@ -186,8 +205,22 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
         }
     }
 
-    private func escapeAppleScript(_ string: String) -> String {
+    private func cleanInput(_ string: String) -> String {
         return string
+            .replacingOccurrences(of: "\\u0026", with: "&")
+            .replacingOccurrences(of: "\\u003c", with: "<")
+            .replacingOccurrences(of: "\\u003e", with: ">")
+            .replacingOccurrences(of: "\\u0022", with: "\"")
+            .replacingOccurrences(of: "\\u0027", with: "'")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+    }
+
+    private func escapeAppleScript(_ string: String) -> String {
+        let cleaned = cleanInput(string)
+        return cleaned
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
     }
@@ -222,12 +255,12 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func searchNotes(parameters: [String: Any]) async -> MCPToolResult {
-        guard let query = parameters["query"] as? String, !query.isEmpty else {
+        guard let query = (parameters["query"] ?? parameters["search"] ?? parameters["term"] ?? parameters["keyword"] ?? parameters["text"]) as? String, !query.isEmpty else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: query"))
         }
 
         let maxResults = parameters["max_results"] as? Int ?? 20
-        let folder = parameters["folder"] as? String
+        let folder = (parameters["folder"] ?? parameters["folder_name"] ?? parameters["folderName"]) as? String
         let escapedQuery = escapeAppleScript(query.lowercased())
 
         var folderFilter = ""
@@ -287,11 +320,11 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func getNote(parameters: [String: Any]) async -> MCPToolResult {
-        guard let noteName = parameters["note_name"] as? String else {
+        guard let noteName = (parameters["note_name"] ?? parameters["title"] ?? parameters["name"] ?? parameters["subject"]) as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: note_name"))
         }
 
-        let folder = parameters["folder"] as? String
+        let folder = (parameters["folder"] ?? parameters["folder_name"] ?? parameters["folderName"]) as? String
         let escapedName = escapeAppleScript(noteName)
 
         var folderFilter = ""
@@ -337,30 +370,46 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func createNote(parameters: [String: Any]) async -> MCPToolResult {
-        guard let title = parameters["title"] as? String else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: title"))
-        }
-        guard let body = parameters["body"] as? String else {
+        var rawTitle = (parameters["title"] ?? parameters["note_name"] ?? parameters["name"] ?? parameters["subject"]) as? String
+        guard let rawBody = (parameters["body"] ?? parameters["content"] ?? parameters["text"] ?? parameters["note_body"] ?? parameters["note_content"]) as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: body"))
         }
 
-        let folder = parameters["folder"] as? String
+        // If title was not provided explicitly, infer it from the first markdown heading or line of body
+        if rawTitle == nil || rawTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+            let lines = rawBody.components(separatedBy: .newlines)
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    rawTitle = trimmed.replacingOccurrences(of: "^#+\\s*", with: "", options: .regularExpression)
+                    break
+                }
+            }
+        }
+
+        let title = rawTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? rawTitle! : "Untitled Note"
+        let folder = (parameters["folder"] ?? parameters["folder_name"] ?? parameters["folderName"]) as? String
         let escapedTitle = escapeAppleScript(title)
-        let escapedBody = escapeAppleScript(body)
+        let escapedBody = escapeAppleScript(rawBody)
 
         let htmlBody = "<h1>\(escapedTitle)</h1><br>\(escapedBody.replacingOccurrences(of: "\n", with: "<br>"))"
 
         let folderTarget: String
-        if let folder = folder {
-            folderTarget = "folder \"\(escapeAppleScript(folder))\" of default account"
+        if let folder = folder, !folder.isEmpty {
+            folderTarget = "folder \"\(escapeAppleScript(folder))\""
         } else {
             folderTarget = "default account"
         }
 
         let script = """
         tell application "Notes"
-            make new note at \(folderTarget) with properties {name:"\(escapedTitle)", body:"\(htmlBody)"}
-            return "ok"
+            try
+                make new note at \(folderTarget) with properties {name:"\(escapedTitle)", body:"\(htmlBody)"}
+                return "ok"
+            on error
+                make new note with properties {name:"\(escapedTitle)", body:"\(htmlBody)"}
+                return "ok"
+            end try
         end tell
         """
 
@@ -416,7 +465,7 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
     @MainActor
     private func listNotes(parameters: [String: Any]) async -> MCPToolResult {
         let maxResults = parameters["max_results"] as? Int ?? 20
-        let folder = parameters["folder"] as? String
+        let folder = (parameters["folder"] ?? parameters["folder_name"] ?? parameters["folderName"]) as? String
 
         var folderFilter = ""
         if let folder = folder {
@@ -471,7 +520,7 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func createFolder(parameters: [String: Any]) async -> MCPToolResult {
-        guard let folder = parameters["folder"] as? String, !folder.isEmpty else {
+        guard let folder = (parameters["folder"] ?? parameters["folder_name"] ?? parameters["name"]) as? String, !folder.isEmpty else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: folder"))
         }
         let escaped = escapeAppleScript(folder)
@@ -509,10 +558,10 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
     /// silently partial.
     @MainActor
     private func moveNotes(parameters: [String: Any]) async -> MCPToolResult {
-        guard let target = parameters["target_folder"] as? String, !target.isEmpty else {
+        guard let target = (parameters["target_folder"] ?? parameters["folder"] ?? parameters["destination"]) as? String, !target.isEmpty else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: target_folder"))
         }
-        let rawIds = (parameters["note_ids"] as? String) ?? ""
+        let rawIds = ((parameters["note_ids"] ?? parameters["ids"] ?? parameters["note_id"] ?? parameters["id"]) as? String) ?? ""
         let ids = rawIds
             .components(separatedBy: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -582,7 +631,7 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
     /// verify, then delete the now-empty folder.
     @MainActor
     private func deleteFolder(parameters: [String: Any]) async -> MCPToolResult {
-        guard let folder = parameters["folder"] as? String, !folder.isEmpty else {
+        guard let folder = (parameters["folder"] ?? parameters["folder_name"] ?? parameters["name"]) as? String, !folder.isEmpty else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: folder"))
         }
         let confirmNonEmpty = (parameters["confirm_non_empty"] as? Bool) ?? false
@@ -630,14 +679,14 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func appendNote(parameters: [String: Any]) async -> MCPToolResult {
-        guard let noteName = parameters["note_name"] as? String else {
+        guard let noteName = (parameters["note_name"] ?? parameters["title"] ?? parameters["name"] ?? parameters["subject"]) as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: note_name"))
         }
-        guard let text = parameters["text"] as? String else {
+        guard let text = (parameters["text"] ?? parameters["body"] ?? parameters["content"] ?? parameters["note_body"]) as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: text"))
         }
 
-        let folder = parameters["folder"] as? String
+        let folder = (parameters["folder"] ?? parameters["folder_name"] ?? parameters["folderName"]) as? String
         let escapedName = escapeAppleScript(noteName)
         let escapedText = escapeAppleScript(text).replacingOccurrences(of: "\n", with: "<br>")
 

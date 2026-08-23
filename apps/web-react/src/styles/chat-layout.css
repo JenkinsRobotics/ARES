@@ -1,0 +1,314 @@
+/* Chat layout — padding, gaps, safe-area, toolbar density
+ * Edit this file when message list / composer / toolbar spacing or phone scaling changes.
+ * Used by: features/chat/ConversationPage.tsx (classes: conversation-*)
+ */
+
+/* Default desktop spacing for the transcript column */
+.conversation-messages {
+  max-width: min(47.5rem, 100%);
+  margin: 0 auto;
+  width: 100%;
+  padding: 1.75rem 1rem 7.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.375rem;
+}
+
+.conversation-composer {
+  /* base; phone overrides below add safe-area */
+}
+
+.conversation-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+/* iPhone / narrow phone (≤430px) */
+@media (max-width: 430px) {
+  .page-stack {
+    padding: 0.5rem;
+  }
+
+  .conversation-messages {
+    padding: 16px 10px 100px !important;
+    gap: 14px !important;
+  }
+
+  .conversation-composer {
+    padding-left: max(8px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(8px, env(safe-area-inset-right, 0px)) !important;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .conversation-toolbar {
+    gap: 2px !important;
+  }
+
+  .conversation-toolbar > * {
+    font-size: 11px !important;
+  }
+}
+
+/* Mobile Session Header — visible on phone with sidebar closed */
+.mobile-session-header {
+  display: none;
+}
+
+/* Phones / large phones (≤640px) */
+@media (max-width: 640px) {
+  .mobile-session-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--chat-bg);
+  }
+
+  .conversation-messages {
+    padding: 16px 12px 100px !important;
+    gap: 16px !important;
+  }
+
+  .conversation-composer {
+    padding-top: 0 !important;
+    padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
+  }
+
+  .conversation-toolbar {
+    flex-wrap: nowrap !important;
+    overflow: visible !important;
+    max-width: 100%;
+    gap: 0.35rem !important;
+    justify-content: flex-start;
+  }
+
+  .conversation-toolbar > * {
+    flex-shrink: 0;
+  }
+
+  .conversation-stop-btn {
+    background: #ef4444 !important;
+    color: #fff !important;
+  }
+}
+
+/* Secondary advanced chips always collapsed on simplified toolbar */
+.conversation-toolbar-simplified .toolbar-advanced-secondary {
+  display: none !important;
+}
+
+/* ── Fit-based footer collapse (donor: _fitComposerFooter) ── */
+/* Stage classes toggled by ResizeObserver based on actual overflow:
+   (none) = full labels + icons
+   .cf-icons = icon-only mode (labels hidden)
+   .cf-burger = hamburger mode (secondary chips hidden, overflow button shown)
+*/
+
+/* Stage 1: cf-icons - hide labels, show icons only */
+.composer-toolbar-container.cf-icons .composer-chip__label,
+.composer-toolbar-container.cf-icons .composer-chip__chevron {
+  display: none !important;
+}
+
+.composer-toolbar-container.cf-icons .composer-chip {
+  width: 2.75rem; /* 44px */
+  min-width: 2.75rem;
+  max-width: 2.75rem;
+  padding: 0 0.5rem;
+  justify-content: center;
+}
+
+/* Hide divider in icon mode */
+.composer-toolbar-container.cf-icons .composer-divider {
+  display: none;
+}
+
+/* Stage 2: cf-burger - hide all secondary chips, show overflow button */
+.composer-toolbar-container.cf-burger .toolbar-advanced,
+.composer-toolbar-container.cf-burger .toolbar-advanced-secondary {
+  display: none !important;
+}
+
+.composer-toolbar-container.cf-burger .composer-mobile-overflow-btn {
+  display: inline-flex !important;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+/* Hide workspace/model/reasoning/toolsets wraps in burger mode */
+.composer-toolbar-container.cf-burger .composer-workspace-wrap,
+.composer-toolbar-container.cf-burger .composer-model-wrap,
+.composer-toolbar-container.cf-burger .composer-reasoning-wrap,
+.composer-toolbar-container.cf-burger .composer-toolsets-wrap {
+  display: none !important;
+}
+
+/* ── Context Ring / Token Usage (NOT WIRED) ── */
+/* Backend tracks last_prompt_tokens in memory/compressor.py but does NOT
+   stream it to the frontend in real-time. Per Doctrine ("Transparency over
+   Magic"), do NOT show fake estimates (msgCount * 250 / 128000).
+   
+   TO WIRE REAL DATA:
+   1. Add usage:{prompt_tokens,total_tokens} to SSE stream events
+   2. Track in ConversationPage state
+   3. Show ring/badge only when usage data is present
+   4. Fallback: hide the control entirely when no data
+   
+   Reference: ~/GitHub/ARES/services/controller/fastapi_app/memory/compressor.py:910
+*/
+
+/* ── Thinking Collapsible Blocks (donor: messages.js:150-220) ── */
+.thinking-block {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(124, 58, 237, 0.05);
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+
+.thinking-block summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(124, 58, 237, 0.08);
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #8e8ea0;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.thinking-block summary:hover {
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.thinking-block summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-block[open] summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.thinking-block-content {
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: #8e8ea0;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Tool Execution Cards (donor: messages.js:250-380) ── */
+.tool-card {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left-width: 3px;
+  background: rgba(124, 58, 237, 0.03);
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.tool-card:hover {
+  background: rgba(124, 58, 237, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tool-card-running {
+  background: rgba(245, 158, 11, 0.05);
+  border-left-color: #f59e0b;
+}
+
+.tool-card-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: #ececf1;
+}
+
+.tool-arg-key {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #8e8ea0;
+}
+
+.tool-arg-val {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #8e8ea0;
+  font-family: monospace;
+}
+
+.tool-card-result pre {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #8e8ea0;
+  font-family: monospace;
+}
+
+.tool-card-more {
+  font-size: 0.6875rem;
+  color: #7c3aed;
+  cursor: pointer;
+}
+
+/* Drag Drop Overlay */
+.composer-wrap.drag-over .composer-box {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.drop-hint {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(var(--input-bg), var(--input-bg)), var(--bg);
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+  pointer-events: none;
+  z-index: 30;
+  flex-direction: column;
+  text-align: center;
+  padding: 8px;
+}
+
+.composer-wrap.drag-over .drop-hint {
+  display: flex;
+}
+
+/* Attachment Tray */
+.attach-tray {
+  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+
+.attach-tray.has-files {
+  display: flex;
+}
+
+.attach-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}

@@ -1,0 +1,19 @@
+{
+  "id": "home-scenes",
+  "name": "ARES Home Scenes",
+  "version": "0.1.0",
+  "description": "Local lighting scene scripts (focus, movie, relax, sleep, all-on/off) as an ARES tab.",
+  "author": "Jenkins Robotics",
+  "license": "MIT",
+  "category": "Home",
+  "capabilities": ["dashboard_tab"],
+  "scripts": ["dashboard/app.js"],
+  "stylesheets": ["dashboard/style.css"],
+  "tab": {
+    "id": "home-scenes",
+    "label": "Home",
+    "path": "/home-scenes",
+    "entry": "dashboard/index.html",
+    "icon": "Lightbulb"
+  }
+}

@@ -38,25 +38,31 @@ public extension ConsolidatedMCP {
     ) async -> MCPToolResult {
         let logger = Logging.Logger(label: "com.sam.mcp.ConsolidatedMCP.\(name)")
 
-        /// Extract operation parameter.
-        guard let operation = parameters["operation"] as? String else {
+        /// Extract operation parameter with tolerant fallbacks (action, op, cmd, method, type).
+        var operation = (parameters["operation"] ?? parameters["action"] ?? parameters["op"] ?? parameters["cmd"] ?? parameters["method"] ?? parameters["type"]) as? String ?? ""
+
+        if operation.isEmpty {
+            // Infer from parameters if omitted
+            if parameters["query"] != nil || parameters["search"] != nil {
+                operation = "search"
+            } else if parameters["todoList"] != nil {
+                operation = "write"
+            } else if parameters["title"] != nil && (parameters["body"] != nil || parameters["content"] != nil || parameters["text"] != nil) {
+                operation = "create_note"
+            } else if parameters["note_name"] != nil {
+                operation = "get_note"
+            }
+        }
+
+        guard !operation.isEmpty else {
             logger.error("Missing 'operation' parameter for \(self.name)")
             return operationError(
                 "",
-                message: "Missing 'operation' parameter"
+                message: "Missing 'operation' parameter. Available: \(supportedOperations.joined(separator: ", "))"
             )
         }
 
-        /// Validate operation.
-        guard validateOperation(operation) else {
-            logger.error("Unknown operation '\(operation)' for \(self.name)")
-            return operationError(
-                operation,
-                message: "Unknown operation '\(operation)'"
-            )
-        }
-
-        /// Route to operation handler.
+        /// Route to operation handler (which handles aliases and execution).
         logger.debug("Routing \(self.name) to operation: \(operation)")
         return await routeOperation(operation, parameters: parameters, context: context)
     }

@@ -1,0 +1,14 @@
+/* Settings hub layout */
+.settings-hub .settings-main {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 1.2);
+  background: color-mix(in oklab, var(--card) 88%, transparent);
+  padding: 1.25rem;
+  min-height: 24rem;
+}
+
+@media (max-width: 640px) {
+  .settings-hub .settings-main {
+    padding: 1rem;
+  }
+}

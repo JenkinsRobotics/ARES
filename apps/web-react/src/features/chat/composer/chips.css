@@ -1,0 +1,257 @@
+/**
+ * WHAT: All styling for composer toolbar chips (pills) and their dropdown popovers.
+ * WHERE YOU SEE IT: Bottom chat toolbar — Backend, Model, Workspace, Reasoning, Toolsets chips.
+ * RESPONSIVE: Uses container queries (@container) to collapse based on actual toolbar width, not window size.
+ * MOBILE: Below 520px container width, chips hide and move to overflow menu (cf-burger pattern).
+ * LED INDICATORS: 5 colors (emerald, purple, cyan, amber, red) with active glow + pulse animation.
+ * 
+ * DONOR REFERENCE: Hermes WebUI style.css (.cf-icons, .cf-burger, .chip, .composer-footer)
+ * METRICS: Desktop 32px height, Mobile 44px touch targets, 6px border-radius, 4px base gap
+ */
+
+/* ── Composer Chip Base Styles ── */
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem; /* 6px */
+  height: 2rem; /* 32px desktop */
+  min-height: 2rem;
+  padding: 0 0.5rem; /* 8px */
+  border-radius: 6px;
+  border: 1px solid var(--chip-border, rgba(255, 255, 255, 0.08));
+  background: var(--chip-bg, rgba(255, 255, 255, 0.04));
+  color: var(--chip-text, #ececf1);
+  font-size: 0.6875rem; /* 11px */
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0; /* Donor: flex:0 0 auto */
+  min-width: 0;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Hover state */
+.composer-chip:hover {
+  background: var(--chip-bg-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--chip-border-hover, rgba(255, 255, 255, 0.12));
+  color: var(--chip-text-hover, #ffffff);
+}
+
+/* Focus/active ring (mutual exclusion — only one chip popover open at a time) */
+.composer-chip:focus-visible,
+.composer-chip[aria-expanded="true"] {
+  outline: 2px solid var(--focus-ring, rgba(124, 58, 237, 0.5));
+  outline-offset: 2px;
+  border-color: var(--accent, #7c3aed);
+  background: var(--chip-bg-active, rgba(124, 58, 237, 0.1));
+}
+
+/* Active/model chip variant (like donor .chip.model) */
+.composer-chip--model {
+  color: var(--accent-text, #ffffff);
+  border-color: var(--accent-bg-strong, rgba(124, 58, 237, 0.3));
+  background: var(--accent-bg, rgba(124, 58, 237, 0.1));
+}
+
+.composer-chip--model:hover {
+  background: var(--accent-bg-strong, rgba(124, 58, 237, 0.2));
+}
+
+/* Icon styling */
+.composer-chip__icon {
+  opacity: 0.7;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.composer-chip:hover .composer-chip__icon {
+  opacity: 1;
+}
+
+/* Label styling */
+.composer-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+/* Chevron styling */
+.composer-chip__chevron {
+  opacity: 0.5;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.composer-chip:hover .composer-chip__chevron {
+  opacity: 0.8;
+}
+
+.composer-chip[aria-expanded="true"] .composer-chip__chevron {
+  transform: rotate(180deg);
+}
+
+/* ── LED Indicator Styles ── */
+.switchboard-led {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: none;
+  flex-shrink: 0;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.switchboard-led--active {
+  background: var(--led-color);
+  box-shadow: 0 0 6px var(--led-color);
+}
+
+.switchboard-led--pulse {
+  animation: aresLedPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes aresLedPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* LED color variants */
+.switchboard-led--emerald { --led-color: #10b981; }
+.switchboard-led--purple { --led-color: #a855f7; }
+.switchboard-led--cyan { --led-color: #08ebf1; }
+.switchboard-led--amber { --led-color: #f59e0b; }
+.switchboard-led--red { --led-color: #ef4444; }
+
+/* ── Composer Popover Styles ── */
+.composer-popover {
+  position: absolute;
+  z-index: 40;
+  border-radius: 12px;
+  border: 1px solid var(--popover-border, rgba(255, 255, 255, 0.08));
+  background: var(--popover-bg, #131622);
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.7);
+  font-size: 0.75rem;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+
+.composer-popover__header {
+  padding: 0.625rem 0.875rem 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--popover-header-text, #8e8ea0);
+  border-bottom: 1px solid var(--popover-border, rgba(255, 255, 255, 0.08));
+}
+
+.composer-popover__content {
+  padding: 0.375rem 0.625rem;
+}
+
+.composer-popover__content--scrollable {
+  max-height: 16rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Composer Workspace Split Pill (Donor: index.html:620-630 / style.css) ── */
+.composer-workspace-group {
+  display: inline-flex;
+  align-items: center;
+  height: 2rem; /* 32px */
+  min-height: 2rem;
+  border-radius: 6px;
+  border: 1px solid var(--chip-border, rgba(255, 255, 255, 0.08));
+  background: var(--chip-bg, rgba(255, 255, 255, 0.04));
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.composer-workspace-files-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.4375rem;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--chip-text, #ececf1);
+  cursor: pointer;
+  border-right: 1px solid var(--chip-border, rgba(255, 255, 255, 0.08));
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.composer-workspace-files-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.composer-workspace-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--chip-text, #ececf1);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.composer-workspace-chip-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+/* ── Container Query Progressive Collapse ── */
+.composer-toolbar-container {
+  container-type: inline-size;
+  container-name: composer-footer;
+}
+
+/* Stage 1: cf-icons — only hide labels when footer is very narrow (<400px) */
+@container composer-footer (max-width: 400px) {
+  .composer-chip .composer-chip__label,
+  .composer-chip .composer-chip__chevron,
+  .composer-workspace-chip-btn .composer-chip__label,
+  .composer-workspace-chip-btn .composer-chip__chevron {
+    display: none;
+  }
+}
+
+/* Stage 2: cf-burger — hide secondary chips on tiny screens (<320px) */
+@container composer-footer (max-width: 320px) {
+  .toolbar-advanced,
+  .toolbar-advanced-secondary {
+    display: none !important;
+  }
+  .composer-mobile-overflow-btn {
+    display: inline-flex !important;
+  }
+}
+
+/* ── Mobile Touch Targets (Donor: min-height:44px on pointer:coarse) ── */
+@media (hover: none) and (pointer: coarse) {
+  .composer-chip {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 0.75rem;
+  }
+  
+  .composer-chip__icon {
+    min-width: 24px;
+    min-height: 24px;
+  }
+}

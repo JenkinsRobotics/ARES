@@ -179,6 +179,14 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             }
             result = await handleAddTodos(newTodosData: newTodosData, conversationId: conversationId)
 
+        case "list_folders", "folders", "list_folder", "get_folders", "all_folders",
+             "list_notes", "notes", "list_all_notes", "get_notes", "all_notes",
+             "get_note", "read_note", "get", "read", "fetch_note", "view_note",
+             "create_note", "append_note", "create_folder", "move_notes", "delete_folder",
+             "search", "search_notes", "find", "find_notes":
+            let notesTool = NotesTool()
+            result = await notesTool.routeOperation(operation, parameters: parameters, context: context)
+
         default:
             logger.error("Unknown operation: \(operation)")
             result = operationError(operation, message: "Unknown operation. Use: read, write, update, or add")

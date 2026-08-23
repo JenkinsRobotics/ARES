@@ -1,0 +1,85 @@
+/* Shell mobile drawers + phone shell overflow
+ * Edit this file when left/right drawers, overlays, or shell width on phone change.
+ * Used by: components/shell/CommandCenterShell.tsx
+ */
+.cc-mobile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+.cc-mobile-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  background: #111210;
+  box-shadow: none;
+  transition: transform 0.25s ease;
+  will-change: transform;
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.cc-mobile-drawer--deck {
+  left: 0;
+  width: min(100vw, 22rem);
+  max-width: 100vw;
+  transform: translateX(-100%);
+  border-right: 1px solid #343631;
+  padding-left: env(safe-area-inset-left, 0);
+}
+
+.cc-mobile-drawer--deck.is-open {
+  transform: translateX(0);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+.cc-mobile-drawer--hands {
+  right: 0;
+  width: min(100vw, 20rem);
+  max-width: 100vw;
+  transform: translateX(100%);
+  border-left: 1px solid #343631;
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+.cc-mobile-drawer--hands.is-open {
+  transform: translateX(0);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 640px) {
+  .command-center-surface {
+    overflow-x: clip;
+  }
+
+  .cc-mobile-drawer--deck {
+    width: 100vw;
+    max-width: none;
+  }
+
+  .cc-mobile-drawer--hands {
+    width: min(300px, 100vw);
+  }
+}
+
+@media (min-width: 641px) and (max-width: 900px) {
+  .cc-mobile-drawer--deck {
+    width: min(100vw, 22rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-mobile-drawer {
+    transition: none;
+  }
+}

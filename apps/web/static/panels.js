@@ -270,9 +270,9 @@ function _beginSettingsPanelSession() {
     _searchResults.innerHTML = '';
   }
   _settingsDirty = false;
-  _settingsThemeOnOpen = localStorage.getItem('hermes-theme') || 'dark';
-  _settingsSkinOnOpen = localStorage.getItem('hermes-skin') || 'default';
-  _settingsFontSizeOnOpen = localStorage.getItem('hermes-font-size') || 'default';
+  _settingsThemeOnOpen = localStorage.getItem('ares-theme') || 'dark';
+  _settingsSkinOnOpen = localStorage.getItem('ares-skin') || 'default';
+  _settingsFontSizeOnOpen = localStorage.getItem('ares-font-size') || 'default';
   _pendingSettingsTargetPanel = null;
   if (_settingsAppearanceAutosaveTimer) {
     clearTimeout(_settingsAppearanceAutosaveTimer);
@@ -1120,7 +1120,7 @@ async function loadCrons(animate) {
 }
 
 function _cronPanelExpandKey(jobId, suffix){
-  return `hermes-webui-cron-${suffix}-expanded-${encodeURIComponent(String(jobId||''))}`;
+  return `ares-webui-cron-${suffix}-expanded-${encodeURIComponent(String(jobId||''))}`;
 }
 
 function _cronRunExpandKey(jobId, filename){
@@ -2242,8 +2242,8 @@ function _kanbanRenderMarkdown(source){
       i++; // skip closing ```
       const codeHtml = codeLines.join('\n');
       out.push(lang
-        ? `<pre class="hermes-kanban-code"><code class="language-${_kanbanRenderMarkdownInline(lang)}">${codeHtml}</code></pre>`
-        : `<pre class="hermes-kanban-code"><code>${codeHtml}</code></pre>`);
+        ? `<pre class="ares-kanban-code"><code class="language-${_kanbanRenderMarkdownInline(lang)}">${codeHtml}</code></pre>`
+        : `<pre class="ares-kanban-code"><code>${codeHtml}</code></pre>`);
       continue;
     }
 
@@ -2310,7 +2310,7 @@ function _kanbanRenderMarkdown(source){
       const checked = taskMatch[1] !== ' ';
       const text = taskMatch[2];
       const items = [];
-      items.push(`<li class="hermes-kanban-task${checked ? ' checked' : ''}"><input type="checkbox"${checked ? ' checked' : ''} disabled> ${_kanbanRenderMarkdownInline(text)}</li>`);
+      items.push(`<li class="ares-kanban-task${checked ? ' checked' : ''}"><input type="checkbox"${checked ? ' checked' : ''} disabled> ${_kanbanRenderMarkdownInline(text)}</li>`);
       i++;
       // Collect continuation items
       while (i < lines.length) {
@@ -2319,7 +2319,7 @@ function _kanbanRenderMarkdown(source){
         const nextLi = next.match(/^[-*+]\s+(.+)$/);
         if (nextTask) {
           const c = nextTask[1] !== ' ';
-          items.push(`<li class="hermes-kanban-task${c ? ' checked' : ''}"><input type="checkbox"${c ? ' checked' : ''} disabled> ${_kanbanRenderMarkdownInline(nextTask[2])}</li>`);
+          items.push(`<li class="ares-kanban-task${c ? ' checked' : ''}"><input type="checkbox"${c ? ' checked' : ''} disabled> ${_kanbanRenderMarkdownInline(nextTask[2])}</li>`);
           i++;
         } else if (nextLi) {
           items.push(`<li>${_kanbanRenderMarkdownInline(nextLi[1])}</li>`);
@@ -2385,7 +2385,7 @@ function _kanbanRenderMarkdown(source){
     out.push(`<p>${_kanbanRenderMarkdownInline(trimmed)}</p>`);
     i++;
   }
-  return `<div class="hermes-kanban-md">${out.join('\n')}</div>`;
+  return `<div class="ares-kanban-md">${out.join('\n')}</div>`;
 }
 
 function _kanbanFormatDuration(seconds){
@@ -2608,7 +2608,7 @@ function _normalizeWebUIVersion(value){
 
 function _currentWebUIBundleVersion(){
   try{
-    const raw=window.__HERMES_WEBUI_BUNDLE_VERSION__;
+    const raw=window.__ARES_WEBUI_BUNDLE_VERSION__;
     if(!raw) return '';
     let s=String(raw);
     try{ s=decodeURIComponent(s.replace(/\+/g,' ')); }catch(_){}
@@ -3876,7 +3876,7 @@ function _legacyTodosFromMessages() {
 // a menu listing every board (current first, with task counts), plus
 // actions to create / rename / archive.
 
-const KANBAN_BOARD_LS_KEY = 'hermes-kanban-active-board';
+const KANBAN_BOARD_LS_KEY = 'ares-kanban-active-board';
 
 function _kanbanGetSavedBoard(){
   try { return localStorage.getItem(KANBAN_BOARD_LS_KEY) || null; } catch(_) { return null; }
@@ -6479,7 +6479,7 @@ async function switchToWorkspace(path,name){
 let _profilesCache = null;
 let _profileDropdownFetchPromise = null;
 let _profileDropdownCacheLoadedFromStorage = false;
-const PROFILE_DROPDOWN_CACHE_KEY = 'hermes-webui-profile-dropdown-cache-v1';
+const PROFILE_DROPDOWN_CACHE_KEY = 'ares-webui-profile-dropdown-cache-v1';
 const PROFILE_DROPDOWN_CACHE_TTL_MS = 5 * 60 * 1000;
 let _profileSwitchGeneration = 0;
 let _profileDropdownTrigger = null;  // tracks which element triggered the dropdown
@@ -7098,7 +7098,7 @@ async function switchToProfile(name) {
     // Refreshing the full model/workspace catalogs is useful, but it should not
     // hold the visible switch animation open.
     if(typeof _clearPersistedModelState==='function') _clearPersistedModelState();
-    else localStorage.removeItem('hermes-webui-model');
+    else localStorage.removeItem('ares-webui-model');
     _skillsData = null;
     _workspaceList = null;
     if (data.default_model) window._defaultModel = data.default_model;
@@ -7518,7 +7518,7 @@ let _settingsDirty = false;
 let _settingsThemeOnOpen = null; // track theme at open time for discard revert
 let _settingsSkinOnOpen = null; // track skin at open time for discard revert
 let _settingsFontSizeOnOpen = null; // track font size at open time for discard revert
-let _settingsHermesDefaultModelOnOpen = '';
+let _settingsAresDefaultModelOnOpen = '';
 let _settingsHermesDefaultModelProviderOnOpen = null;
 let _settingsSection = 'conversation';
 let _currentSettingsSection = 'conversation';
@@ -7538,9 +7538,9 @@ let _settingsPreferencesAutosaveRetryPayload = null;
 
 // ── Sidebar tab visibility/order ────────────────────────────────────────────
 const _ALWAYS_VISIBLE_TABS = new Set(['chat','settings']);
-const _HIDDEN_TABS_LS_KEY = 'hermes-webui-hidden-tabs';
-const _TAB_ORDER_LS_KEY = 'hermes-webui-tab-order';
-const _COMPOSER_CONTROL_ORDER_LS_KEY = 'hermes-webui-composer-control-order';
+const _HIDDEN_TABS_LS_KEY = 'ares-webui-hidden-tabs';
+const _TAB_ORDER_LS_KEY = 'ares-webui-tab-order';
+const _COMPOSER_CONTROL_ORDER_LS_KEY = 'ares-webui-composer-control-order';
 let _tabVisibilityDragSuppressUntil = 0;
 let _composerControlDragSuppressUntil = 0;
 let _composerControlDraggingKey = '';
@@ -8321,11 +8321,11 @@ function _highlightSettingsField(el) {
   setTimeout(() => el.classList.remove('settings-field-highlight'), 1800);
 }
 
-function _syncHermesPanelSessionActions(){
+function _syncAresPanelSessionActions(){
   const hasSession=!!S.session;
   const visibleMessages=hasSession?(S.messages||[]).filter(m=>m&&m.role&&m.role!=='tool').length:0;
   const title=hasSession?(S.session.title||t('untitled')):t('active_conversation_none');
-  const meta=$('hermesSessionMeta');
+  const meta=$('aresSessionMeta');
   const hasShare=!!(hasSession&&S.session&&S.session.share_token);
   if(meta){
     if(!hasSession){
@@ -8470,9 +8470,9 @@ function _appearancePayloadFromUi(){
   const chatActivityModeSel=$('settingsChatActivityDisplayMode');
   const transparentEventTimestamps=$('settingsTransparentEventTimestamps');
   return {
-    theme: ($('settingsTheme')||{}).value || localStorage.getItem('hermes-theme') || 'dark',
-    skin: ($('settingsSkin')||{}).value || localStorage.getItem('hermes-skin') || 'default',
-    font_size: ($('settingsFontSize')||{}).value || localStorage.getItem('hermes-font-size') || 'default',
+    theme: ($('settingsTheme')||{}).value || localStorage.getItem('ares-theme') || 'dark',
+    skin: ($('settingsSkin')||{}).value || localStorage.getItem('ares-skin') || 'default',
+    font_size: ($('settingsFontSize')||{}).value || localStorage.getItem('ares-font-size') || 'default',
     chat_activity_display_mode: chatActivityModeSel&&(chatActivityModeSel.value==='transparent_stream'||chatActivityModeSel.value==='hide_all_activity')
       ? chatActivityModeSel.value
       : 'compact_worklog',
@@ -8557,9 +8557,9 @@ function _setAppearanceAutosaveStatus(state){
 
 function _rememberAppearanceSaved(payload){
   if(!payload) return;
-  _settingsThemeOnOpen=payload.theme||localStorage.getItem('hermes-theme')||'dark';
-  _settingsSkinOnOpen=payload.skin||localStorage.getItem('hermes-skin')||'default';
-  _settingsFontSizeOnOpen=payload.font_size||localStorage.getItem('hermes-font-size')||'default';
+  _settingsThemeOnOpen=payload.theme||localStorage.getItem('ares-theme')||'dark';
+  _settingsSkinOnOpen=payload.skin||localStorage.getItem('ares-skin')||'default';
+  _settingsFontSizeOnOpen=payload.font_size||localStorage.getItem('ares-font-size')||'default';
 }
 
 function _scheduleAppearanceAutosave(){
@@ -8579,7 +8579,7 @@ async function _autosaveAppearanceSettings(payload){
     _settingsAppearanceAutosaveRetryPayload=null;
     _rememberAppearanceSaved(payload);
     if(saved&&saved.font_size){
-      localStorage.setItem('hermes-font-size',saved.font_size);
+      localStorage.setItem('ares-font-size',saved.font_size);
     }
     if(saved){
       window._sessionJumpButtonsEnabled=!!saved.session_jump_buttons;
@@ -8653,16 +8653,16 @@ function _retryAppearanceAutosave(){
 // ── Phase 2: Preferences autosave (Issue #1003) ───────────────────────
 
 const _SETTINGS_SPEECH_STORAGE_KEYS={
-  tts_enabled:'hermes-tts-enabled',
-  tts_auto_read:'hermes-tts-auto-read',
-  tts_engine:'hermes-tts-engine',
-  tts_voice:'hermes-tts-voice',
-  tts_rate:'hermes-tts-rate',
-  tts_pitch:'hermes-tts-pitch',
-  voice_mode_button:'hermes-voice-mode-button',
-  voice_continuous:'hermes-voice-continuous',
-  voice_silence_ms:'hermes-voice-silence-ms',
-  raw_audio_mode:'hermes-raw-audio-mode',
+  tts_enabled:'ares-tts-enabled',
+  tts_auto_read:'ares-tts-auto-read',
+  tts_engine:'ares-tts-engine',
+  tts_voice:'ares-tts-voice',
+  tts_rate:'ares-tts-rate',
+  tts_pitch:'ares-tts-pitch',
+  voice_mode_button:'ares-voice-mode-button',
+  voice_continuous:'ares-voice-continuous',
+  voice_silence_ms:'ares-voice-silence-ms',
+  raw_audio_mode:'ares-raw-audio-mode',
 };
 let _settingsSpeechPersistedKeys=new Set();
 let _settingsSpeechLocalStorageKeys=new Set();
@@ -8797,9 +8797,9 @@ function _speechPreferencesPayloadFromUi(){
   const voiceModeCb=$('settingsVoiceModeEnabled');
   if(voiceModeCb) _setOwnedSpeechPayload(payload,'voice_mode_button',voiceModeCb.checked);
   const rawAudioCb=$('settingsRawAudio');
-  _setOwnedSpeechPayload(payload,'raw_audio_mode',rawAudioCb?rawAudioCb.checked:localStorage.getItem('hermes-raw-audio-mode')==='true');
-  _setOwnedSpeechPayload(payload,'voice_continuous',localStorage.getItem('hermes-voice-continuous')==='true');
-  const voiceSilence=parseInt(localStorage.getItem('hermes-voice-silence-ms'),10);
+  _setOwnedSpeechPayload(payload,'raw_audio_mode',rawAudioCb?rawAudioCb.checked:localStorage.getItem('ares-raw-audio-mode')==='true');
+  _setOwnedSpeechPayload(payload,'voice_continuous',localStorage.getItem('ares-voice-continuous')==='true');
+  const voiceSilence=parseInt(localStorage.getItem('ares-voice-silence-ms'),10);
   _setOwnedSpeechPayload(payload,'voice_silence_ms',(Number.isFinite(voiceSilence)&&voiceSilence>=200)?voiceSilence:1800);
   return payload;
 }
@@ -8857,8 +8857,8 @@ function _setPreferencesAutosaveStatus(state,owner){
 
 function _rememberPreferencesSaved(payload){
   if(!payload) return;
-  if(payload.send_key!==undefined) localStorage.setItem('hermes-pref-send_key',payload.send_key);
-  if(payload.language!==undefined) localStorage.setItem('hermes-pref-language',payload.language);
+  if(payload.send_key!==undefined) localStorage.setItem('ares-pref-send_key',payload.send_key);
+  if(payload.language!==undefined) localStorage.setItem('ares-pref-language',payload.language);
 }
 
 function _applyWorkspaceTodosTabVisibility(){
@@ -8940,7 +8940,7 @@ async function _autosavePreferencesSettings(payload){
       : {model:String((modelSel&&modelSel.value)||''),model_provider:null};
     const modelDirty=!!(
       modelSel&&(
-        (modelState.model||'')!==(_settingsHermesDefaultModelOnOpen||'')||
+        (modelState.model||'')!==(_settingsAresDefaultModelOnOpen||'')||
         ((modelState.model_provider||null)!==(_settingsHermesDefaultModelProviderOnOpen||null))
       )
     );
@@ -9064,12 +9064,12 @@ async function loadSettingsPanel(){
     const themeVal=settings.theme||'dark';
     if(themeSel) themeSel.value=themeVal;
     if(typeof _syncThemePicker==='function') _syncThemePicker(themeVal);
-    const skinVal=(localStorage.getItem('hermes-skin')||settings.skin||'default').toLowerCase();
+    const skinVal=(localStorage.getItem('ares-skin')||settings.skin||'default').toLowerCase();
     const skinSel=$('settingsSkin');
     if(skinSel) skinSel.value=skinVal;
     if(typeof _buildSkinPicker==='function') _buildSkinPicker(skinVal);
-    const fontSizeVal=settings.font_size||localStorage.getItem('hermes-font-size')||'default';
-    localStorage.setItem('hermes-font-size',fontSizeVal);
+    const fontSizeVal=settings.font_size||localStorage.getItem('ares-font-size')||'default';
+    localStorage.setItem('ares-font-size',fontSizeVal);
     if(typeof _applyFontSize==='function') _applyFontSize(fontSizeVal);
     const fontSizeSel=$('settingsFontSize');
     if(fontSizeSel) fontSizeSel.value=fontSizeVal;
@@ -9086,16 +9086,16 @@ async function loadSettingsPanel(){
     }
     if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
     // Workspace panel default-open toggle (localStorage-backed)
-    // Uses a separate key (hermes-webui-workspace-panel-pref) so that
+    // Uses a separate key (ares-webui-workspace-panel-pref) so that
     // closing the panel via toolbar X does not clear the user's preference.
     const wsPanelCb=$('settingsWorkspacePanelOpen');
     if(wsPanelCb){
-      wsPanelCb.checked=localStorage.getItem('hermes-webui-workspace-panel-pref')==='open';
+      wsPanelCb.checked=localStorage.getItem('ares-webui-workspace-panel-pref')==='open';
       wsPanelCb.onchange=function(){
         const open=this.checked;
-        localStorage.setItem('hermes-webui-workspace-panel-pref',open?'open':'closed');
+        localStorage.setItem('ares-webui-workspace-panel-pref',open?'open':'closed');
         // Also sync the runtime key so the current session reflects the change
-        localStorage.setItem('hermes-webui-workspace-panel',open?'open':'closed');
+        localStorage.setItem('ares-webui-workspace-panel',open?'open':'closed');
         document.documentElement.dataset.workspacePanel=open?'open':'closed';
         if(open&&_workspacePanelMode==='closed') openWorkspacePanel('browse');
         else if(!open&&_workspacePanelMode!=='closed') toggleWorkspacePanel(false);
@@ -9252,8 +9252,8 @@ async function loadSettingsPanel(){
     _applyTabVisibility(hiddenTabs);
     _renderTabVisibilityChips();
     const resolvedLanguage=(typeof resolvePreferredLocale==='function')
-      ? resolvePreferredLocale(settings.language, localStorage.getItem('hermes-lang'))
-      : (settings.language || localStorage.getItem('hermes-lang') || 'en');
+      ? resolvePreferredLocale(settings.language, localStorage.getItem('ares-lang'))
+      : (settings.language || localStorage.getItem('ares-lang') || 'en');
     // Keep settings modal and current page strings in sync with the resolved locale.
     if(typeof setLocale==='function'){
       setLocale(resolvedLanguage);
@@ -9288,7 +9288,7 @@ async function loadSettingsPanel(){
           _fetchLiveModels(models.active_provider, modelSel);
         }
       }catch(e){}
-      _settingsHermesDefaultModelOnOpen=(models&&models.default_model)||'';
+      _settingsAresDefaultModelOnOpen=(models&&models.default_model)||'';
       _settingsHermesDefaultModelProviderOnOpen=(models&&models.active_provider)||null;
       // Use the smart matcher so a saved bare form like "anthropic/claude-opus-4.6"
       // (what the CLI's `hermes model` command writes) still selects the matching
@@ -9296,9 +9296,9 @@ async function loadSettingsPanel(){
       // picker renders blank for any user whose default was persisted without the
       // @-prefix — CLI-first users, legacy installs, etc.
       if(typeof _applyModelToDropdown==='function'){
-        _applyModelToDropdown(_settingsHermesDefaultModelOnOpen, modelSel, (models&&models.active_provider)||window._activeProvider||null);
+        _applyModelToDropdown(_settingsAresDefaultModelOnOpen, modelSel, (models&&models.active_provider)||window._activeProvider||null);
       }else{
-        modelSel.value=_settingsHermesDefaultModelOnOpen;
+        modelSel.value=_settingsAresDefaultModelOnOpen;
       }
       if(typeof closeSettingsModelDropdown==='function') closeSettingsModelDropdown();
       if(typeof mountSettingsModelPicker==='function') mountSettingsModelPicker();
@@ -9501,13 +9501,13 @@ async function loadSettingsPanel(){
     // Right-to-left chat layout (#1721 salvage) — Settings-only, no composer button.
     const rtlCb=$('settingsRtl');
     if(rtlCb){
-      const saved=!!settings.rtl || localStorage.getItem('hermes-rtl')==='true';
+      const saved=!!settings.rtl || localStorage.getItem('ares-rtl')==='true';
       rtlCb.checked=saved;
-      try{localStorage.setItem('hermes-rtl',saved?'true':'false');}catch(_){}
+      try{localStorage.setItem('ares-rtl',saved?'true':'false');}catch(_){}
       document.documentElement.classList.toggle('chat-content-rtl',saved);
       rtlCb.addEventListener('change',()=>{
         const on=rtlCb.checked;
-        try{localStorage.setItem('hermes-rtl',on?'true':'false');}catch(_){}
+        try{localStorage.setItem('ares-rtl',on?'true':'false');}catch(_){}
         document.documentElement.classList.toggle('chat-content-rtl',on);
         _schedulePreferencesAutosave();
       },{once:false});
@@ -9530,23 +9530,23 @@ async function loadSettingsPanel(){
     };
     const rawAudioCb=$('settingsRawAudio');
     if(rawAudioCb){
-      rawAudioCb.checked=_speechBool('raw_audio_mode','hermes-raw-audio-mode',false);
+      rawAudioCb.checked=_speechBool('raw_audio_mode','ares-raw-audio-mode',false);
       rawAudioCb.onchange=function(){
         _markSpeechPreferenceChanged('raw_audio_mode');
         if(typeof window._applyRawAudioModePreference==='function') window._applyRawAudioModePreference(this.checked);
-        else localStorage.setItem('hermes-raw-audio-mode',this.checked?'true':'false');
+        else localStorage.setItem('ares-raw-audio-mode',this.checked?'true':'false');
         _schedulePreferencesAutosave();
       };
     }
-    const voiceContinuous=_speechBool('voice_continuous','hermes-voice-continuous',false);
+    const voiceContinuous=_speechBool('voice_continuous','ares-voice-continuous',false);
     _syncSpeechPreferenceCache('voice_continuous',voiceContinuous?'true':'false');
-    const voiceSilence=parseInt(_speechSetting('voice_silence_ms','hermes-voice-silence-ms',1800),10);
+    const voiceSilence=parseInt(_speechSetting('voice_silence_ms','ares-voice-silence-ms',1800),10);
     _syncSpeechPreferenceCache('voice_silence_ms',Number.isFinite(voiceSilence)&&voiceSilence>=200?String(voiceSilence):'1800');
     // TTS settings use /api/settings as the durable source and localStorage as the runtime cache.
     const ttsEnabledCb=$('settingsTtsEnabled');
-    if(ttsEnabledCb){ttsEnabledCb.checked=_speechBool('tts_enabled','hermes-tts-enabled',false);ttsEnabledCb.onchange=function(){_markSpeechPreferenceChanged('tts_enabled');localStorage.setItem('hermes-tts-enabled',this.checked?'true':'false');_applyTtsEnabled(this.checked);_schedulePreferencesAutosave();};}
+    if(ttsEnabledCb){ttsEnabledCb.checked=_speechBool('tts_enabled','ares-tts-enabled',false);ttsEnabledCb.onchange=function(){_markSpeechPreferenceChanged('tts_enabled');localStorage.setItem('ares-tts-enabled',this.checked?'true':'false');_applyTtsEnabled(this.checked);_schedulePreferencesAutosave();};}
     const ttsAutoReadCb=$('settingsTtsAutoRead');
-    if(ttsAutoReadCb){ttsAutoReadCb.checked=_speechBool('tts_auto_read','hermes-tts-auto-read',false);ttsAutoReadCb.onchange=function(){_markSpeechPreferenceChanged('tts_auto_read');localStorage.setItem('hermes-tts-auto-read',this.checked?'true':'false');_schedulePreferencesAutosave();};}
+    if(ttsAutoReadCb){ttsAutoReadCb.checked=_speechBool('tts_auto_read','ares-tts-auto-read',false);ttsAutoReadCb.onchange=function(){_markSpeechPreferenceChanged('tts_auto_read');localStorage.setItem('ares-tts-auto-read',this.checked?'true':'false');_schedulePreferencesAutosave();};}
     // Voice-mode button visibility (#1488).
     // Toggling re-applies immediately via the boot.js helper so the user sees
     // the audio-waveform button appear/disappear without a reload.
@@ -9555,10 +9555,10 @@ async function loadSettingsPanel(){
     // stays in sync when #btnVoiceMode appears or disappears here.
     const voiceModeCb=$('settingsVoiceModeEnabled');
     if(voiceModeCb){
-      voiceModeCb.checked=_speechBool('voice_mode_button','hermes-voice-mode-button',false);
+      voiceModeCb.checked=_speechBool('voice_mode_button','ares-voice-mode-button',false);
       voiceModeCb.onchange=function(){
         _markSpeechPreferenceChanged('voice_mode_button');
-        localStorage.setItem('hermes-voice-mode-button',this.checked?'true':'false');
+        localStorage.setItem('ares-voice-mode-button',this.checked?'true':'false');
         if(typeof window._applyVoiceModePref==='function') window._applyVoiceModePref();
         if(typeof window._applyComposerFooterVisibilitySettings==='function') window._applyComposerFooterVisibilitySettings();
         _schedulePreferencesAutosave();
@@ -9567,11 +9567,11 @@ async function loadSettingsPanel(){
     // TTS engine selector
     const ttsEngineSel=$('settingsTtsEngine');
     if(ttsEngineSel){
-      // Re-add any extension-registered TTS engines (window.registerHermesTtsEngine)
+      // Re-add any extension-registered TTS engines (window.registerAresTtsEngine)
       // as options — the <select> markup only hardcodes the built-ins, and this
       // settings panel can render after an extension registered its engine.
-      if(typeof window._hermesTtsEngineOptions==='function'){
-        window._hermesTtsEngineOptions().forEach(function(e){
+      if(typeof window._aresTtsEngineOptions==='function'){
+        window._aresTtsEngineOptions().forEach(function(e){
           if(!ttsEngineSel.querySelector('option[value="'+e.id+'"]')){
             var opt=document.createElement('option');
             opt.value=e.id; opt.textContent=e.label;
@@ -9579,7 +9579,7 @@ async function loadSettingsPanel(){
           }
         });
       }
-      const saved=String(_speechSetting('tts_engine','hermes-tts-engine','browser')||'browser');
+      const saved=String(_speechSetting('tts_engine','ares-tts-engine','browser')||'browser');
       if(!ttsEngineSel.querySelector('option[value="'+saved+'"]')){
         var savedOpt=document.createElement('option');
         savedOpt.value=saved; savedOpt.textContent=saved;
@@ -9589,7 +9589,7 @@ async function loadSettingsPanel(){
       _syncSpeechPreferenceCache('tts_engine',saved);
       ttsEngineSel.onchange=function(){
         _markSpeechPreferenceChanged('tts_engine');
-        localStorage.setItem('hermes-tts-engine',this.value);
+        localStorage.setItem('ares-tts-engine',this.value);
         window._populateTtsVoices();
         _schedulePreferencesAutosave();
       };
@@ -9598,8 +9598,8 @@ async function loadSettingsPanel(){
     const ttsVoiceSel=$('settingsTtsVoice');
     window._populateTtsVoices=function(){
       if(!ttsVoiceSel) return;
-      const engine=localStorage.getItem('hermes-tts-engine')||'browser';
-      const current=String(_speechSetting('tts_voice','hermes-tts-voice','')||'');
+      const engine=localStorage.getItem('ares-tts-engine')||'browser';
+      const current=String(_speechSetting('tts_voice','ares-tts-voice','')||'');
       _syncSpeechPreferenceCache('tts_voice',current);
       if(engine==='elevenlabs'){
         ttsVoiceSel.innerHTML='<option value="">Hermy — ElevenLabs (server-configured)</option>';
@@ -9641,29 +9641,29 @@ async function loadSettingsPanel(){
     if(ttsVoiceSel&&'speechSynthesis' in window){
       window._populateTtsVoices();
       speechSynthesis.addEventListener('voiceschanged',function(){
-        const engine=localStorage.getItem('hermes-tts-engine')||'browser';
+        const engine=localStorage.getItem('ares-tts-engine')||'browser';
         if(engine==='browser') window._populateTtsVoices();
       },{once:false});
-      ttsVoiceSel.onchange=function(){_markSpeechPreferenceChanged('tts_voice');localStorage.setItem('hermes-tts-voice',this.value);_schedulePreferencesAutosave();};
+      ttsVoiceSel.onchange=function(){_markSpeechPreferenceChanged('tts_voice');localStorage.setItem('ares-tts-voice',this.value);_schedulePreferencesAutosave();};
     }
     // TTS rate/pitch sliders
     const ttsRateSlider=$('settingsTtsRate');
     const ttsRateValue=$('settingsTtsRateValue');
     if(ttsRateSlider){
-      const savedRate=_speechSetting('tts_rate','hermes-tts-rate',1);
+      const savedRate=_speechSetting('tts_rate','ares-tts-rate',1);
       ttsRateSlider.value=(savedRate===null||savedRate===undefined)?'1':String(savedRate);
       if(ttsRateValue) ttsRateValue.textContent=parseFloat(ttsRateSlider.value).toFixed(1)+'x';
       _syncSpeechPreferenceCache('tts_rate',ttsRateSlider.value);
-      ttsRateSlider.oninput=function(){_markSpeechPreferenceChanged('tts_rate');if(ttsRateValue)ttsRateValue.textContent=parseFloat(this.value).toFixed(1)+'x';localStorage.setItem('hermes-tts-rate',this.value);_schedulePreferencesAutosave();};
+      ttsRateSlider.oninput=function(){_markSpeechPreferenceChanged('tts_rate');if(ttsRateValue)ttsRateValue.textContent=parseFloat(this.value).toFixed(1)+'x';localStorage.setItem('ares-tts-rate',this.value);_schedulePreferencesAutosave();};
     }
     const ttsPitchSlider=$('settingsTtsPitch');
     const ttsPitchValue=$('settingsTtsPitchValue');
     if(ttsPitchSlider){
-      const savedPitch=_speechSetting('tts_pitch','hermes-tts-pitch',1);
+      const savedPitch=_speechSetting('tts_pitch','ares-tts-pitch',1);
       ttsPitchSlider.value=(savedPitch===null||savedPitch===undefined)?'1':String(savedPitch);
       if(ttsPitchValue) ttsPitchValue.textContent=parseFloat(ttsPitchSlider.value).toFixed(1);
       _syncSpeechPreferenceCache('tts_pitch',ttsPitchSlider.value);
-      ttsPitchSlider.oninput=function(){_markSpeechPreferenceChanged('tts_pitch');if(ttsPitchValue)ttsPitchValue.textContent=parseFloat(this.value).toFixed(1);localStorage.setItem('hermes-tts-pitch',this.value);_schedulePreferencesAutosave();};
+      ttsPitchSlider.oninput=function(){_markSpeechPreferenceChanged('tts_pitch');if(ttsPitchValue)ttsPitchValue.textContent=parseFloat(this.value).toFixed(1);localStorage.setItem('ares-tts-pitch',this.value);_schedulePreferencesAutosave();};
     }
     const notifCb=$('settingsNotificationsEnabled');
     if(notifCb){notifCb.checked=!!settings.notifications_enabled;notifCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});}
@@ -9749,7 +9749,7 @@ async function loadSettingsPanel(){
       const disableBtn=$('btnDisableAuth');
       if(disableBtn) disableBtn.style.display='none';
     }
-    _syncHermesPanelSessionActions();
+    _syncAresPanelSessionActions();
     if(typeof loadDashboardSettings==='function') loadDashboardSettings();
     loadProvidersPanel(); // load provider cards in background
     loadPluginsPanel(); // load plugin/hook visibility in background
@@ -9814,8 +9814,8 @@ function _extensionEntryBadge(entry){
 }
 
 function _configureExtensionSettingsFromStatus(data){
-  if(!window.HermesExtensionSettings||!data||!Array.isArray(data.extensions)) return;
-  window.HermesExtensionSettings.primeFromStatus({extensions:data.extensions});
+  if(!window.AresExtensionSettings||!data||!Array.isArray(data.extensions)) return;
+  window.AresExtensionSettings.primeFromStatus({extensions:data.extensions});
 }
 
 function _extensionSettingsFieldHtml(field,value){
@@ -9849,7 +9849,7 @@ function _extensionSettingsControls(entry){
   if(!storageOwned){
     return '<div class="extension-settings-empty">No extension-owned browser storage permission.</div>';
   }
-  const settingsApi=window.HermesExtensionSettings&&id?window.HermesExtensionSettings.settingsForExtension(id):null;
+  const settingsApi=window.AresExtensionSettings&&id?window.AresExtensionSettings.settingsForExtension(id):null;
   if(!settingsApi||!settingsApi.trusted){
     return '<div class="extension-settings-empty">Reload WebUI after enabling or installing this extension to edit browser-local settings.</div>';
   }
@@ -10261,8 +10261,8 @@ function _readExtensionSettingsForm(row){
 }
 
 function _fillExtensionSettingsForm(row,id){
-  if(!window.HermesExtensionSettings) return;
-  const values=window.HermesExtensionSettings.settingsForExtension(id).values;
+  if(!window.AresExtensionSettings) return;
+  const values=window.AresExtensionSettings.settingsForExtension(id).values;
   row.querySelectorAll('[data-extension-setting-input]').forEach(input=>{
     const key=input.dataset.extensionSettingInput||'';
     const type=input.dataset.extensionSettingType||'';
@@ -10288,8 +10288,8 @@ function _bindExtensionSettingsButtons(root){
 function handleExtensionSettingsSave(btn){
   const id=btn&&btn.dataset.extensionSettingsSave;
   const row=btn&&btn.closest('[data-extension-id]');
-  if(!id||!row||!window.HermesExtensionSettings) return;
-  const api=window.HermesExtensionSettings.settingsForExtension(id);
+  if(!id||!row||!window.AresExtensionSettings) return;
+  const api=window.AresExtensionSettings.settingsForExtension(id);
   const result=api.setAll(_readExtensionSettingsForm(row));
   if(!result.ok){
     showToast('Extension settings contain invalid values.');
@@ -10302,16 +10302,16 @@ function handleExtensionSettingsSave(btn){
 function handleExtensionSettingsReset(btn){
   const id=btn&&btn.dataset.extensionSettingsReset;
   const row=btn&&btn.closest('[data-extension-id]');
-  if(!id||!row||!window.HermesExtensionSettings) return;
-  window.HermesExtensionSettings.settingsForExtension(id).reset();
+  if(!id||!row||!window.AresExtensionSettings) return;
+  window.AresExtensionSettings.settingsForExtension(id).reset();
   _fillExtensionSettingsForm(row,id);
   showToast('Extension settings reset in this browser.');
 }
 
 function handleExtensionStorageClear(btn){
   const id=btn&&btn.dataset.extensionStorageClear;
-  if(!id||!window.HermesExtensionSettings) return;
-  window.HermesExtensionSettings.storageForExtension(id).clear();
+  if(!id||!window.AresExtensionSettings) return;
+  window.AresExtensionSettings.storageForExtension(id).clear();
   showToast('Extension storage cleared in this browser.');
 }
 
@@ -10374,7 +10374,7 @@ function _extensionRegistrySourceUrl(entryPath){
   const parts=raw.split('/').filter(Boolean);
   if(parts.length===0||parts.some(part=>part==='.'||part==='..')) return '';
   const folder=parts.length>1?parts.slice(0,-1):parts;
-  return 'https://github.com/hermes-webui/hermes-webui-extensions/tree/main/'+folder.map(encodeURIComponent).join('/');
+  return 'https://github.com/hermes-webui/ares-webui-extensions/tree/main/'+folder.map(encodeURIComponent).join('/');
 }
 
 function _extensionSourceUrl(entry){
@@ -11043,7 +11043,7 @@ function _providerQuotaUnavailableReason(credential){
 
 function _providerQuotaPoolShouldDefaultOpen(pool){
   try{
-    const saved=localStorage.getItem('hermes-provider-quota-pool-open');
+    const saved=localStorage.getItem('ares-provider-quota-pool-open');
     if(saved==='1') return true;
     if(saved==='0') return false;
   }catch(e){}
@@ -11164,7 +11164,7 @@ function _buildProviderQuotaCard(status){
   const poolDetails=card.querySelector('.provider-quota-pool');
   if(poolDetails){
     poolDetails.addEventListener('toggle',()=>{
-      try{localStorage.setItem('hermes-provider-quota-pool-open',poolDetails.open?'1':'0');}catch(e){}
+      try{localStorage.setItem('ares-provider-quota-pool-open',poolDetails.open?'1':'0');}catch(e){}
     });
   }
   return card;
@@ -12074,10 +12074,10 @@ function _applySavedSettingsUi(saved, body, opts){
   _settingsDirty=false;
   _settingsThemeOnOpen=theme;
   _settingsSkinOnOpen=skin||'default';
-  _settingsFontSizeOnOpen=fontSize||localStorage.getItem('hermes-font-size')||'default';
+  _settingsFontSizeOnOpen=fontSize||localStorage.getItem('ares-font-size')||'default';
   const bar=$('settingsUnsavedBar');
   if(bar) bar.style.display='none';
-  _settingsHermesDefaultModelOnOpen=body.default_model||_settingsHermesDefaultModelOnOpen||'';
+  _settingsAresDefaultModelOnOpen=body.default_model||_settingsAresDefaultModelOnOpen||'';
   if(Object.prototype.hasOwnProperty.call(body,'default_model_provider')) _settingsHermesDefaultModelProviderOnOpen=body.default_model_provider||null;
   // Sync window._defaultModel so newSession() uses the just-saved default without a reload (#908).
   if(body.default_model) window._defaultModel=body.default_model;
@@ -12632,7 +12632,7 @@ async function saveSettings(andClose){
   const modelState=(typeof _captureModelDropdownSelection==='function'&&$('settingsModel'))
     ? (_captureModelDropdownSelection($('settingsModel'))||{model:String(model||''),model_provider:null})
     : {model:String(model||''),model_provider:null};
-  const modelChanged=(model||'')!==(_settingsHermesDefaultModelOnOpen||'')||((modelState.model_provider||null)!==(_settingsHermesDefaultModelProviderOnOpen||null));
+  const modelChanged=(model||'')!==(_settingsAresDefaultModelOnOpen||'')||((modelState.model_provider||null)!==(_settingsHermesDefaultModelProviderOnOpen||null));
   const sendKey=($('settingsSendKey')||{}).value;
   const showTokenUsage=!!($('settingsShowTokenUsage')||{}).checked;
   const showQuotaChip=!!($('settingsShowQuotaChip')||{}).checked;
@@ -12649,7 +12649,7 @@ async function saveSettings(andClose){
   const pw=($('settingsPassword')||{}).value;
   const theme=($('settingsTheme')||{}).value||'dark';
   const skin=($('settingsSkin')||{}).value||'default';
-  const fontSize=($('settingsFontSize')||{}).value||localStorage.getItem('hermes-font-size')||'default';
+  const fontSize=($('settingsFontSize')||{}).value||localStorage.getItem('ares-font-size')||'default';
   const language=($('settingsLanguage')||{}).value||'en';
   const sidebarDensity=($('settingsSidebarDensity')||{}).value==='detailed'?'detailed':'compact';
   const defaultMessageMode=($('settingsDefaultMessageMode')||{}).value||'steer';

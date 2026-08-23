@@ -363,8 +363,20 @@ class JaegerClient:
                     continue
                 kind = frame.get("type")
                 if kind == "reply":
-                    return {"text": frame.get("text", ""),
-                            "error": frame.get("error")}
+                    # v1 additive telemetry: the bridge OMITS these keys when
+                    # it cannot measure them, so they stay absent here rather
+                    # than becoming a misleading zero. ``ctx_used`` is the
+                    # prompt size for THIS turn (not a running total), which is
+                    # what the context ring wants — see the #1436 note in
+                    # ui.js::_syncCtxIndicator.
+                    reply: dict[str, Any] = {
+                        "text": frame.get("text", ""),
+                        "error": frame.get("error"),
+                    }
+                    for key in ("elapsed_s", "ctx_used", "ctx_max"):
+                        if frame.get(key) is not None:
+                            reply[key] = frame[key]
+                    return reply
                 if kind == "request":
                     answer = on_request(frame) if on_request else "deny"
                     self._write(respond_op(

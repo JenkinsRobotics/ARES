@@ -514,13 +514,6 @@ def save_eval_results(summary: Dict[str, Any]) -> Tuple[Path, Path]:
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md_report)
 
-    ws_json = Path("/Users/matthewjenkins/GitHub/ARES/model_eval_results.json")
-    try:
-        with open(ws_json, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
-
     return json_path, md_path
 
 

@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, Header, Query, WebSocket, WebSocketDisco
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 
+from api.stream_contract import TERMINAL_EVENTS
+
 from ..dependencies import get_realtime_service
 from ..errors import CoreApiError
 from ..realtime import QueueSubscription, RealtimeService
@@ -35,7 +37,9 @@ from ..schemas import (
 
 router = APIRouter(tags=["realtime"])
 _HEARTBEAT_SECONDS = 5.0
-_TERMINAL_EVENTS = {"stream_end", "error", "cancel"}
+# Imported, never re-declared: this set is the wire contract shared with every
+# producer, and a local copy is exactly how ``apperror`` went missing once.
+_TERMINAL_EVENTS = TERMINAL_EVENTS
 
 
 def _event_envelope(

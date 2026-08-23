@@ -47,12 +47,12 @@
 
   window.addEventListener('beforeinstallprompt',function(event){
     event.preventDefault();
-    window.hermesDeferredInstallPrompt=event;
+    window.aresDeferredInstallPrompt=event;
     root.classList.add('pwa-installable');
     dispatch('hermes:pwa-installable');
   });
   window.addEventListener('appinstalled',function(){
-    window.hermesDeferredInstallPrompt=null;
+    window.aresDeferredInstallPrompt=null;
     root.classList.remove('pwa-installable');
     root.classList.add('pwa-installed');
     dispatch('hermes:pwa-installed');
@@ -65,16 +65,16 @@
     }
   });
 
-  window.HermesPWA={
+  window.AresPWA={
     isStandalone:isStandalone,
     syncMode:syncMode,
     launchAction:function(){
       try{return new URLSearchParams(window.location.search||'').get('action')||null;}catch(_){return null;}
     },
     promptInstall:function(){
-      var prompt=window.hermesDeferredInstallPrompt;
+      var prompt=window.aresDeferredInstallPrompt;
       if(!prompt||typeof prompt['prompt']!=='function')return Promise.resolve({outcome:'unavailable'});
-      window.hermesDeferredInstallPrompt=null;
+      window.aresDeferredInstallPrompt=null;
       root.classList.remove('pwa-installable');
       prompt['prompt']();
       return Promise.resolve(prompt.userChoice).catch(function(){return {outcome:'dismissed'};});

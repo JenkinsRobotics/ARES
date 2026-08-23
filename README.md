@@ -29,3 +29,20 @@ authenticated `/api/inventory` endpoint instead of relying on documented counts.
 
 See `docs/vision.md`, `docs/architecture.md`, `docs/development.md`, and
 `docs/api.md`.
+
+## Licence and provenance
+
+ARES is licensed **AGPL-3.0** (`LICENSE`).
+
+It is a fork, not a from-scratch project. The browser UI and the controller
+both descend from **Hermes WebUI** (MIT, © 2025 Hermes Web UI Contributors),
+and the browser bundle redistributes KaTeX, js-yaml and streaming-markdown —
+all MIT. MIT into AGPL-3.0 is a permitted one-way combination; the condition is
+that the upstream notices travel with the code, which they do:
+
+- `THIRD_PARTY.md` — what came from where, and what is merely talked to
+- `apps/web/static/LICENSE`, `services/controller/LICENSE` — the retained MIT notice
+- `apps/web/static/vendor/LICENSES.md` — notices for the bundled libraries
+
+JaegerAI, JaegerOS and jaeger-agent (Apache-2.0) are **not** vendored here.
+ARES reaches JaegerAI as a separate process over an NDJSON bridge.

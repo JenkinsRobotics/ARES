@@ -32,6 +32,7 @@ from api.config import (
 from api.helpers import _redact_text, redact_session_data
 from api.models import clear_process_wakeup_pause, get_session, merge_session_messages_append_only
 from api.run_journal import RunJournalWriter
+from api.stream_contract import is_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -639,9 +640,21 @@ def _run_gateway_chat_streaming(
 
     success_writeback_committed = False
 
+    # See the matching comment in the Jaeger provider: the ``finally`` below
+    # guarantees a relay-closing event, so no gateway failure path can leave
+    # the connection waiting. ``api.stream_contract`` owns the set.
+    sent_terminal = False
+
     def put_gateway_event(event, data):
-        if cancel_event.is_set() and not success_writeback_committed and event not in ("cancel", "error", "apperror"):
+        nonlocal sent_terminal
+        if (
+            cancel_event.is_set()
+            and not success_writeback_committed
+            and not is_terminal(event)
+        ):
             return
+        if is_terminal(event):
+            sent_terminal = True
         event_id = None
         if run_journal is not None:
             try:
@@ -1103,6 +1116,10 @@ def _run_gateway_chat_streaming(
             "hint": "Check ARES_WEBUI_GATEWAY_BASE_URL and Gateway API server health.",
         })
     finally:
+        # Before the STREAMS teardown: once the queue is popped nothing drains
+        # a late terminal event.
+        if not sent_terminal:
+            put_gateway_event("stream_end", {"session_id": session_id})
         if s is not None:
             try:
                 with _get_session_agent_lock(session_id):

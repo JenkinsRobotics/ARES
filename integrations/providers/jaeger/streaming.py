@@ -42,8 +42,19 @@ from api.providers.jaeger.bridge_client import (
 from api.providers.jaeger.paths import jaeger_home, jaeger_instance_name
 from api.providers.jaeger.sse_events import tool_sse_event
 from api.run_journal import RunJournalWriter
+from api.stream_contract import is_terminal
 
 logger = logging.getLogger(__name__)
+
+# stream_id -> the reply frame's v1 additive telemetry (``elapsed_s``,
+# ``ctx_used``, ``ctx_max``) for the turn that just finished.
+#
+# Carried here rather than through ``_run_local_jaeger_turn``'s return value:
+# three production callers and the reliability suite unpack that as a 3-tuple,
+# and widening it to smuggle telemetry through would churn all of them. This
+# matches how the rest of this file passes per-stream state (STREAM_PARTIAL_TEXT
+# and friends); it is popped in the same ``finally`` that clears those.
+STREAM_TURN_TELEMETRY: dict[str, dict[str, Any]] = {}
 
 
 def reset_jaeger_runtime() -> None:
@@ -124,24 +135,8 @@ def _is_lock_error(exc: Exception) -> bool:
 
 
 def _force_clear_stale_instance_lock(instance: str | None) -> bool:
-    """Best-effort ``jaeger kill --instance <name>`` to clear an orphaned lock.
-
-    JaegerAI's own stale-lock detection correctly refuses to break a lock
-    held by a genuinely-alive process — by design, since a live JaegerAI
-    process could be doing real work. But ARES can leave its *own* grandchild
-    bridge subprocess orphaned (e.g. a controller restart that outraced the
-    bridge's graceful shutdown), and then has no way back in except a human
-    running ``jaeger kill`` by hand. This scopes that exact recovery to the
-    one instance ARES is trying to reach — never the no-arg/all-instances
-    form, so it can't touch a JaegerAI the operator is genuinely running
-    under a different instance name.
-
-    Never raises: this is a best-effort recovery step, not the primary path.
-    A failure here just means the caller's retry will fail with the original
-    error, which is the same outcome as not attempting recovery at all.
-    """
-    if not instance:
-        return False
+    """Best-effort ``jaeger kill --instance <name>`` to clear an orphaned lock."""
+    target_instance = (instance or _jaeger_instance_name() or "ares").strip()
     root = local_jaeger_root()
     if root is None:
         return False
@@ -150,14 +145,14 @@ def _force_clear_stale_instance_lock(instance: str | None) -> bool:
         return False
     try:
         result = subprocess.run(
-            [str(launcher), "kill", "--instance", instance],
+            [str(launcher), "kill", "--instance", target_instance],
             env=minimal_bridge_environment(),
             capture_output=True,
             timeout=15,
             check=False,
         )
     except Exception:
-        logger.warning("jaeger kill --instance %s failed to run", instance, exc_info=True)
+        logger.warning("jaeger kill --instance %s failed to run", target_instance, exc_info=True)
         return False
     if result.returncode != 0:
         logger.warning(
@@ -442,6 +437,19 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: 
             STREAM_DELTA_TEXT[stream_id] = STREAM_DELTA_TEXT.get(stream_id, "") + piece
             put_jaeger_event("token", {"text": piece})
         return
+    if kind == "reasoning":
+        # MODEL deliberation (a ``<think>`` block or extended-thinking
+        # channel), which JaegerOS surfaces as its own frame type rather than
+        # folding into ``delta``. It is NOT part of the answer, so it goes to
+        # the browser's reasoning handler (the Thinking card) and never to the
+        # ``token`` handler, which APPENDS to the visible assistant text.
+        piece = str(frame.get("text") or "")
+        if piece:
+            STREAM_REASONING_TEXT[stream_id] = (
+                STREAM_REASONING_TEXT.get(stream_id, "") + piece
+            )
+            put_jaeger_event("reasoning", {"text": piece})
+        return
     if kind == "state":
         # Busy/idle/thinking are transport lifecycle, not model reasoning.
         # Mapping them onto runtime `reasoning` events made the original
@@ -568,6 +576,14 @@ def _run_local_jaeger_turn(
             payload = dict(result or {}) if isinstance(result, dict) else {}
             error = _redact_text(str(payload.get("error") or "").strip(), _enabled=True)
             text = str(payload.get("text") or "").strip()
+            if stream_id:
+                telemetry = {
+                    key: payload[key]
+                    for key in ("elapsed_s", "ctx_used", "ctx_max")
+                    if payload.get(key) is not None
+                }
+                if telemetry:
+                    STREAM_TURN_TELEMETRY[stream_id] = telemetry
             return text, error, [] if put_jaeger_event is not None else tool_activity
         except Exception as exc:
             last_exc = exc
@@ -581,6 +597,115 @@ def _run_local_jaeger_turn(
             logger.warning("Local JaegerAI bridge turn failed: %s", _bridge_error_message(exc))
             return "", _bridge_error_message(exc), []
     return "", _bridge_error_message(last_exc or JaegerError("bridge failed")), []
+
+
+def _persistent_state_baseline(session: Any) -> tuple[str, dict]:
+    """Snapshot the profile's memory/skill signatures before a turn runs.
+
+    Returns ``(profile_home, snapshot)``; both degrade to empty on any failure
+    so a missing profile module can never fail the turn it is only observing.
+    """
+    try:
+        from api.profiles import get_ares_home_for_profile
+        from api.streaming import _persistent_state_snapshot
+
+        profile_home = str(get_ares_home_for_profile(getattr(session, "profile", None)))
+        return profile_home, _persistent_state_snapshot(profile_home)
+    except Exception:
+        logger.debug("Persistent-state baseline unavailable", exc_info=True)
+        return "", {}
+
+
+def _emit_persistent_state_changes(
+    profile_home: str,
+    state_before: dict,
+    session_id: str,
+    put_event,
+) -> None:
+    """Emit a ``state_saved`` event per memory/skill file the turn changed."""
+    if not profile_home:
+        return
+    try:
+        from api.streaming import _persistent_state_changes, _persistent_state_snapshot
+
+        changes = _persistent_state_changes(
+            state_before,
+            _persistent_state_snapshot(profile_home),
+        )
+        if changes.get("memory_saved"):
+            put_event("state_saved", {
+                "session_id": session_id,
+                "kind": "memory",
+                "action": "saved",
+            })
+        for change in changes.get("skills") or []:
+            put_event("state_saved", {
+                "session_id": session_id,
+                "kind": "skill",
+                "action": change.get("action") or "updated",
+                "name": change.get("name") or "",
+            })
+    except Exception:
+        logger.debug(
+            "Persistent state change detection failed for session %s",
+            session_id,
+            exc_info=True,
+        )
+
+
+def _maybe_generate_session_title(session: Any, put_event) -> bool:
+    """Auto-title a JaegerAI conversation, same rules as the agent path.
+
+    Title generation runs on the configured auxiliary model rather than the
+    turn's agent — ``_run_background_title_update`` takes ``agent=None`` — so it
+    is available to any backend. Without this call a JaegerAI session keeps its
+    placeholder name forever, which is one of the more visible ways the Jaeger
+    lane looked less finished than the donor WebUI it inherited.
+
+    Returns True when a title thread was started. That thread emits ``title``
+    and then ``stream_end`` from its own ``finally``, so the caller must NOT
+    also close the stream — exactly the either/or the agent path uses. Writing
+    to the queue after ``STREAMS.pop`` is safe: ``put_event`` closes over the
+    queue object, and the relay holds its own subscriber reference; the pop only
+    stops NEW subscribers attaching.
+    """
+    try:
+        from api.streaming import (
+            _first_exchange_snippets,
+            _is_placeholder_session_title,
+            _is_provisional_title,
+            _looks_invalid_generated_title,
+            _run_background_title_update,
+        )
+
+        title = str(getattr(session, "title", "") or "")
+        invalid_existing = _looks_invalid_generated_title(title)
+        should_title = (
+            _is_placeholder_session_title(title)
+            or _is_provisional_title(title, session.messages)
+            or invalid_existing
+        ) and (not getattr(session, "llm_title_generated", False) or invalid_existing)
+        if not should_title:
+            return False
+        first_user, first_assistant = _first_exchange_snippets(session.messages)
+        if not first_user or not first_assistant:
+            return False
+        threading.Thread(
+            target=_run_background_title_update,
+            args=(
+                session.session_id,
+                first_user,
+                first_assistant,
+                title.strip(),
+                put_event,
+                None,
+            ),
+            daemon=True,
+        ).start()
+        return True
+    except Exception:
+        logger.debug("Auto-title scheduling failed", exc_info=True)
+        return False
 
 
 def _stream_writeback_is_current(session: Any, stream_id: str) -> bool:
@@ -952,9 +1077,22 @@ def run_jaeger_streaming(
         STREAM_REASONING_TEXT[stream_id] = ""
         STREAM_LIVE_TOOL_CALLS[stream_id] = []
 
+    # Whether a relay-closing event has already gone out for this run. The
+    # ``finally`` below emits ``stream_end`` when nothing else did, so no
+    # failure path can leave the relay waiting on a producer that has already
+    # torn down. See ``api.stream_contract``.
+    sent_terminal = False
+
     def put_event(event: str, data: Any) -> None:
-        if cancel_event.is_set() and event not in ("cancel", "error", "apperror"):
+        nonlocal sent_terminal
+        # After a cancel only terminal events may still go out. ``stream_end``
+        # counts: a cancelled run that emitted nothing else still has to tell
+        # the relay to close, or the connection waits on a producer that is
+        # already gone.
+        if cancel_event.is_set() and not is_terminal(event):
             return
+        if is_terminal(event):
+            sent_terminal = True
         event_id = None
         if run_journal is not None:
             try:
@@ -977,6 +1115,11 @@ def run_jaeger_streaming(
             "session_id": session_id,
             "prefill": {"status": "jaeger", "source": "jaeger", "label": "JaegerAI", "message_count": 0},
         })
+        # Baseline for the save toasts. Detection is a pure ARES-side file-
+        # signature diff of the profile home, so it needs nothing from the
+        # backend and works for any worker that writes memory or skills —
+        # JaegerAI included, once someone takes the snapshot.
+        profile_home, state_before = _persistent_state_baseline(session)
         update_active_run(stream_id, phase="jaeger-local")
         text, error, tool_activity = _run_local_jaeger_turn(
             msg_text,
@@ -1028,6 +1171,32 @@ def run_jaeger_streaming(
         remainder = _delta_remainder(stream_id, assistant_text)
         if remainder:
             put_event("token", {"text": remainder})
+
+        # Context telemetry. The bridge measures the prompt size and the loaded
+        # model's window; ARES has no way to compute either, so before this the
+        # composer's context ring sat blank on every JaegerAI turn.
+        #
+        # ``last_prompt_tokens`` (NOT input_tokens) is what the ring divides by
+        # the window — see the #1436 note in ui.js::_syncCtxIndicator, where
+        # using the cumulative figure produced ">100% used" on long sessions.
+        # ``ctx_used`` is per-turn, which is the right quantity.
+        telemetry = STREAM_TURN_TELEMETRY.get(stream_id) or {}
+        if telemetry:
+            if telemetry.get("ctx_used") is not None:
+                usage["last_prompt_tokens"] = int(telemetry["ctx_used"])
+            if telemetry.get("ctx_max") is not None:
+                usage["context_length"] = int(telemetry["ctx_max"])
+            # output_tokens above is a word count, not a tokenizer count, so a
+            # tokens/sec figure derived from it would be a plausible-looking
+            # fabrication. Declare it unavailable and the browser clears the
+            # live TPS readout instead of showing a made-up number.
+            put_event("metering", {
+                "session_id": session_id,
+                "usage": dict(usage),
+                "elapsed_s": telemetry.get("elapsed_s"),
+                "estimated": True,
+                "tps_available": False,
+            })
         saved_session = _merge_and_save_jaeger_turn(
             session_id=session_id, stream_id=stream_id, msg_text=str(msg_text or ""),
             assistant_text=assistant_text, workspace=str(workspace), model=model or "",
@@ -1042,9 +1211,18 @@ def run_jaeger_streaming(
         )
         from api.streaming import _session_payload_with_full_messages
 
+        _emit_persistent_state_changes(profile_home, state_before, session_id, put_event)
+
         payload = _session_payload_with_full_messages(saved_session, tool_calls=[])
         put_event("done", {"session": redact_session_data(payload), "usage": usage})
-        put_event("stream_end", {"session_id": session_id})
+
+        # Either the title thread closes the stream (after publishing the
+        # title) or we close it here — never both, or the browser sees the run
+        # end before the title it was waiting for.
+        if _maybe_generate_session_title(saved_session, put_event):
+            sent_terminal = True
+        else:
+            put_event("stream_end", {"session_id": session_id})
     except Exception as exc:
         put_event("apperror", {
             "label": "JaegerAI request failed",
@@ -1053,6 +1231,11 @@ def run_jaeger_streaming(
             "hint": "Check the JaegerAI bridge and selected instance.",
         })
     finally:
+        # Emitted BEFORE the STREAMS teardown below: once the queue is popped
+        # the relay has no producer left to hear from, so a late terminal event
+        # would be written to a queue nobody drains.
+        if not sent_terminal:
+            put_event("stream_end", {"session_id": session_id})
         if session is not None:
             try:
                 with _get_session_agent_lock(session_id):
@@ -1068,5 +1251,6 @@ def run_jaeger_streaming(
             STREAM_REASONING_TEXT.pop(stream_id, None)
             STREAM_LIVE_TOOL_CALLS.pop(stream_id, None)
             STREAM_LAST_EVENT_ID.pop(stream_id, None)
+            STREAM_TURN_TELEMETRY.pop(stream_id, None)
             STREAMS.pop(stream_id, None)
         unregister_active_run(stream_id)

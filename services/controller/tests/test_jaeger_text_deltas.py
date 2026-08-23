@@ -66,11 +66,21 @@ def test_lifecycle_state_frames_are_not_reasoning():
 
 def test_tool_frames_still_translate_alongside_deltas():
     """The delta branch returns early — it must not shadow the frames
-    that were already being forwarded."""
+    that were already being forwarded.
+
+    Phase is preserved on the way through: ``start`` stays ``tool`` and
+    ``done`` becomes ``tool_complete``, which is what closes the browser's
+    tool card. ``sse_events.tool_sse_event`` owns that mapping and
+    ``test_jaeger_bridge_sse_events`` locks it down; this test previously
+    asserted the pre-mapping behaviour for a ``done`` frame and contradicted
+    it.
+    """
     seen, put = _events()
     streaming._translate_bridge_frame(
+        {"type": "tool", "name": "read_file", "status": "start"}, put, "s1")
+    streaming._translate_bridge_frame(
         {"type": "tool", "name": "read_file", "status": "done"}, put, "s1")
-    assert seen and seen[0][0] == "tool"
+    assert [event for event, _payload in seen] == ["tool", "tool_complete"]
 
 
 # ── reconciling the final reply ─────────────────────────────────────

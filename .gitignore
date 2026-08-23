@@ -138,6 +138,10 @@ dares/__pycache__/
 # Reference sources (Paperclip, Hermes WebUI, etc.) — integrated into ARES
 reference_sources/
 
+# Local upstream source drafts. Snapshots of external clones so those
+# working trees can be deleted. Not a license event — do not git add.
+drafts/
+
 # Local evaluation output. The canonical copy lives under ARES_HOME/evals/;
 # this repo-root file is a stale artifact of an older mirror write.
 model_eval_results.json

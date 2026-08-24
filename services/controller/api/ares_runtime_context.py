@@ -2,7 +2,8 @@
 
 ARES projects the active runtime's identity. This module produces a compact context
 packet that gets injected into the agent's system prompt every turn,
-regardless of which external backend is active.
+regardless of which external backend is active. ARES is not a cognitive
+controller; JaegerAI remains the authoritative runtime when connected.
 
 The context tells the agent:
   - Who it is (projected backend identity)

@@ -115,12 +115,24 @@ export const PROVIDER_UNAVAILABLE_CODES = new Set([
   "unknown_runtime_connection",
 ]);
 
+export interface ImageInspection {
+  filename?: string;
+  format?: string;
+  mode?: string;
+  width: number;
+  height: number;
+  summary?: string;
+  jaeger_involved?: boolean;
+}
+
 export interface UploadResult {
   filename: string;
   path: string;
   size: number;
   mime: string;
   is_image: boolean;
+  jaeger_involved?: boolean;
+  inspection?: ImageInspection;
 }
 
 export async function uploadFile(sessionId: string, file: File): Promise<UploadResult> {

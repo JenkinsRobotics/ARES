@@ -30,6 +30,37 @@ class UploadServiceError(ValueError):
         self.status_code = status_code
 
 
+def inspect_image_bytes(file_bytes: bytes, filename: str = "") -> dict:
+    """Local image inspection.
+
+    Used so ARES can read a screenshot for UI repair while the SI
+    instance is left alone. No runtime bridge call.
+    """
+    if not file_bytes:
+        raise UploadServiceError("empty image")
+    try:
+        from io import BytesIO
+        from PIL import Image
+        with Image.open(BytesIO(file_bytes)) as image:
+            image.load()
+            width, height = image.size
+            fmt = image.format or ""
+            mode = image.mode
+    except Exception as exc:
+        raise UploadServiceError(f"not a readable image: {exc}") from exc
+    return {
+        "filename": filename,
+        "format": fmt,
+        "mode": mode,
+        "width": int(width),
+        "height": int(height),
+        "bytes": len(file_bytes),
+        "owner": "ares",
+        "jaeger_involved": False,
+        "summary": f"{int(width)}x{int(height)} {fmt or 'image'} ({mode})",
+    }
+
+
 def _max_extracted_bytes() -> int:
     """Total-extracted-bytes cap for archive uploads (zip/tar-bomb guard).
 
@@ -201,13 +232,17 @@ def save_session_upload(session_id: str, filename: str, file_bytes: bytes) -> di
     except ValueError as exc:
         raise UploadServiceError(str(exc)) from exc
     mime = mimetypes.guess_type(safe_name)[0] or 'application/octet-stream'
-    return {
+    payload = {
         'filename': dest.name,
         'path': str(dest),
         'size': dest.stat().st_size,
         'mime': mime,
         'is_image': mime.startswith('image/'),
+        'jaeger_involved': False,
     }
+    if payload['is_image']:
+        payload['inspection'] = inspect_image_bytes(file_bytes, dest.name)
+    return payload
 
 
 def extract_session_upload(session_id: str, filename: str, file_bytes: bytes) -> dict:

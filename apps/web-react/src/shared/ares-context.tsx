@@ -378,6 +378,7 @@ export function AresProvider({ children }: { children: ReactNode }) {
       };
       // Upload files first, then pass attachment metadata to startChat
       let attachments: Array<{ name: string; path: string; mime: string; size?: number; is_image?: boolean }> | undefined;
+      let imageNotes: string[] = [];
       if (opts.files && opts.files.length > 0) {
         const results = await Promise.all(
           opts.files.map((file) => uploadFile(session.id, file)),
@@ -389,10 +390,14 @@ export function AresProvider({ children }: { children: ReactNode }) {
           size: r.size,
           is_image: r.is_image,
         }));
+        imageNotes = results
+          .filter((r) => r.is_image && r.inspection?.summary)
+          .map((r) => `[Image ${r.filename}: ${r.inspection?.summary}]`);
       }
-      const optimistic: ConversationMessage = { id: `local-${Date.now()}`, role: "user", text: clean, createdAt: new Date().toISOString() };
+      const outbound = [clean, ...imageNotes].filter(Boolean).join("\n\n");
+      const optimistic: ConversationMessage = { id: `local-${Date.now()}`, role: "user", text: outbound || clean, createdAt: new Date().toISOString() };
       setCurrentSession({ ...session, messages: [...session.messages, optimistic] });
-      const started = await aresApi.startChat(session.id, clean, session, effectiveBackend, attachments);
+      const started = await aresApi.startChat(session.id, outbound || clean, session, effectiveBackend, attachments);
       if (generation !== streamGeneration.current) return;
       attachStream(started.stream_id, session.id);
     } catch (error) {

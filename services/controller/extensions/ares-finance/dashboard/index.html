@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARES Financial Intelligence</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="finance-app">
+    <!-- Header -->
+    <header class="finance-header">
+      <div class="brand">
+        <div class="brand-icon">💳</div>
+        <div>
+          <h1>ARES Financial Command</h1>
+          <p class="subtitle">Monarch Money Sync • Offline SQLite Store • Card Multiplier Engine</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="status-badge" id="sidecarStatus">
+          <span class="dot"></span> Sidecar Online
+        </div>
+        <button id="syncBtn" class="btn-primary">
+          <span class="btn-icon">⚡</span> Sync Monarch
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <div class="dashboard-grid">
+      <!-- Net Worth & Overview Card -->
+      <section class="card stat-card">
+        <div class="card-header">
+          <h2>Net Worth & Balances</h2>
+          <span class="badge" id="lastUpdated">Updated just now</span>
+        </div>
+        <div class="stat-highlight">
+          <span class="currency">$</span>
+          <span class="amount" id="netWorthDisplay">135,509.00</span>
+        </div>
+        <div class="breakdown-grid" id="accountsBreakdown">
+          <!-- Filled dynamically -->
+        </div>
+      </section>
+
+      <!-- Card Optimizer Card -->
+      <section class="card optimizer-card">
+        <div class="card-header">
+          <h2>⚡ Credit Card Optimizer</h2>
+          <span class="badge badge-accent">Auto-Multiplier</span>
+        </div>
+        <p class="section-desc">Type a merchant to find the highest reward multiplier in your wallet:</p>
+        
+        <div class="optimizer-input-row">
+          <input type="text" id="merchantInput" placeholder="e.g. Whole Foods, Chevron, Starbucks, Delta..." />
+          <button id="optimizeBtn" class="btn-accent">Evaluate</button>
+        </div>
+
+        <div id="optimizerResult" class="optimizer-result">
+          <div class="rec-box">
+            <span class="rec-label">RECOMMENDED CARD</span>
+            <div class="rec-card-name" id="recCardName">Chase Sapphire Preferred</div>
+            <div class="rec-multiplier" id="recMultiplier">3.0x Multiplier (Dining)</div>
+          </div>
+          <div class="rec-tip" id="recTip">Swipe for 3x points on worldwide restaurants & food delivery.</div>
+        </div>
+      </section>
+
+      <!-- Recent Transactions -->
+      <section class="card full-width">
+        <div class="card-header">
+          <h2>Recent Activity Ledger</h2>
+          <span class="badge" id="txCountBadge">5 Transactions</span>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Merchant</th>
+                <th>Category</th>
+                <th>Optimal Card</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

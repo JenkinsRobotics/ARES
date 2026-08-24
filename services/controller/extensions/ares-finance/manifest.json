@@ -1,0 +1,71 @@
+{
+  "id": "ares-finance",
+  "name": "ARES Financial Intelligence",
+  "version": "1.0.0",
+  "description": "Monarch Money sync, offline SQLite storage, credit card reward optimizer, and financial intelligence for ARES.",
+  "author": "Jenkins Robotics",
+  "homepage": "https://github.com/JenkinsRobotics/ares-finance",
+  "license": "MIT",
+  "category": "Finance & Productivity",
+  "capabilities": [
+    "sidecar",
+    "dashboard_tab",
+    "agent_tools",
+    "mcp"
+  ],
+  "scripts": [
+    "dashboard/app.js"
+  ],
+  "stylesheets": [
+    "dashboard/style.css"
+  ],
+  "sidecar": {
+    "type": "loopback",
+    "origin": "http://127.0.0.1:3848",
+    "health_path": "/health"
+  },
+  "tab": {
+    "id": "finance",
+    "label": "Finance",
+    "path": "/finance",
+    "entry": "dashboard/index.html",
+    "icon": "Wallet"
+  },
+  "tools": {
+    "module": "tools.finance_tools",
+    "definitions": [
+      "finance_summary",
+      "recommend_card",
+      "search_transactions",
+      "sync_monarch"
+    ]
+  },
+  "permissions": {
+    "storage": {
+      "owned": true
+    }
+  },
+  "settings_schema": [
+    {
+      "key": "sidecar_port",
+      "type": "integer",
+      "label": "Finance Sidecar Port",
+      "default": 3848,
+      "description": "Loopback port for the FastAPI financial sidecar"
+    },
+    {
+      "key": "sync_interval_hours",
+      "type": "integer",
+      "label": "Monarch Auto-Sync Interval (Hours)",
+      "default": 6,
+      "description": "How often to background-sync data from Monarch Money"
+    },
+    {
+      "key": "monarch_token",
+      "type": "string",
+      "label": "Monarch API Token / Session Key",
+      "default": "",
+      "description": "API Token or Session Key for Monarch Money authentication"
+    }
+  ]
+}

@@ -7,6 +7,8 @@ These folders ship in the repo. The live WebUI also loads from
 | --- | --- | --- |
 | `astronomy` | already in ARES | Telescope / night-planning tab |
 | `ares-worldview` | Desktop WorldView → sibling `ares-worldview` | Globe / tactical intel tab |
+| `ares-finance` | sibling `ares-finance` | Monarch Money sync, offline SQLite, card optimizer tab |
+| `ares-creator` | sibling `ares-creator` | VTuber avatar overlay, YouTube learning, video scripting tab |
 | `assistant-avatar` | Hermes WebUI archive | Assistant avatar tab |
 | `auto-list` | Hermes WebUI archive | Auto-list composer helper |
 | `custom-avatar` | Hermes WebUI archive | Custom avatar |

@@ -5,7 +5,7 @@
   "description": "Tactical 3D globe sidecar for ARES: live flights, satellites, ships, earthquakes, and traffic on CesiumJS.",
   "author": "Jenkins Robotics",
   "homepage": "https://github.com/JenkinsRobotics/ares-worldview",
-  "license": "UNLICENSED-UPSTREAM",
+  "license": "MIT",
   "category": "Geospatial Intelligence",
   "capabilities": [
     "sidecar",

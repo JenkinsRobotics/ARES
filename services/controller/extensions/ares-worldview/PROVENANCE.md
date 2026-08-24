@@ -1,31 +1,17 @@
 # Provenance
 
-`ares-worldview` is an ARES extension **drafted** from a local clone of
+`ares-worldview` is an ARES extension **drafted** from a clone of
 
 **Upstream:** https://github.com/kevtoe/worldview  
-**Snapshot SHA:** `44e0900ad0bf8530a974a6cdab181342c42b06e9`  
+**Latest Synced SHA:** `db607a44f15c037fefc4969a7fd607d7f625c171`  
 **Clone name on this machine:** `worldview2`
 
-A frozen copy of that SHA also lives in the gitignored tree
-`ARES/drafts/upstream/worldview2/`.
+## License status
 
-## License status (blocking for publish)
+The upstream project is officially licensed under the **MIT License** (added in upstream commit `afcf404`, Copyright (c) 2026 Kevin (Khoa) To).
 
-The upstream tree has **no LICENSE file**. Its README states the project is
-for educational and demonstration purposes and that no commercial use is
-intended. External API use is subject to each provider's terms.
+ARES wrapper files (`manifest.json`, `dashboard/`, this file, `EXTENSION.md`) are Jenkins Robotics scaffolding for the extension slot.
 
-Until that is resolved with the author, or the globe is rewritten:
+## What was synced
 
-- Keep this repo **local**.
-- Do not `git push` to Jenkins Robotics.
-- Do not ship inside an ARES release tarball.
-
-New ARES wrapper files (`manifest.json`, `dashboard/`, this file,
-`EXTENSION.md`) are Jenkins Robotics scaffolding for the extension slot.
-They do not relicense the upstream Cesium app or Express sidecar.
-
-## What was copied
-
-Tracked files from `git archive HEAD` of `worldview2` at the SHA above.
-Not copied: `.git`, `node_modules/`, `dist/`.
+Tracked files from upstream `main` (`db607a4`) merged with ARES extension scaffolding.

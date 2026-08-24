@@ -1,19 +1,20 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/WORLDVIEW-Tactical%20Intelligence-00D4FF?style=for-the-badge&labelColor=0A0A0A" alt="WorldView" />
+  <img src="public/worldview-cover.jpg" alt="Worldview real-time global intelligence cover" width="100%" />
 </p>
 
-<h1 align="center">🌍 WORLDVIEW — Tactical Intelligence Platform</h1>
+<h1 align="center">WORLDVIEW</h1>
 
 <p align="center">
-  A real-time global intelligence dashboard rendered on a 3D CesiumJS globe.<br/>
-  Track flights, satellites, ships, earthquakes, traffic, and CCTV cameras — all in one tactical interface.
+  <strong>See the world as a live system.</strong><br/>
+  Explore flights, satellites, ships, earthquakes, traffic and public CCTV feeds
+  on one interactive 3D globe.
 </p>
 
 <p align="center">
-  <a href="https://worldview.kt-o.com"><strong>🔗 Live Demo — worldview.kt-o.com</strong></a>
+  <a href="https://worldview.khoa.to"><strong>Open the live globe</strong></a>
+  ·
+  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fkevtoe%2Fworldview"><strong>Deploy your own</strong></a>
 </p>
-
-https://github.com/user-attachments/assets/b2bd05d2-f7be-49c8-a8c6-452b6b60cb34
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React 19" />
@@ -24,11 +25,22 @@ https://github.com/user-attachments/assets/b2bd05d2-f7be-49c8-a8c6-452b6b60cb34
   <img src="https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white" alt="Express 5" />
 </p>
 
+<p align="center">
+  <a href="https://worldview.khoa.to"><img alt="Live demo" src="https://img.shields.io/badge/live-worldview.khoa.to-00D4FF?style=for-the-badge&labelColor=0A0A0A"></a>
+  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fkevtoe%2Fworldview"><img alt="Deploy with Vercel" src="https://vercel.com/button"></a>
+</p>
+
+https://github.com/user-attachments/assets/b2bd05d2-f7be-49c8-a8c6-452b6b60cb34
+
 ---
 
 ## Overview
 
-WorldView is a full-stack tactical intelligence platform that aggregates multiple real-time data sources onto an interactive 3D globe. Inspired by military command-and-control interfaces, it features a dark tactical UI with optional post-processing effects (CRT scanlines, night vision, thermal imaging).
+Worldview is a full-stack situational-awareness dashboard that aggregates
+multiple live public data sources onto an interactive 3D globe. It combines a
+high-density tactical interface with optional CRT, night-vision and thermal
+rendering modes—without hiding the underlying sources or requiring every API key
+to get started.
 
 ### Key Capabilities
 
@@ -38,8 +50,8 @@ WorldView is a full-stack tactical intelligence platform that aggregates multipl
 | 🛰️ **Satellites** | CelesTrak TLE + SGP4 | 2 s propagation | Real-time orbital position, orbit paths, ground tracks, nadir lines |
 | 🌋 **Earthquakes** | USGS GeoJSON | 60 s | Past 24 hours, magnitude-scaled pulsing markers with colour coding |
 | 🚗 **Traffic** | OpenStreetMap Overpass | On-demand | Road network overlay with animated vehicle particle simulation |
-| � **Naval / AIS** | AISStream.io WebSocket | 30 s (20 s burst + 60 s cache) | Global vessel tracking with ship type categorisation, heading trails, dead-reckoning |
-| �📹 **CCTV** | TfL, Austin TX, Transport NSW | 5 min | Live camera feeds from London, Austin, and New South Wales |
+| 🚢 **Naval / AIS** | AISStream.io WebSocket | 30 s (20 s burst + 60 s cache) | Global vessel tracking with ship type categorisation, heading trails, dead-reckoning |
+| 📹 **CCTV** | TfL, Austin TX, Transport NSW | 5 min | Live camera feeds from London, Austin, and New South Wales |
 
 ---
 
@@ -92,7 +104,7 @@ The interface features:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/kevtoe/worldview.git
 cd worldview
 
 # Install dependencies
@@ -116,8 +128,8 @@ Then edit each file with your own API keys (see [Obtaining API Keys](#obtaining-
 
 | Variable | Required? | Purpose |
 |---|---|---|
-| `VITE_GOOGLE_API_KEY` | Optional | Google Maps 3D Photorealistic Tiles (falls back to OpenStreetMap) |
-| `VITE_CESIUM_ION_TOKEN` | Optional | Cesium Ion terrain/imagery services |
+| `VITE_CESIUM_ION_TOKEN` | Recommended | Streams Google Photorealistic 3D Tiles via Cesium ion. Free Community tier covers 1,000 root tiles/month; scope the token to asset `2275207` and your domain. Falls back to OpenStreetMap when absent or over quota. |
+| `VITE_GOOGLE_API_KEY` | Optional | Bills Google directly for the same 3D tiles. Only set this if you want paid volume beyond the ion free tier — it is public in the JS bundle, so restrict it to the Map Tiles API, add an HTTP referrer restriction, and set a daily quota cap. |
 | `WINDY_API_KEY` | Optional | Windy webcam API (reserved, not yet active) |
 | `NSW_TRANSPORT_API_KEY` | Optional | Transport for NSW CCTV cameras |
 | `AISSTREAM_API_KEY` | Optional | AISStream.io global AIS ship tracking |
@@ -212,12 +224,13 @@ npm run preview
 
 This project is pre-configured for [Vercel](https://vercel.com/) via `vercel.json`. The Express backend runs as a Vercel Serverless Function.
 
-### 1. Import the Project
+### 1. Deploy your copy
 
-1. Push your repo to GitHub
-2. Go to [vercel.com/new](https://vercel.com/new) → **Import Git Repository**
-3. Select your repo → Vercel auto-detects the Vite framework from `vercel.json`
-4. Click **Deploy**
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fkevtoe%2Fworldview)
+
+The template imports this repository, detects Vite from `vercel.json` and deploys
+the key-free fallback experience immediately. Add optional API credentials
+afterwards to unlock richer data sources.
 
 ### 2. Set Environment Variables
 
@@ -576,6 +589,20 @@ If you discover a credential leak or security issue, please open an issue immedi
 
 ## Licence
 
-This project is for **educational and demonstration purposes only**. External API usage is subject to each provider's terms of service and rate limits. No commercial use is intended.
+Released under the [MIT Licence](LICENSE) — free to use, modify, fork and build
+on, including commercially.
 
-**You are responsible for securing your own API keys and managing your own API usage costs.** The authors accept no liability for charges incurred through misconfigured or unrestricted API credentials.
+### Third-party data and API terms
+
+The MIT licence covers **this project's own source code**. It does not and cannot
+grant any rights over the external services this app consumes. Every data source
+listed under [Acknowledgements](#acknowledgements) — Google Photorealistic 3D
+Tiles, FlightRadar24, adsb.fi, OpenSky, CelesTrak, USGS, Overpass, TfL, Transport
+NSW, AISStream and the rest — carries its own terms of service, licensing and
+rate limits. Several restrict commercial or high-volume use. **Check the terms of
+each provider you enable before deploying anything beyond personal or
+demonstration use.**
+
+**You are responsible for securing your own API keys and managing your own API
+usage costs.** The authors accept no liability for charges incurred through
+misconfigured or unrestricted API credentials.

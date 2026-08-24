@@ -211,24 +211,24 @@ export function ActivationScreen() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 {[
-                  "Jaeger AI Synthetic Intelligence Setup",
-                  "Name yourself and your Jaeger AI SI.",
-                  `Shape ${draft.assistantName || "Jaeger AI"}.`,
-                  "Choose safety & system boundaries.",
-                  "Choose local LLM & worker backends.",
-                  "Your Jaeger AI Companion is active.",
+                  "Set up ARES with Jaeger AI",
+                  "Name your local workspace.",
+                  `Choose how ${draft.assistantName || "Jaeger AI"} communicates.`,
+                  "Choose privacy and access settings.",
+                  "Choose an execution runtime.",
+                  "Review your setup.",
                 ][step]}
               </h1>
               <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
                 {[
-                  "ARES provides the multi-agent control plane. Your Companion sits above worker backends such as Jaeger AI, Hermes, Claude, and Ollama to maintain relationship continuity, intent routing, and local privacy.",
-                  "Set the operator and SI Companion names used throughout your private workspace. They remain active even when subagent workers are offline.",
-                  "Configure Jaeger AI persona attention, character tone, and life focus areas.",
-                  "Decide reachability (this Mac, LAN, or trusted network) and context indexing policies.",
-                  "Select your local LLM engine (Ollama/MLX) or backend runtime to process turns and command subagents.",
+                  "ARES is the local experience and governance layer. Jaeger AI remains the authoritative runtime for its identity, conversations, goals, and cognitive state.",
+                  "Set the names ARES displays in this workspace. Runtime-owned identity remains managed by Jaeger AI.",
+                  "Configure presentation preferences and the areas you want surfaced in ARES.",
+                  "Decide reachability and whether ARES may index local context or existing CLI history.",
+                  "Select the runtime ARES will call through its negotiated integration contract, or continue without AI execution.",
                   intelligenceChoice?.kind === "runtime"
-                    ? "Your Jaeger AI Local Profile and worker runtime are active. All subagent turns will log transparently with full provenance."
-                    : "Your Jaeger AI Local Profile is active. The Companion organizer remains ready to connect workers.",
+                    ? "Your local ARES profile is saved and a runtime is selected. Runtime availability is verified separately."
+                    : "Your local ARES profile is saved without selecting an AI runtime.",
                 ][step]}
               </p>
             </div>
@@ -362,7 +362,7 @@ export function ActivationScreen() {
           ) : step === 4 ? (
             <div className="grid gap-4">
               <p className="text-center text-xs text-muted-foreground">
-                Required step: nothing is selected by default. Your Companion controls routing — you choose the workers.
+                Required step: nothing is selected by default. Choose the runtime ARES should call for execution.
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {runtimes.map((runtime) => {
@@ -424,8 +424,8 @@ export function ActivationScreen() {
                     </Badge>
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Use your Companion for profile, workspace, journal, and tools without an AI execution worker.
-                    You can connect Jaeger AI, Ollama, Hermes, or cloud later — nothing is silently assumed.
+                    Use ARES for local profile, workspace, and journal features without an AI execution runtime.
+                    You can connect Jaeger AI, Ollama, or a cloud adapter later — nothing is silently assumed.
                   </p>
                 </button>
               </div>

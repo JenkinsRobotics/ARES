@@ -2,12 +2,10 @@ import type { LocalProfile } from "@/shared/contracts";
 
 export const ONBOARDING_STEPS = [
   "Welcome",
-  "You",
-  "Jaeger Character",
-  "Jaeger Model",
-  "Companion",
-  "Access",
-  "Intelligence",
+  "Identity",
+  "Character",
+  "Privacy",
+  "Runtime",
   "Review",
 ] as const;
 
@@ -43,8 +41,8 @@ export function stepAfterIdentity(mode: LocalProfile["setupMode"]): 2 {
   return 2; // Always go to the Jaeger AI character step after identity
 }
 
-export function stepBeforeIntelligence(mode: LocalProfile["setupMode"]): 5 {
-  return 5; // Access step is now at index 5
+export function stepBeforeIntelligence(mode: LocalProfile["setupMode"]): 3 {
+  return 3;
 }
 
 /** First-run intelligence selection — nothing is pre-selected. */

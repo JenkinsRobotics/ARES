@@ -15,20 +15,18 @@ describe("Local Profile onboarding contract", () => {
   it("keeps Quickstart and Advanced on one canonical flow", () => {
     expect(ONBOARDING_STEPS).toEqual([
       "Welcome",
-      "You",
-      "Jaeger Character",
-      "Jaeger Model",
-      "Companion",
-      "Access",
-      "Intelligence",
+      "Identity",
+      "Character",
+      "Privacy",
+      "Runtime",
       "Review",
     ]);
-    // After identity ("You"), both modes enter Jaeger character (index 2).
+    // After identity, both modes enter character setup (index 2).
     expect(stepAfterIdentity("quick")).toBe(2);
     expect(stepAfterIdentity("advanced")).toBe(2);
-    // Access is index 5; step before Intelligence is Access.
-    expect(stepBeforeIntelligence("quick")).toBe(5);
-    expect(stepBeforeIntelligence("advanced")).toBe(5);
+    // Runtime selection must return to the immediately preceding privacy step.
+    expect(stepBeforeIntelligence("quick")).toBe(3);
+    expect(stepBeforeIntelligence("advanced")).toBe(3);
   });
 
   it("keeps profile choices bounded and unique", () => {

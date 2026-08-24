@@ -1,4 +1,4 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import {
   Circle,
   CircleCheck,
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { aresApi } from "@/shared/ares-api";
 import { useProductState } from "@/shared/use-product-state";
 
 type GoalStatus = "not_started" | "in_progress" | "done";
@@ -62,6 +63,24 @@ export function GoalsPage() {
   const [filter, setFilter] = useState<GoalStatus | "all">("all");
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [pendingEffects, setPendingEffects] = useState<Array<Record<string, unknown>>>([]);
+  const [effectError, setEffectError] = useState("");
+  const [effectBusy, setEffectBusy] = useState("");
+
+  const refreshEffects = useCallback(() => {
+    void aresApi.pendingEffects()
+      .then((payload) => {
+        setPendingEffects(Array.isArray(payload.effects) ? payload.effects : []);
+        setEffectError("");
+      })
+      .catch(() => {
+        setPendingEffects([]);
+      });
+  }, []);
+
+  useEffect(() => {
+    refreshEffects();
+  }, [refreshEffects]);
 
   const filtered = goals
     .filter((g) => filter === "all" || g.status === filter)
@@ -138,6 +157,61 @@ export function GoalsPage() {
       />
       {goalStatus.error && <p className="text-sm text-destructive" role="alert">{goalStatus.error}</p>}
       {goalStatus.loading && <p className="text-sm text-muted-foreground" role="status">Loading goals…</p>}
+
+      {pendingEffects.length > 0 ? (
+        <Card className="border-amber-500/40">
+          <CardHeader>
+            <CardTitle className="text-base">Indeterminate side effects</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              JaegerAI claimed these actions and never recorded an outcome. ARES does not retry them.
+              Confirm they landed, then resolve, or abandon so the runtime may try again.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {effectError ? <p className="text-sm text-destructive" role="alert">{effectError}</p> : null}
+            {pendingEffects.map((effect) => {
+              const key = String(effect.key || "");
+              return (
+                <div key={key} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium">{String(effect.action || key)}</p>
+                    <p className="text-xs text-muted-foreground">{key} · claimed {String(effect.claimed_at || "")}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={!!effectBusy}
+                      onClick={() => {
+                        setEffectBusy(key);
+                        void aresApi.resolveEffect(key, "confirmed-by-operator")
+                          .then(() => refreshEffects())
+                          .catch((error: unknown) => setEffectError(error instanceof Error ? error.message : "Resolve failed"))
+                          .finally(() => setEffectBusy(""));
+                      }}
+                    >
+                      Resolve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!!effectBusy}
+                      onClick={() => {
+                        setEffectBusy(key);
+                        void aresApi.abandonEffect(key)
+                          .then(() => refreshEffects())
+                          .catch((error: unknown) => setEffectError(error instanceof Error ? error.message : "Abandon failed"))
+                          .finally(() => setEffectBusy(""));
+                      }}
+                    >
+                      Abandon
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Tabs
         value={filter}

@@ -178,8 +178,8 @@ export function ActivationScreen() {
             <Sparkles className="size-6" />
           </div>
           <div>
-            <p className="text-lg font-semibold tracking-tight">Starting your Companion</p>
-            <p className="mt-1 text-sm text-muted-foreground">Checking your local system and worker connections…</p>
+            <p className="text-lg font-semibold tracking-tight">Starting ARES</p>
+            <p className="mt-1 text-sm text-muted-foreground">Checking your local system and runtime connections…</p>
           </div>
           <LoaderCircle className="size-5 animate-spin text-primary" />
         </div>
@@ -197,7 +197,7 @@ export function ActivationScreen() {
             </div>
             <div>
               <p className="font-semibold tracking-wide">ARES</p>
-              <p className="text-xs text-muted-foreground">App for your Companion</p>
+              <p className="text-xs text-muted-foreground">Experience and governance for Jaeger AI</p>
             </div>
           </div>
           <Badge variant="outline" className="gap-1.5 text-status-available">
@@ -262,14 +262,14 @@ export function ActivationScreen() {
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{mode.detail}</p>
                 </button>
               ))}
-              <p className="text-center text-xs text-muted-foreground sm:col-span-2">Both paths save your Local Profile. You can re-run this character wizard anytime from Companion home.</p>
+              <p className="text-center text-xs text-muted-foreground sm:col-span-2">Both paths save your Local Profile. You can re-run this setup anytime from ARES home.</p>
             </div>
           ) : step === 1 ? (
             <Card className="border-border/80 bg-card/85 shadow-2xl shadow-black/10 backdrop-blur-xl">
               <CardContent className="grid gap-6 p-6 sm:p-8">
                 <div className="flex items-center gap-3">
                   <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><UserRound className="size-5" /></div>
-                  <div><p className="font-semibold">Identity & Companion Name</p><p className="text-sm text-muted-foreground">Define your operator handle and SI name.</p></div>
+                  <div><p className="font-semibold">Identity & SI name</p><p className="text-sm text-muted-foreground">Names ARES displays. Runtime identity stays with Jaeger AI.</p></div>
                 </div>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div className="grid gap-2"><Label htmlFor="setup-owner">What should ARES call you?</Label><Input id="setup-owner" autoFocus value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} placeholder="Your name" /></div>
@@ -318,7 +318,7 @@ export function ActivationScreen() {
             <Card className="border-border/80 bg-card/85 shadow-2xl shadow-black/10">
               <CardContent className="grid gap-7 p-6 sm:p-8">
                 <div className="grid gap-3">
-                  <Label>Companion character</Label>
+                  <Label>Character</Label>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {CHARACTER_OPTIONS.map((character) => (
                       <button key={character} type="button" onClick={() => setDraft({ ...draft, character })} className={cn("rounded-lg border px-3 py-3 text-sm capitalize transition hover:border-primary/60", draft.character === character && "border-primary bg-primary/10 text-primary")}>{character}</button>
@@ -514,8 +514,8 @@ export function ActivationScreen() {
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {intelligenceChoice?.kind === "runtime"
-                        ? "Verified selection. Chat uses this worker; your Companion keeps the unified journal."
-                        : "Companion organizer and journal available. Connect a worker when you want execution."}
+                        ? "Verified selection. Chat uses this runtime; ARES keeps the local journal."
+                        : "ARES organizer and journal are available. Connect a runtime when you want execution."}
                     </p>
                   </div>
                 </div>

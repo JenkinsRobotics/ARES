@@ -16,3 +16,5 @@ ARES remains the experience/governance layer. It must not import
 - Agent 3 (`8d32aab81`): onboarding is six implemented steps; Back from
   runtime returns to privacy; ARES is experience/governance, JaegerAI
   is the runtime. Frontend 61 passed.
+- Agent 3 follow-up: onboarding copy no longer says Companion SI;
+  Goals page can resolve/abandon Jaeger-owned indeterminate effects.

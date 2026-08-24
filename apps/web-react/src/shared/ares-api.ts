@@ -641,6 +641,22 @@ export const aresApi = {
   // ══════════════════════════════════════════════════════════════════
   // Schedules (Crons)
   // ══════════════════════════════════════════════════════════════════
+  async pendingEffects() {
+    return apiFetch<{ owner: string; effects: Array<Record<string, unknown>> }>("/api/effects");
+  },
+  async resolveEffect(key: string, result?: unknown) {
+    return apiFetch<{ ok: boolean }>("/api/effects/resolve", {
+      method: "POST",
+      body: JSON.stringify({ key, result }),
+    });
+  },
+  async abandonEffect(key: string) {
+    return apiFetch<{ ok: boolean }>("/api/effects/abandon", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    });
+  },
+
   async schedules(allProfiles = false) {
     return apiFetch<{ schedules: ScheduleEntry[] }>(`/api/crons?all_profiles=${allProfiles ? "1" : "0"}`);
   },

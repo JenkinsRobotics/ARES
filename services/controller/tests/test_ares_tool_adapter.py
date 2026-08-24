@@ -152,69 +152,133 @@ class TestToolAdapter:
         assert expected.issubset(published)
         assert expected.issubset(HANDLERS)
 
-    def test_stdio_mcp_dispatches_canonical_ares_tool(self, monkeypatch):
+    def test_stdio_mcp_dispatches_canonical_ares_tool(self):
+        """A registered tool is callable through the MCP boundary.
+
+        Uses ``ares_get_mode`` — a read-only tool taking no arguments — so the
+        test exercises real dispatch rather than a stub, without side effects.
+        The retired ``ares_list_artifacts`` this used to call was removed in
+        651c14433 along with the rest of the old surface.
+        """
         import mcp_server
+        from api.ares_tools import ARES_TOOL_DEFS
 
-        monkeypatch.setattr(
-            "api.workspace_artifacts.list_artifacts",
-            lambda session_id: {"session_id": session_id, "count": 0, "items": []},
+        name = "ares_get_mode"
+        assert name in {tool["name"] for tool in ARES_TOOL_DEFS}, (
+            "the probe tool is no longer registered; pick another NoArgs tool"
         )
-        result = asyncio.run(mcp_server.call_tool(
-            "ares_list_artifacts", {"session_id": "session-1"}
-        ))
-        assert json.loads(result[0].text) == {
-            "session_id": "session-1", "count": 0, "items": [],
+        result = asyncio.run(mcp_server.call_tool(name, {}))
+        payload = json.loads(result[0].text)
+        assert isinstance(payload, dict)
+        assert "error" not in payload or payload.get("ok") is not False
+
+
+class TestAresToolRegistryContract:
+    """The registry contract, not a list of tool names copied into a test.
+
+    651c14433 replaced the entire ARES tool surface — eleven tools out
+    (``ares_get_runtime_context``, ``ares_create_task``, ``ares_extract_pdf``,
+    ``ares_ingest_youtube``, ``ares_edit_image``, ``ares_create_visual_report``,
+    ``ares_list_artifacts``, ``ares_start_research`` and friends), eight in.
+    The previous tests named the old ones and so failed on every run after that
+    commit, which is what a hand-copied list of names always eventually does.
+
+    These assert the PROPERTIES the registry has to keep instead, so adding or
+    retiring a tool is a one-line change in ``ares_tools.py`` and nothing here
+    needs editing — while a tool that silently loses its metadata, its
+    callable, or its place at the MCP boundary still fails loudly.
+    """
+
+    def test_every_registered_tool_is_discoverable_and_callable(self):
+        from api.ares_tools import ARES_TOOL_DEFS, ARES_TOOLS_REGISTRY
+
+        assert ARES_TOOL_DEFS, "the ARES tool registry is empty"
+        names = [str(d["name"]) for d in ARES_TOOL_DEFS]
+        assert len(names) == len(set(names)), f"duplicate tool names: {names}"
+        for definition in ARES_TOOL_DEFS:
+            name = str(definition["name"])
+            assert name.startswith("ares_"), f"{name} is not namespaced to ARES"
+            assert callable(ARES_TOOLS_REGISTRY.get(name)), f"{name} has no callable"
+
+    def test_registry_is_derived_from_the_definitions(self):
+        """One registration point (AGENTS.md rule 4) — so it cannot drift."""
+        from api.ares_tools import ARES_TOOL_DEFS, ARES_TOOLS_REGISTRY
+
+        assert set(ARES_TOOLS_REGISTRY) == {str(d["name"]) for d in ARES_TOOL_DEFS}
+        for definition in ARES_TOOL_DEFS:
+            assert ARES_TOOLS_REGISTRY[str(definition["name"])] is definition["fn"]
+
+    def test_capability_metadata_is_complete(self):
+        """Every tool carries what a consumer needs to publish it.
+
+        A missing description or args_model does not fail at registration — it
+        fails later, at the MCP or JaegerAI boundary, where the cause is much
+        harder to see.
+        """
+        from api.ares_tools import ARES_TOOL_DEFS
+
+        for definition in ARES_TOOL_DEFS:
+            name = str(definition.get("name") or "")
+            description = str(definition.get("description") or "").strip()
+            assert description, f"{name} has no description"
+            assert description.endswith("."), f"{name} description is not a sentence"
+            assert definition.get("args_model") is not None, f"{name} has no args_model"
+            assert hasattr(definition["args_model"], "model_json_schema"), (
+                f"{name} args_model is not a pydantic model"
+            )
+
+    def test_retired_tools_do_not_silently_reappear(self):
+        """The old surface was retired deliberately; re-adding one is a decision.
+
+        Named explicitly rather than as "anything not in the current list",
+        because the point is not to freeze the registry — it is to make the
+        return of a specific withdrawn tool visible in review instead of
+        arriving as a merge artifact from the pre-651c14433 tree.
+        """
+        from api.ares_tools import ARES_TOOLS_REGISTRY
+
+        retired = {
+            "ares_get_runtime_context", "ares_create_task", "ares_update_task",
+            "ares_extract_pdf", "ares_fill_pdf_form", "ares_ingest_youtube",
+            "ares_edit_image", "ares_create_visual_report", "ares_list_artifacts",
+            "ares_start_research", "ares_get_research",
         }
-
-
-# ── ARES Tools (the actual callable tools) ────────────────────────
-
-class TestAresTools:
-    """ares_tools.py: the callable ARES-owned tool implementations."""
-
-    def test_module_exports_all_tools(self):
-        """Module exports the tool functions."""
-        from api.ares_tools import (
-            ares_get_runtime_context,
-            ares_create_task,
-            ares_update_task,
-            ares_extract_pdf,
-            ares_ingest_youtube,
-            ares_edit_image,
-            ares_create_visual_report,
+        returned = retired & set(ARES_TOOLS_REGISTRY)
+        assert not returned, (
+            f"tools retired in 651c14433 are registered again: {sorted(returned)}. "
+            "If that is intended, remove them from this list in the same change."
         )
 
-        assert callable(ares_get_runtime_context)
-        assert callable(ares_create_task)
-        assert callable(ares_update_task)
-        assert callable(ares_extract_pdf)
-        assert callable(ares_ingest_youtube)
-        assert callable(ares_edit_image)
-        assert callable(ares_create_visual_report)
+    def test_dispatch_rejects_an_unknown_tool_without_raising(self):
+        """Consumers get a stable error shape, not an exception."""
+        from api.ares_tools import dispatch_ares_tool
 
-    def test_get_runtime_context_returns_json(self):
-        """ares_get_runtime_context returns valid JSON string."""
-        from api.ares_tools import ares_get_runtime_context
+        result = dispatch_ares_tool("ares_definitely_not_a_tool", {})
+        assert result["ok"] is False
+        assert "Unknown ARES tool" in result["error"]
 
-        result = ares_get_runtime_context()
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
-        assert "identity_projection" in parsed
+    def test_consumers_receive_stable_structures(self):
+        """Both boundaries publish every registered tool, with schemas.
 
-    def test_create_task_returns_confirmation(self):
-        """ares_create_task creates a task and returns confirmation."""
-        from api.ares_tools import ares_create_task
+        The MCP surface and the JaegerAI ToolDef surface read the same list, so
+        a tool that reaches one and not the other means a consumer stopped
+        deriving from ``ARES_TOOL_DEFS``.
+        """
+        from api.ares_tool_adapter import register_ares_tools
+        from api.ares_tools import ARES_TOOL_DEFS
 
-        result = ares_create_task(
-            title="Test task",
-            description="A test task",
-            priority="medium",
-        )
-        parsed = json.loads(result)
-        assert parsed["status"] == "created"
-        assert parsed["title"] == "Test task"
+        expected = {str(d["name"]) for d in ARES_TOOL_DEFS}
+        for target in ("mcp", "jaeger"):
+            published = register_ares_tools(target)
+            assert isinstance(published, list), f"{target} did not return a list"
+            names = {
+                str(item.get("name") if isinstance(item, dict) else getattr(item, "name", ""))
+                for item in published
+            }
+            assert expected <= names, (
+                f"{target} is missing {sorted(expected - names)}"
+            )
 
-# ── Integration: Runtime Context injection into streaming ─────────
 
 class TestStreamingIntegration:
     """Runtime context is injectable into the streaming path."""

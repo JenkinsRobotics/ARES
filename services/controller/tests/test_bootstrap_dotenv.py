@@ -31,6 +31,10 @@ class TestLoadRepoDotenv:
 
     def setup_method(self):
         self._saved_env = os.environ.copy()
+        # The suite sets ARES_WEBUI_PRESERVE_ENV so a developer's .env cannot
+        # override explicit test config. These tests exist to prove the
+        # overwrite path, so the preserve flag has to be off here.
+        os.environ.pop("ARES_WEBUI_PRESERVE_ENV", None)
 
     def teardown_method(self):
         os.environ.clear()

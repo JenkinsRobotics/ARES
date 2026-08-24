@@ -130,19 +130,7 @@ def _jaeger_jobs() -> list[dict] | None:
         return None
 
 
-def list_schedules(*, all_profiles: bool = False) -> dict:
-    jaeger_jobs = _jaeger_jobs()
-    if jaeger_jobs is not None:
-        from api.profiles import get_active_profile_name
-
-        active = get_active_profile_name() or "default"
-        return {
-            "jobs": [_job_for_api(row) for row in jaeger_jobs],
-            "all_profiles": bool(all_profiles),
-            "active_profile": active,
-            "other_profile_count": 0,
-            "owner": "jaeger",
-        }
+def _local_schedule_payload(*, all_profiles: bool = False) -> dict:
     ensure_schedule_runtime()
     try:
         from api.schedule_jobs import list_jobs
@@ -185,6 +173,7 @@ def list_schedules(*, all_profiles: bool = False) -> dict:
         target.extend(
             {
                 **_job_for_api(row),
+                "owner": "ares_local",
                 "owner_profile": owner,
                 "read_only": not is_active,
             }
@@ -198,16 +187,93 @@ def list_schedules(*, all_profiles: bool = False) -> dict:
     }
 
 
+def list_schedules(*, all_profiles: bool = False) -> dict:
+    """List schedules from a single visible catalog.
+
+    JaegerAI is SI-authoritative when its scheduler is available. ARES
+    ``jobs.json`` is a compatibility projection: jobs that exist only
+    there stay visible (tagged ``owner=ares_local``) so a create that
+    landed locally while Jaeger was down cannot vanish the moment the
+    agent starts. They are never silently mixed into Jaeger's own ids.
+
+    A create still writes ONE store. Listing both is projection, not
+    dual authority.
+    """
+    local = _local_schedule_payload(all_profiles=all_profiles)
+    jaeger_jobs = _jaeger_jobs()
+    if jaeger_jobs is None:
+        for row in local.get("jobs") or []:
+            row.setdefault("owner", "ares_local")
+        return local
+
+    from api.profiles import get_active_profile_name
+
+    active = get_active_profile_name() or "default"
+    jaeger_rows = []
+    seen = set()
+    for row in jaeger_jobs:
+        job = _job_for_api(row)
+        job["owner"] = "jaeger"
+        jaeger_rows.append(job)
+        seen.add(str(job.get("id") or ""))
+        seen.add(str(job.get("name") or ""))
+    seen.discard("")
+
+    compat = []
+    for row in local.get("jobs") or []:
+        job = _job_for_api(row)
+        key = str(job.get("id") or "")
+        name = str(job.get("name") or "")
+        if key in seen or name in seen:
+            continue
+        job["owner"] = "ares_local"
+        compat.append(job)
+
+    return {
+        "jobs": jaeger_rows + compat,
+        "all_profiles": bool(all_profiles),
+        "active_profile": active,
+        "other_profile_count": int(local.get("other_profile_count") or 0),
+        "owner": "jaeger",
+        "compatibility_job_count": len(compat),
+    }
+
+
 def create_schedule(payload: dict[str, Any]) -> dict:
+    jaeger_available = False
     try:
         from api.providers.jaeger.schedules import create_job as create_jaeger_job
         from api.providers.jaeger.schedules import runtime_status
 
-        if runtime_status().get("available"):
+        jaeger_available = bool(runtime_status().get("available"))
+        if jaeger_available:
             job = create_jaeger_job(payload)
             return {"ok": True, "job": _job_for_api(job), "owner": "jaeger"}
     except Exception as exc:
-        logger.warning("Jaeger schedule create failed; using local store: %s", exc)
+        # Two very different situations used to land here together.
+        #
+        # Jaeger NOT running: falling back to the local store is right — the
+        # operator gets a schedule either way, and ``list_schedules`` reads the
+        # local store too while Jaeger is down. Nothing is hidden.
+        #
+        # Jaeger running but REFUSING the write (the live case: "confirmation
+        # refused for scheduling.schedule_prompt (tier WRITE_LOCAL)" — a tier-2
+        # tool with no confirmer on an API call): falling back wrote the job
+        # into a store that ``list_schedules`` will not read, because it sees
+        # Jaeger available and returns Jaeger's list exclusively. The API
+        # answered 200 OK with a job the operator can never see again.
+        #
+        # Reporting the refusal is the honest outcome: the schedule did not get
+        # created where it would be run from, and the fix is to approve the
+        # permission, which the operator can only do if they are told.
+        if jaeger_available:
+            logger.error("Jaeger owns schedules and refused the create: %s", exc)
+            raise ScheduleStoreError(
+                f"JaegerAI owns scheduling and refused to create this job: {exc}. "
+                "Approve the scheduling permission for the agent, or stop the "
+                "agent to use ARES's local scheduler."
+            ) from exc
+        logger.warning("Jaeger schedule create unavailable; using local store: %s", exc)
     ensure_schedule_runtime()
     from api.schedule_jobs import create_job, update_job
 
@@ -243,7 +309,23 @@ def create_schedule(payload: dict[str, Any]) -> dict:
     return {"ok": True, "job": _job_for_api(job)}
 
 
+def _job_owner(job_id: str) -> str | None:
+    """Where this id currently lives. None if neither store has it."""
+    listed = list_schedules(all_profiles=True)
+    for row in listed.get("jobs") or []:
+        if str(row.get("id") or "") == str(job_id):
+            return str(row.get("owner") or "") or None
+    return None
+
+
 def update_schedule(job_id: str, updates: dict[str, Any]) -> dict:
+    owner = _job_owner(job_id)
+    if owner == "jaeger":
+        raise ScheduleStoreError(
+            "JaegerAI owns this schedule; pause, resume, or cancel it "
+            "through the Jaeger scheduler rather than rewriting the local store.",
+            409,
+        )
     ensure_schedule_runtime()
     from api.schedule_jobs import update_job
 
@@ -258,24 +340,28 @@ def update_schedule(job_id: str, updates: dict[str, Any]) -> dict:
     job = update_job(job_id, cleaned)
     if not job:
         raise ScheduleStoreError("Job not found", 404)
-    return {"ok": True, "job": _job_for_api(job)}
+    return {"ok": True, "job": _job_for_api(job), "owner": "ares_local"}
 
 
 def delete_schedule(job_id: str) -> dict:
-    try:
-        from api.providers.jaeger.schedules import cancel_job, runtime_status
+    owner = _job_owner(job_id)
+    if owner == "jaeger":
+        from api.providers.jaeger.schedules import cancel_job
 
-        if runtime_status().get("available"):
+        try:
             cancel_job(job_id)
-            return {"ok": True, "job_id": job_id, "owner": "jaeger"}
-    except Exception as exc:
-        logger.debug("Jaeger schedule delete failed: %s", exc)
+        except Exception as exc:
+            raise ScheduleStoreError(
+                f"JaegerAI owns this schedule and refused to delete it: {exc}",
+                503,
+            ) from exc
+        return {"ok": True, "job_id": job_id, "owner": "jaeger"}
     ensure_schedule_runtime()
     from api.schedule_jobs import remove_job
 
     if not remove_job(job_id):
         raise ScheduleStoreError("Job not found", 404)
-    return {"ok": True, "job_id": job_id}
+    return {"ok": True, "job_id": job_id, "owner": "ares_local"}
 
 
 def _execution_home(job: dict):

@@ -59,6 +59,12 @@ def run_ctl(
             "ARES_CTL_NO_MENU_BAR": "1",
         }
     )
+    if not load_dotenv:
+        # Never fall back to production 8788. The suite's own test
+        # server and a human `./start.sh` both use real ports; stop
+        # must not match them. dotenv tests omit this so .env can set
+        # the port.
+        merged["ARES_WEBUI_PORT"] = "17999"
     if env:
         merged.update(env)
     return subprocess.run(

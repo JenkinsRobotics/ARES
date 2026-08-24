@@ -355,8 +355,35 @@ _is_owned_webui_pid() {
   args="$(_proc_args "${pid}")"
   [[ -n "${args}" ]] || return 1
   args_slash="${args//\\//}"
+  # A bare `uvicorn fastapi_app.main:app` used to count as OURS on its own.
+  # That match is machine-wide: it ignores repo root, state dir, HOME and
+  # port, so `ctl.sh stop` would terminate ANY process on the box running
+  # this ASGI app. Two checkouts (a worktree and the main clone) killed each
+  # other's servers, and `stop` reached into the pytest session's own
+  # isolated test server — which is what turned a single ctl test into a
+  # cascade of several hundred URLError failures in every later HTTP test.
+  #
+  # ctl.sh never launches uvicorn itself (it goes through bootstrap.py /
+  # start.sh), so this clause only ever recognised a server someone started
+  # by hand. The port is the one thing that says whether such a server is
+  # the one THIS ctl manages, so require it.
+  local uvicorn_ours=0
+  if [[ "${args_slash}" == *"uvicorn"* && "${args_slash}" == *"fastapi_app.main:app"* ]]; then
+    if [[ "${args_slash}" == *"--port"* ]]; then
+      if [[ "${args_slash}" == *"--port ${CTL_PORT}"* || "${args_slash}" == *"--port=${CTL_PORT}"* ]]; then
+        uvicorn_ours=1
+      fi
+    elif command -v lsof >/dev/null 2>&1 &&
+         lsof -nP -a -p "${pid}" -iTCP:"${CTL_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+      # No explicit --port: attribute it only if it is genuinely bound to our
+      # port. Unattributable is treated as NOT ours — this is the last-resort
+      # branch, and killing a stranger is worse than declining to stop.
+      uvicorn_ours=1
+    fi
+  fi
+
   [[ "${args_slash}" == *"${state_repo_slash}/bootstrap.py"* ||
-     ( "${args_slash}" == *"uvicorn"* && "${args_slash}" == *"fastapi_app.main:app"* ) ||
+     "${uvicorn_ours}" == 1 ||
      "${args_slash}" == *"${state_repo_slash}/server.py"* ||
      "${args_slash}" == *"${state_repo_slash}/start.sh"* ||
      ( -n "${state_repo_win_slash}" && "${args_slash}" == *"${state_repo_win_slash}/bootstrap.py"* ) ||

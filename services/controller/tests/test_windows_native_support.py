@@ -148,6 +148,10 @@ class TestBootstrapForegroundWindows:
         monkeypatch.setattr(bs, "wait_for_health", lambda *a, **kw: True)
         monkeypatch.setattr(bs, "open_browser", lambda *a, **kw: None)
         monkeypatch.setenv("ARES_WEBUI_STATE_DIR", str(tmp_path / "state"))
+        monkeypatch.setenv("ARES_WEBUI_PORT", "17999")
+        monkeypatch.setenv("ARES_WEBUI_HOST", "127.0.0.1")
+        monkeypatch.setattr(bs, "DEFAULT_PORT", 17999)
+        monkeypatch.setattr(bs, "DEFAULT_HOST", "127.0.0.1")
         (tmp_path / "agent").mkdir(parents=True, exist_ok=True)
         return bs
 

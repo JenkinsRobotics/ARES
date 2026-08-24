@@ -70,6 +70,21 @@ def _job_from_jaeger(row: dict[str, Any]) -> dict[str, Any]:
 
 def runtime_status() -> dict[str, Any]:
     """Status for the scheduled-jobs banner: Jaeger scheduler, not a Hermes gateway."""
+    from api.providers.jaeger.paths import jaeger_integration_disabled
+
+    if jaeger_integration_disabled():
+        # Answer exactly as an uninstalled JaegerAI does, so callers take the
+        # ARES-owned path deterministically instead of by whether the
+        # operator's agent is currently running.
+        return {
+            "available": False,
+            "scheduler": "jaeger",
+            "configured": False,
+            "running": False,
+            "job_count": 0,
+            "in_flight": {},
+            "message": "JaegerAI integration disabled (ARES_NO_JAEGER).",
+        }
     try:
         payload = _query_with_timeout("cron", {})
         if not isinstance(payload, dict):

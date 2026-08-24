@@ -480,7 +480,19 @@ def get_active_ares_home() -> Path:
 # subprocess.Popen() call inside `run_job` inherits the env at fork time,
 # which is also under the lock — so child processes always see a consistent
 # (own-profile) ARES_HOME, never a half-swapped state.
-_cron_env_lock = threading.Lock()
+#
+# REENTRANT, and it has to be. ``list_schedules`` enters this context once per
+# profile while resolving the internal (non-Jaeger) store, so any caller that
+# already holds it — the background thread behind ``/api/crons/run``, which is
+# the exact caller this ``_for_home`` variant exists to serve — re-entered on
+# the same thread and deadlocked outright. The thread-local depth counter below
+# shows nesting was always the intent; a plain Lock silently withheld it.
+#
+# Reentrancy is safe here because the env save/restore is per-instance and
+# strictly LIFO: an inner context records the OUTER's ARES_HOME on entry and
+# puts it back on exit, so unwinding restores each layer in turn. Cross-thread
+# exclusion is unchanged — an RLock is still exclusive to one thread.
+_cron_env_lock = threading.RLock()
 
 
 def _cron_profile_context_depth() -> int:

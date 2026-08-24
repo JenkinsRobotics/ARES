@@ -34,6 +34,40 @@ if not (3, 11) <= sys.version_info[:2] <= (3, 13):
         returncode=3,
     )
 
+# Strip credential-shaped environment variables from the PYTEST PROCESS,
+# not only from the uvicorn subprocess. JaegerAI's run_tests.sh already
+# does this; ARES tests that import api.* in-process could otherwise
+# pick up a real OPENAI_API_KEY / ANTHROPIC_API_KEY left in the shell.
+# Tests marked external/integration must opt in by restoring a key.
+_CREDENTIAL_ENV_EXACT = {
+    "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+    "AWS_PROFILE", "AWS_BEARER_TOKEN_BEDROCK",
+    "GITHUB_TOKEN", "GH_TOKEN", "GIT_ASKPASS",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+}
+_CREDENTIAL_ENV_KEEP = {
+    # Empty-string password is part of isolated test config, not a secret.
+    "ARES_WEBUI_PASSWORD",
+    "ARES_WEBUI_PRESERVE_ENV",
+}
+
+
+def _strip_credential_env(env=None):
+    target = os.environ if env is None else env
+    removed: list[str] = []
+    for name in list(target):
+        if name in _CREDENTIAL_ENV_KEEP:
+            continue
+        if name in _CREDENTIAL_ENV_EXACT or name.endswith(
+            ("_API_KEY", "_TOKEN", "_SECRET", "_PASSWORD")
+        ):
+            target.pop(name, None)
+            removed.append(name)
+    return removed
+
+
+_STRIPPED_CREDENTIAL_ENV = _strip_credential_env()
+
 WINDOWS = sys.platform == "win32"
 requires_fcntl = pytest.mark.skipif(
     WINDOWS,
@@ -190,6 +224,26 @@ TEST_WORKSPACE = TEST_STATE_DIR / 'test-workspace'
 # Direct assignment is intentional for production-risk paths: tests that import
 # api.config/api.models in the pytest process must never inherit the real
 # ~/.ares state tree before the server subprocess fixture starts.
+# A developer's untracked services/controller/.env must never outrank what a
+# test explicitly configures. ``bootstrap._load_repo_dotenv`` runs on import and
+# OVERWRITES os.environ from that file unless this is set — so a checkout whose
+# .env carries `ARES_WEBUI_HOST=0.0.0.0` (a normal thing to have for LAN access)
+# silently replaced the 127.0.0.1 that tests set for their own subprocesses.
+# The server then refused to start at all: `enforce_authenticated_network_bind`
+# rejects a 0.0.0.0 bind with no auth configured, and the isolated test home has
+# none by construction. That is the whole of the test_tls_support failure — the
+# suite's result depended on a file that is not in the repository.
+#
+# Set FIRST, before the isolated paths below, because those are the values it
+# has to protect.
+os.environ['ARES_WEBUI_PRESERVE_ENV'] = '1'
+# Behave as though JaegerAI is not installed. The provider decides ownership of
+# schedules (and other surfaces) by probing the live bridge, so a developer with
+# a running agent took the Jaeger path while CI — which has no JaegerAI at all —
+# always took the ARES-owned path. The schedules tests then passed or failed on
+# that difference alone, with no code change between runs. Tests that want the
+# Jaeger path stub the provider explicitly.
+os.environ['ARES_NO_JAEGER'] = '1'
 os.environ['ARES_WEBUI_TEST_PORT'] = str(TEST_PORT)
 os.environ['ARES_WEBUI_TEST_STATE_DIR'] = str(TEST_STATE_DIR)
 os.environ['ARES_WEBUI_STATE_DIR'] = str(TEST_STATE_DIR)
@@ -934,6 +988,10 @@ def test_server():
         # ~/.ares/profiles/webui/ and overwrite real API keys.
         "ARES_BASE_HOME":               str(TEST_STATE_DIR),
         "ARES_WEBUI_PASSWORD":          "",
+        # Inherited from the pytest process, but pin it here so a later
+        # env mutation cannot drop the seam that keeps the server off the
+        # operator's live JaegerAI bridge.
+        "ARES_NO_JAEGER":               "1",
     })
 
     # Pass agent dir if discovered so the adapter registry does not re-discover it.

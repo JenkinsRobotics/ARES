@@ -42,6 +42,9 @@ def test_gateway_emits_opaque_session_keys_without_ui_namespace():
 def test_canonical_mutation_fails_closed_without_v2_contract(monkeypatch):
     from api.session_contract import SessionCapabilityError, require_operation
 
+    # This test is the fail-closed contract for a SELECTED Jaeger runtime.
+    # The suite-wide ARES_NO_JAEGER seam would skip the check entirely.
+    monkeypatch.delenv("ARES_NO_JAEGER", raising=False)
     session = type("Session", (), {"transcript_owner": "jaeger"})()
     monkeypatch.setattr("api.session_contract.contract_for_backend", lambda _backend: None)
     with pytest.raises(SessionCapabilityError, match="v2 session contract"):

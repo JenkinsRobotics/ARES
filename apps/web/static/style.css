@@ -2391,8 +2391,13 @@
     .msg-body pre code .token,.preview-md pre code .token{white-space:inherit !important;overflow-wrap:anywhere !important;word-break:inherit !important;}
     .diff-block .diff-line{white-space:pre-wrap !important;overflow-wrap:anywhere !important;word-break:break-word !important;}
   }
-  .pre-header{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 16px 8px;background:var(--input-bg);border-radius:10px 10px 0 0;border:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;}
-  .pre-header::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--muted);opacity:.4;}
+  .pre-header{font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--muted);padding:6px 14px;background:var(--input-bg);border-radius:10px 10px 0 0;border:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .pre-lang{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);text-transform:uppercase;font-size:10.5px;}
+  .pre-lang::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--accent);opacity:.7;display:inline-block;}
+  .pre-actions{display:flex;align-items:center;gap:6px;margin-left:auto;}
+  .pre-action-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface-subtle);color:var(--text);font-size:11px;cursor:pointer;transition:all .15s ease;user-select:none;}
+  .pre-action-btn:hover{background:var(--hover-bg);border-color:var(--accent);color:var(--accent);}
+  .pre-action-btn.is-copied{color:var(--success) !important;border-color:var(--success) !important;}
   .msg-body .pre-header+pre{border-radius:0 0 10px 10px;border-top:none;margin-top:0;}
   /* Diff/patch viewer */
   .diff-block{margin:0;counter-reset:diff-line;}
@@ -4985,8 +4990,9 @@ main.main > #mainProfiles,
 main.main > #mainCharacters,
 main.main > #mainInsights,
 main.main > #mainLogs,
-main.main > #mainPlugin{display:none;}
-main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-characters):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex;}
+main.main > #mainPlugin,
+main.main > #mainDispatcher{display:none;}
+main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-characters):not(.showing-insights):not(.showing-logs):not(.showing-plugin):not(.showing-dispatcher) > #mainChat{display:flex;}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto;}
 main.main.showing-skills > #mainSkills{display:flex;}
 main.main.showing-memory > #mainMemory{display:flex;}
@@ -4997,6 +5003,7 @@ main.main.showing-profiles > #mainProfiles{display:flex;}
 main.main.showing-characters > #mainCharacters{display:flex;}
 main.main.showing-logs > #mainLogs{display:flex;}
 main.main.showing-plugin > #mainPlugin{display:flex;}
+main.main.showing-dispatcher > #mainDispatcher{display:flex;}
 #mainPlugin .main-view-body{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #pluginPageContainer{flex:1;display:flex;flex-direction:column;min-height:0;}
 #mainSettings{overflow-y:auto;}
@@ -7631,3 +7638,20 @@ html[data-conversation-outline="enabled"] #outlineToggleBtn:not([hidden]){displa
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
+
+
+/* ── runtime capability gating ──────────────────────────────────────
+   Restored after 06b924444 (donor WebUI reinstall) dropped it. ARES's
+   backend still negotiates capabilities per runtime (api/ares_capabilities.py
+   behind /api/ares/backend); only the frontend that consumed them was lost,
+   so a panel whose runtime cannot serve it looked exactly like one that could.
+   Unavailable surfaces are DIMMED by default and only hidden when the
+   operator opts in, so a missing capability is visible rather than silent. */
+button.capability-unavailable,.side-menu-item.capability-unavailable{opacity:.58;filter:saturate(.55);}
+.settings-section.capability-unavailable{border-left:3px solid rgba(224,155,48,.55);padding-left:12px;}
+.settings-section.capability-unavailable::before{content:"Currently unavailable";display:block;color:#e8a030;font-size:11px;font-weight:600;margin-bottom:8px;}
+.runtime-capability-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 16px;background:rgba(224,155,48,.12);border-bottom:1px solid rgba(224,155,48,.35);color:var(--text);font-size:12px;line-height:1.4;}
+.runtime-capability-banner[hidden]{display:none!important;}
+.runtime-capability-banner>div{display:flex;flex-direction:column;gap:2px;}
+.runtime-capability-banner strong{color:#e8a030;}
+.runtime-capability-banner span{color:var(--muted);}

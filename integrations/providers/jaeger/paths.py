@@ -9,6 +9,25 @@ JAEGER_HOME_ENV = "JAEGER_HOME"
 ARES_JAEGER_SOURCE_DIR_ENV = "ARES_JAEGER_SOURCE_DIR"
 ARES_JAEGER_INSTANCE_ENV = "ARES_JAEGER_INSTANCE"
 
+# Treat JaegerAI as absent even if it is installed and running.
+#
+# The provider decides availability by probing the live bridge, so any surface
+# that asks "does Jaeger own this?" gets a different answer depending on
+# whether the operator's agent happens to be up. CI has no JaegerAI at all, so
+# CI always took the ARES-owned path while a developer's machine took the
+# Jaeger path — the schedules tests passed or failed by that alone, with no
+# code change between runs.
+#
+# The test suite sets this so local runs match CI. Production never sets it.
+ARES_NO_JAEGER_ENV = "ARES_NO_JAEGER"
+
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def jaeger_integration_disabled() -> bool:
+    """True when this process must behave as though JaegerAI is not installed."""
+    return str(os.environ.get(ARES_NO_JAEGER_ENV, "")).strip().lower() in _TRUTHY
+
 
 def expand_path(value: str | os.PathLike[str]) -> Path:
     return Path(os.path.expandvars(str(value))).expanduser().resolve()

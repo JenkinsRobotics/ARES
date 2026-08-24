@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from api.backend_catalog import JAEGER_BACKEND_ID
@@ -10,6 +11,9 @@ from api.contracts import (
     MIN_SUPPORTED_SESSION_CONTRACT_VERSION,
     SESSION_CONTRACT_VERSION,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class SessionCapabilityError(RuntimeError):
@@ -55,6 +59,10 @@ def require_operation(operation: str, *, session: Any | None = None, backend: st
     Legacy runtimes retain ARES-owned persistence. Only a runtime that declares
     Jaeger transcript ownership is routed through the canonical bridge.
     """
+    from api.providers.jaeger.paths import jaeger_integration_disabled
+
+    if jaeger_integration_disabled():
+        return None
     if session is not None and not backend:
         owner = (
             session.get("transcript_owner")
@@ -77,6 +85,23 @@ def require_operation(operation: str, *, session: Any | None = None, backend: st
             f"Jaeger does not support the session {operation} operation"
         )
     return capability
+
+
+def is_operation_available(operation: str, *, session: Any | None = None, backend: str = "") -> bool:
+    """Non-raising predicate form of require_operation().
+
+    Callers that want to *probe* the Jaeger session contract — rather than
+    fail a request on it — ask here. Any negotiation failure answers False so
+    the caller falls back to ARES-owned handling rather than surfacing a 500
+    (DOCTRINE #4: capability-negotiated contracts fail closed).
+    """
+    try:
+        return require_operation(operation, session=session, backend=backend) is not None
+    except SessionCapabilityError:
+        return False
+    except Exception:  # bridge unreachable, malformed contract, negotiation error
+        logger.debug("session contract probe failed for %r", operation, exc_info=True)
+        return False
 
 
 def runtime_owns_transcript(session: Any | None = None, *, backend: str = "") -> bool:

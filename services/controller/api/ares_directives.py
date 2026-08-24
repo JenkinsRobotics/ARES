@@ -112,6 +112,8 @@ def directives_block(directives: list[str]) -> str:
     turn's actual request, and so the user can recognize their own rules if a
     worker echoes the prompt back.
     """
+    if not directives:
+        return ""
     mode_line = ""
     try:
         from core.modes import get_mode_manager
@@ -120,8 +122,6 @@ def directives_block(directives: list[str]) -> str:
     except Exception:
         pass
 
-    if not directives and not mode_line:
-        return ""
     lines = [BLOCK_HEADER]
     if mode_line:
         lines.append(mode_line)

@@ -20,8 +20,20 @@ _cached_at = 0.0
 
 
 def _uncached_status() -> ProviderStatus:
-    from api.providers.jaeger.paths import configured_root_override, jaeger_instance_name
+    from api.providers.jaeger.paths import (
+        configured_root_override,
+        jaeger_instance_name,
+        jaeger_integration_disabled,
+    )
     from api.providers.jaeger.streaming import local_jaeger_root
+
+    if jaeger_integration_disabled():
+        return not_installed(
+            "JaegerAI integration disabled (ARES_NO_JAEGER).",
+            mode="bridge",
+            reason="ARES_NO_JAEGER is set, so this process must not probe the live bridge.",
+            fix="Unset ARES_NO_JAEGER to use a real JaegerAI install.",
+        )
 
     root = local_jaeger_root()
     if root is None:

@@ -27,6 +27,7 @@ def test_visible_runtime_labels_do_not_send_users_back_to_hermes() -> None:
 
     assert "https://get-hermes.ai/" not in index
     assert "https://github.com/nesquena/hermes-webui/issues" not in index
+    assert "ghcr.io/nesquena/hermes-webui" not in ui
     assert "Hermes profiles" not in panels
     assert "Hermes agent is not responding" not in index
     assert "Hermes agent is not responding" not in ui

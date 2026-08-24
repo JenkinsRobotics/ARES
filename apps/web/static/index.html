@@ -72,6 +72,7 @@
 })()</script>
 <link rel="stylesheet" href="static/style.css?v=__WEBUI_VERSION__">
 <link rel="stylesheet" href="static/characters.css?v=__WEBUI_VERSION__">
+<link rel="stylesheet" href="static/dispatcher.css?v=__WEBUI_VERSION__">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" integrity="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh" crossorigin="anonymous">
   <!-- KaTeX math rendering CSS (loaded eagerly from vendored assets to prevent font CSP noise) -->
   <link rel="stylesheet" href="static/vendor/katex/0.16.22/katex.min.css">
@@ -206,17 +207,18 @@
 </header>
 <div class="layout">
   <nav class="rail" aria-label="Primary navigation">
+    <button class="rail-btn nav-tab has-tooltip" data-panel="dispatcher" onclick="switchPanel('dispatcher',{fromRailClick:true})" data-tooltip="Dispatcher" data-i18n-title="tab_dispatcher" aria-label="Dispatcher"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></button>
     <button class="rail-btn nav-tab active has-tooltip" data-panel="chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat" aria-label="Chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban" aria-label="Kanban"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills" aria-label="Skills"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="kanban" data-requires-capability="kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban" aria-label="Kanban"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="skills" data-requires-capability="skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills" aria-label="Skills"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory" aria-label="Memory"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="workspaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces" aria-label="Spaces"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles" aria-label="Agent profiles"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="characters" onclick="switchPanel('characters',{fromRailClick:true})" data-tooltip="Characters" data-i18n-title="tab_characters" aria-label="Characters"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos" aria-label="Todos"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights" aria-label="Insights"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
-    <button class="rail-btn nav-tab dashboard-link has-tooltip" id="dashboardRailBtn" data-dashboard-link style="display:none" onclick="openHermesDashboard(event)" data-tooltip="ARES Dashboard" data-i18n-title="tab_dashboard" aria-label="ARES Dashboard"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
+    <button class="rail-btn nav-tab dashboard-link has-tooltip" id="dashboardRailBtn" data-dashboard-link style="display:none" onclick="openExternalDashboard(event)" data-tooltip="ARES Dashboard" data-i18n-title="tab_dashboard" aria-label="ARES Dashboard"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="logs" onclick="switchPanel('logs',{fromRailClick:true})" data-tooltip="Logs" data-i18n-title="tab_logs" aria-label="Logs"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg></button>
     <div class="rail-spacer"></div>
     <button class="rail-btn nav-tab has-tooltip" data-panel="settings" onclick="switchPanel('settings',{fromRailClick:true})" data-tooltip="Settings" data-i18n-title="tab_settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="auth-warning-badge" id="authWarningBadgeDesktop" style="display:none;position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#e05"></span></button>
@@ -226,17 +228,18 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
     <div class="sidebar-nav">
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="dispatcher" data-label="Dispatcher" onclick="switchPanel('dispatcher',{fromRailClick:true})" data-tooltip="Dispatcher" data-i18n-title="tab_dispatcher"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></button>
       <button class="nav-tab active has-tooltip has-tooltip--bottom" data-panel="chat" data-label="Chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="kanban" data-label="Kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="skills" data-label="Skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="kanban" data-requires-capability="kanban" data-label="Kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="skills" data-requires-capability="skills" data-label="Skills" onclick="switchPanel('skills',{fromRailClick:true})" data-tooltip="Skills" data-i18n-title="tab_skills"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="memory" data-label="Memory" onclick="switchPanel('memory',{fromRailClick:true})" data-tooltip="Memory" data-i18n-title="tab_memory"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="workspaces" data-label="Spaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="profiles" data-label="Profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="characters" data-label="Characters" onclick="switchPanel('characters',{fromRailClick:true})" data-tooltip="Characters" data-i18n-title="tab_characters"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="todos" data-label="Todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="insights" data-label="Insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
-      <button class="nav-tab dashboard-link has-tooltip has-tooltip--bottom" id="dashboardMobileBtn" data-dashboard-link data-label="Dashboard" style="display:none" onclick="openHermesDashboard(event)" data-tooltip="ARES Dashboard" data-i18n-title="tab_dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
+      <button class="nav-tab dashboard-link has-tooltip has-tooltip--bottom" id="dashboardMobileBtn" data-dashboard-link data-label="Dashboard" style="display:none" onclick="openExternalDashboard(event)" data-tooltip="ARES Dashboard" data-i18n-title="tab_dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="dashboard-external-badge" aria-hidden="true"></span></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="logs" data-label="Logs" onclick="switchPanel('logs',{fromRailClick:true})" data-tooltip="Logs" data-i18n-title="tab_logs"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg></button>
       <!-- Settings button mirrored here for mobile (rail is desktop-only via @media >=768px). Keep in sync with rail entry. -->
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="settings" onclick="switchPanel('settings',{fromRailClick:true})" data-tooltip="Settings" data-i18n-title="tab_settings" style="position:relative"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="auth-warning-badge" id="authWarningBadgeMobile" style="display:none;position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#e05"></span></button>
@@ -258,6 +261,13 @@
       </div>
       <div class="session-search sidebar-search"><div class="session-search-field"><svg class="sidebar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input id="sessionSearch" type="search" placeholder="Filter conversations..." data-i18n-placeholder="filter_conversations" oninput="filterSessions()" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other"><button type="button" id="sessionSearchClear" class="session-search-clear has-tooltip has-tooltip--bottom-right" aria-label="Clear conversation filter" data-tooltip="Clear conversation filter" onclick="clearSessionSearch()" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
       <div class="session-list" id="sessionList"></div>
+    </div>
+    <!-- Dispatcher: one continuous persistent session -->
+    <div class="panel-view" id="panelDispatcher">
+      <div class="panel-head">
+        <span data-i18n="tab_dispatcher">Dispatcher</span>
+      </div>
+      <div class="dispatcher-brief" id="dispatcherBrief"></div>
     </div>
     <!-- Tasks (cron) panel -->
     <div class="panel-view" id="panelTasks">
@@ -441,10 +451,6 @@
           <button type="button" class="side-menu-item" data-settings-section="providers" onclick="switchSettingsSection('providers',{fromSidebarItem:true})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
             <span data-i18n="providers_tab_title">Providers</span>
-          </button>
-          <button type="button" class="side-menu-item" data-settings-section="plugins" onclick="switchSettingsSection('plugins',{fromSidebarItem:true})">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.3 2.1 7L12 16.2 5.4 20.3l2.1-7L2 9h7z"/></svg>
-            <span data-i18n="settings_tab_plugins">Plugins</span>
           </button>
           <button type="button" class="side-menu-item" data-settings-section="extensions" onclick="switchSettingsSection('extensions',{fromSidebarItem:true})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M7 8h10v4a5 5 0 0 1-10 0V8z"/><path d="M12 17v5"/></svg>
@@ -881,6 +887,370 @@
       </div>
     </div>
     </div><!-- /#mainChat -->
+    <div id="mainDispatcher" class="main-view" data-dispatcher-view>
+      <div class="dispatcher-canvas">
+        <header class="dispatcher-topbar">
+          <svg class="dispatcher-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <div class="dispatcher-title" data-i18n="tab_dispatcher">Dispatcher</div>
+          <span class="dispatcher-beta-badge">Beta</span>
+          <div class="dispatcher-topbar-spacer"></div>
+          <div class="dispatcher-chip" id="dispatcherDaemonChip">
+            <span class="dispatcher-dot is-on" id="dispatcherDaemonDot"></span>
+            <span id="dispatcherDaemonLabel" data-i18n="dispatcher_daemon_active">Daemon active</span>
+          </div>
+          <button class="dispatcher-chip dispatcher-chip--clickable" id="dispatcherHudToggleTopbar" type="button" aria-label="Toggle agent controls">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>Controls</span>
+          </button>
+          <div class="dispatcher-chip dispatcher-chip--workspace" id="dispatcherWorkspaceChip">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span class="dispatcher-chip-label" id="dispatcherWorkspaceLabel">Workspace</span>
+          </div>
+          <div style="position:relative">
+            <button class="dispatcher-icon-btn" id="dispatcherMenuBtn" type="button" aria-label="Dispatcher menu" aria-haspopup="menu" aria-controls="dispatcherMenu">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+            <div class="dispatcher-menu" id="dispatcherMenu" hidden role="menu">
+              <button type="button" class="dispatcher-suggest-item" id="dispatcherSeeBgTasks">
+                <span class="dispatcher-suggest-name">See background tasks</span>
+                <span class="dispatcher-suggest-desc">View running daemons and background jobs</span>
+              </button>
+              <button type="button" class="dispatcher-suggest-item" id="dispatcherClearBgTasks">
+                <span class="dispatcher-suggest-name">Clear background tasks</span>
+                <span class="dispatcher-suggest-desc">Cancel active asynchronous workers</span>
+              </button>
+              <div class="dispatcher-popover-rule"></div>
+              <button type="button" class="dispatcher-suggest-item" id="dispatcherClearMemory">
+                <span class="dispatcher-suggest-name">Clear memory</span>
+                <span class="dispatcher-suggest-desc">Reset session knowledge and context cache</span>
+              </button>
+              <button type="button" class="dispatcher-suggest-item is-danger" id="dispatcherDeleteConversation">
+                <span class="dispatcher-suggest-name" style="color:var(--dispatcher-red)">Delete conversation</span>
+                <span class="dispatcher-suggest-desc">Archive this persistent thread and start clean</span>
+              </button>
+              <div class="dispatcher-popover-rule"></div>
+              <button type="button" class="dispatcher-suggest-item" id="dispatcherOpenInChat">
+                <span class="dispatcher-suggest-name" data-i18n="dispatcher_open_in_chat">Open this thread in Chat</span>
+                <span class="dispatcher-suggest-desc" data-i18n="dispatcher_open_in_chat_desc">Classic composer, same persistent session</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div class="dispatcher-stage">
+          <!-- Floating HUD: Settings & Outputs (Top-Left) -->
+          <aside class="dispatcher-hud" id="dispatcherHud" aria-label="Mission HUD">
+            <!-- Settings Section -->
+            <div class="dispatcher-hud-section">
+              <button type="button" class="dispatcher-hud-head" id="dispatcherHudToggle" aria-expanded="true">
+                <span class="dispatcher-hud-head-title" data-i18n="dispatcher_agent_controls">Settings</span>
+                <svg class="dispatcher-hud-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="dispatcher-hud-body" id="dispatcherHudBody">
+                <div class="dispatcher-row">
+                  <span class="dispatcher-row-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+                    <span data-i18n="dispatcher_keep_alive">Keep awake</span>
+                  </span>
+                  <label class="dispatcher-switch">
+                    <input type="checkbox" id="dispatcherKeepAlive" checked aria-label="Keep awake">
+                    <span class="dispatcher-slider"></span>
+                  </label>
+                </div>
+                <div class="dispatcher-row">
+                  <span class="dispatcher-row-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <span>Mobile notifications</span>
+                  </span>
+                  <label class="dispatcher-switch">
+                    <input type="checkbox" id="dispatcherMobileNotifs" checked aria-label="Mobile notifications">
+                    <span class="dispatcher-slider"></span>
+                  </label>
+                </div>
+                <div class="dispatcher-row">
+                  <span class="dispatcher-row-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg>
+                    <span data-i18n="dispatcher_shell_use">Computer use</span>
+                  </span>
+                  <span class="dispatcher-check-icon">✓</span>
+                </div>
+                <div class="dispatcher-row">
+                  <span class="dispatcher-row-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    <span data-i18n="dispatcher_permissions">Code permissions</span>
+                  </span>
+                  <button type="button" class="dispatcher-perm-btn" id="dispatcherHudPermBtn">
+                    <span id="dispatcherHudPermLabel">⚡ Auto</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="dispatcher-hud-rule"></div>
+
+            <!-- Outputs Section -->
+            <div class="dispatcher-hud-section">
+              <button type="button" class="dispatcher-outputs-head" id="dispatcherOutputsToggle" aria-expanded="true">
+                <span class="dispatcher-outputs-head-left">
+                  <span data-i18n="dispatcher_outputs">Outputs</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.7"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                </span>
+                <span class="dispatcher-count" id="dispatcherOutputCount">0</span>
+                <svg class="dispatcher-hud-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="dispatcher-outputs-list" id="dispatcherOutputs"></div>
+            </div>
+
+            <!-- Info Hint Card -->
+            <div class="dispatcher-hud-hint">
+              <span>Dispatch to Ares and check in from anywhere—a task, a code session, in one continuous thread.</span>
+            </div>
+          </aside>
+
+          <!-- Timeline Event Stream -->
+          <div class="dispatcher-timeline" id="dispatcherTimeline" role="log" aria-live="polite"></div>
+
+          <!-- Command Deck -->
+          <form class="dispatcher-deck" id="dispatcherDeck" onsubmit="return false;" aria-label="Dispatch command deck">
+            <!-- Floating Git / Branch HUD Pill -->
+            <div class="dispatcher-git-hud" id="dispatcherGitHud">
+              <div class="dispatcher-git-branch">
+                <span class="dispatcher-git-repo" id="dispatcherGitRepo">ARES</span>
+                <span class="dispatcher-git-name" id="dispatcherGitBranch">main</span>
+              </div>
+              <div class="dispatcher-git-diffs">
+                <span class="dispatcher-diff-add" id="dispatcherDiffAdd">+0</span>
+                <span class="dispatcher-diff-del" id="dispatcherDiffDel">-0</span>
+              </div>
+              <button type="button" class="dispatcher-git-pr-btn" id="dispatcherGitPrBtn">
+                <span>Create PR</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <button type="button" class="dispatcher-git-close-btn" id="dispatcherGitDismiss" aria-label="Dismiss">✕</button>
+            </div>
+
+            <!-- Pinned Files / Folders Row -->
+            <div class="dispatcher-pins-row" id="dispatcherPinRow"></div>
+
+            <!-- Main Input Textarea & Mic -->
+            <div class="dispatcher-input-wrap">
+              <textarea class="dispatcher-deck-input" id="dispatcherInput" rows="1" data-i18n-placeholder="dispatcher_placeholder" placeholder="Dispatch to Ares or collaborate on @files / @folders…"></textarea>
+              <button type="button" class="dispatcher-icon-btn dispatcher-deck-mic" id="dispatcherMic" aria-label="Dictate">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+              </button>
+            </div>
+
+            <!-- Suggestions Menu -->
+            <div class="dispatcher-suggest" id="dispatcherSuggest" role="listbox" aria-label="Dispatcher suggestions"></div>
+
+            <!-- Mode Popover Menu -->
+            <div class="dispatcher-popover dispatcher-mode-popover" id="dispatcherModePopover" hidden>
+              <div class="dispatcher-popover-head">Mode</div>
+              <div class="dispatcher-mode-options">
+                <button type="button" class="dispatcher-mode-option is-selected" data-mode="auto">
+                  <div class="dispatcher-mode-option-main">
+                    <span class="dispatcher-mode-option-title">Auto <span class="dispatcher-tag">Start</span></span>
+                    <span class="dispatcher-mode-option-desc">Ares handles permission decisions</span>
+                  </div>
+                  <span class="dispatcher-shortcut">✓ 1</span>
+                </button>
+                <button type="button" class="dispatcher-mode-option" data-mode="manual">
+                  <div class="dispatcher-mode-option-main">
+                    <span class="dispatcher-mode-option-title">Manual</span>
+                    <span class="dispatcher-mode-option-desc">Always ask before making changes</span>
+                  </div>
+                  <span class="dispatcher-shortcut">2</span>
+                </button>
+                <button type="button" class="dispatcher-mode-option" data-mode="edits">
+                  <div class="dispatcher-mode-option-main">
+                    <span class="dispatcher-mode-option-title">Accept edits</span>
+                    <span class="dispatcher-mode-option-desc">Automatically accept all file edits</span>
+                  </div>
+                  <span class="dispatcher-shortcut">3</span>
+                </button>
+                <button type="button" class="dispatcher-mode-option" data-mode="plan">
+                  <div class="dispatcher-mode-option-main">
+                    <span class="dispatcher-mode-option-title">Plan</span>
+                    <span class="dispatcher-mode-option-desc">Create a plan before making changes</span>
+                  </div>
+                  <span class="dispatcher-shortcut">4</span>
+                </button>
+              </div>
+              <div class="dispatcher-popover-rule"></div>
+              <div class="dispatcher-popover-foot">
+                <span>Bypass permissions</span>
+                <button type="button" class="dispatcher-btn-pill" id="dispatcherBypassToggle">Enable</button>
+              </div>
+            </div>
+
+            <!-- Plus / Add Menu Popover -->
+            <div class="dispatcher-popover dispatcher-plus-popover" id="dispatcherPlusPopover" hidden>
+              <button type="button" class="dispatcher-popover-item" id="dispatcherAddFilesBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <span>Add files or photos</span>
+                <span class="dispatcher-shortcut">⌘U</span>
+              </button>
+              <button type="button" class="dispatcher-popover-item" id="dispatcherAddFolderBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <span>Add folder</span>
+              </button>
+              <button type="button" class="dispatcher-popover-item" id="dispatcherSlashBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="15" x2="15" y2="9"/></svg>
+                <span>Slash commands</span>
+              </button>
+              <button type="button" class="dispatcher-popover-item" id="dispatcherConnectorsBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span>Connectors</span>
+                <svg class="dispatcher-sub-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <button type="button" class="dispatcher-popover-item" id="dispatcherPluginsBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <span>Plugins & Skills</span>
+                <svg class="dispatcher-sub-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+
+            <!-- Models Popover -->
+            <div class="dispatcher-popover dispatcher-models-popover" id="dispatcherModelsPopover" hidden>
+              <div class="dispatcher-popover-head">Models</div>
+              <div class="dispatcher-model-list" id="dispatcherModelList"></div>
+              <div class="dispatcher-popover-rule"></div>
+              <div class="dispatcher-popover-row">
+                <div class="dispatcher-popover-row-label">
+                  <span>Fast mode</span>
+                  <span class="dispatcher-faint">Enable fast mode</span>
+                </div>
+                <label class="dispatcher-switch">
+                  <input type="checkbox" id="dispatcherFastMode">
+                  <span class="dispatcher-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Effort / Thinking Slider Popover -->
+            <div class="dispatcher-popover dispatcher-effort-popover" id="dispatcherEffortPopover" hidden>
+              <div class="dispatcher-effort-head">
+                <span class="dispatcher-effort-title">Effort <b id="dispatcherEffortValLabel">High</b></span>
+                <span class="dispatcher-help-icon" title="Adjust reasoning effort and token thinking budget">?</span>
+              </div>
+              <div class="dispatcher-slider-labels">
+                <span>Faster</span>
+                <span>Smarter</span>
+              </div>
+              <div class="dispatcher-slider-track-wrap">
+                <input type="range" class="dispatcher-effort-range" id="dispatcherEffortRange" min="1" max="5" value="4" step="1">
+              </div>
+            </div>
+
+            <!-- Telemetry & Context Window Popover -->
+            <div class="dispatcher-popover dispatcher-telemetry-popover" id="dispatcherTelemetryPopover" hidden>
+              <div class="dispatcher-telemetry-section">
+                <div class="dispatcher-telemetry-row">
+                  <span>Context window</span>
+                  <span class="dispatcher-mono" id="dispatcherContextStats">754.2k / 1M (75%) &gt;</span>
+                </div>
+                <div class="dispatcher-progress-bar">
+                  <div class="dispatcher-progress-seg is-main" style="width: 72%"></div>
+                  <div class="dispatcher-progress-seg is-files" style="width: 2%"></div>
+                  <div class="dispatcher-progress-seg is-tools" style="width: 1%"></div>
+                </div>
+              </div>
+              <div class="dispatcher-popover-rule"></div>
+              <div class="dispatcher-telemetry-section">
+                <div class="dispatcher-popover-subhead">Plan usage limits · Pro &gt;</div>
+                <div class="dispatcher-telemetry-row">
+                  <span>5-hour limit</span>
+                  <span class="dispatcher-faint">Resets in 1 hr 59 min <b class="dispatcher-white">54%</b></span>
+                </div>
+                <div class="dispatcher-progress-bar">
+                  <div class="dispatcher-progress-seg is-blue" style="width: 54%"></div>
+                </div>
+                <div class="dispatcher-telemetry-row" style="margin-top:10px">
+                  <span>Weekly · all models</span>
+                  <span class="dispatcher-faint">Resets Wed 7:59 PM <b class="dispatcher-white">38%</b></span>
+                </div>
+                <div class="dispatcher-progress-bar">
+                  <div class="dispatcher-progress-seg is-blue" style="width: 38%"></div>
+                </div>
+              </div>
+              <div class="dispatcher-popover-rule"></div>
+              <button type="button" class="dispatcher-action-link" id="dispatcherPruneContext">See detailed breakdown &gt;</button>
+            </div>
+
+            <!-- Bottom Action Bar -->
+            <div class="dispatcher-deck-bar">
+              <button type="button" class="dispatcher-deck-pill" id="dispatcherModePill">
+                <span id="dispatcherModePillLabel">Auto</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <button type="button" class="dispatcher-icon-pill" id="dispatcherPlusPill" aria-label="Add options">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <button type="button" class="dispatcher-icon-pill" id="dispatcherMicPill" aria-label="Voice input">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+              </button>
+              <button type="button" class="dispatcher-icon-pill" id="dispatcherVoiceModeBtn" aria-label="Live Voice Mode" title="OpenAI Live Voice Mode">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5v14M7 5v14M2 9v6M22 9v6"/></svg>
+              </button>
+
+              <div class="dispatcher-deck-spacer"></div>
+
+              <button type="button" class="dispatcher-deck-pill" id="dispatcherModelPill">
+                <span id="dispatcherModelPillLabel">qwen3.5:397b</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <button type="button" class="dispatcher-deck-pill" id="dispatcherEffortPill">
+                <span id="dispatcherEffortPillLabel">High</span>
+              </button>
+              <button type="button" class="dispatcher-ring-btn" id="dispatcherRingBtn" title="Context telemetry">
+                <div class="dispatcher-ring">
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9.5" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="2.2"></circle>
+                    <circle id="dispatcherRingValue" cx="12" cy="12" r="9.5" fill="none" stroke="#F59E0B" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="60" stroke-dashoffset="15" transform="rotate(-90 12 12)"></circle>
+                  </svg>
+                </div>
+              </button>
+              <button type="button" class="dispatcher-send" id="dispatcherSend" aria-label="Dispatch" disabled>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <!-- OpenAI-Style Advanced Voice Space Overlay -->
+      <div class="dispatcher-voice-overlay" id="dispatcherVoiceOverlay" aria-hidden="true">
+        <div class="dispatcher-voice-top">
+          <div class="dispatcher-voice-character-pill">
+            <span class="dispatcher-voice-character-dot"></span>
+            <span id="dispatcherVoiceCharacterName">Ares</span>
+            <span class="dispatcher-faint" id="dispatcherVoiceModelBadge">· Live Voice</span>
+          </div>
+          <button type="button" class="dispatcher-voice-close-btn" id="dispatcherVoiceCloseBtn" aria-label="Exit voice mode">✕</button>
+        </div>
+
+        <div class="dispatcher-voice-stage">
+          <div class="dispatcher-voice-orb-wrap">
+            <div class="dispatcher-voice-orb-ring"></div>
+            <div class="dispatcher-voice-orb" id="dispatcherVoiceOrb"></div>
+          </div>
+
+          <div class="dispatcher-voice-caption-wrap">
+            <div class="dispatcher-voice-state-label" id="dispatcherVoiceStateLabel">Listening…</div>
+            <div class="dispatcher-voice-caption" id="dispatcherVoiceCaption">Say something to Ares…</div>
+          </div>
+        </div>
+
+        <div class="dispatcher-voice-bottom">
+          <button type="button" class="dispatcher-voice-action-btn" id="dispatcherVoiceMicToggle" aria-label="Mute microphone" title="Mute/Unmute">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          </button>
+          <button type="button" class="dispatcher-voice-action-btn is-muted" id="dispatcherVoiceEndBtn" aria-label="End call" title="End Voice Session">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
     <div id="mainSkills" class="main-view">
       <div class="main-view-header">
         <div class="main-view-title" id="skillDetailTitle"></div>
@@ -1601,20 +1971,6 @@
               No configurable providers found.
             </div>
           </div>
-          <div class="settings-pane" id="settingsPanePlugins">
-            <div class="settings-section-head">
-              <div>
-                <div class="settings-section-title" data-i18n="settings_plugins_title">Plugins</div>
-                <div class="settings-section-meta" data-i18n="settings_plugins_meta">View installed ARES plugins and the lifecycle hooks they register. This panel is read-only.</div>
-              </div>
-            </div>
-            <div id="pluginsList" style="display:flex;flex-direction:column;margin-top:4px">
-              <!-- Populated dynamically by loadPluginsPanel() -->
-            </div>
-            <div id="pluginsEmpty" style="display:none;text-align:center;padding:32px 0;color:var(--muted);font-size:13px" data-i18n="settings_plugins_empty">
-              No ARES plugins are currently visible. Install or enable plugins from the ARES CLI/config to see them here.
-            </div>
-          </div>
           <div class="settings-pane" id="settingsPaneExtensions">
             <div class="settings-section-head">
               <div>
@@ -1767,7 +2123,7 @@
                 <div class="help-card-body">
                   <div class="help-card-title" data-i18n="settings_help_docs_label">Documentation</div>
                   <div class="help-card-desc" data-i18n="settings_help_docs_desc">Guides, configuration reference, and the full ARES WebUI README.</div>
-                  <a href="https://get-hermes.ai/" target="_blank" rel="noopener noreferrer" class="help-card-link">
+                  <a href="https://github.com/JenkinsRobotics/ARES" target="_blank" rel="noopener noreferrer" class="help-card-link">
                     <span data-i18n="settings_help_docs_link">Open Documentation</span>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
                   </a>
@@ -1780,7 +2136,7 @@
                 <div class="help-card-body">
                   <div class="help-card-title" data-i18n="settings_help_issue_label">Having an issue?</div>
                   <div class="help-card-desc" data-i18n="settings_help_issue_desc">Search existing reports or open a new one on GitHub.</div>
-                  <a href="https://github.com/nesquena/hermes-webui/issues" target="_blank" rel="noopener noreferrer" class="help-card-link">
+                  <a href="https://github.com/JenkinsRobotics/ARES/issues" target="_blank" rel="noopener noreferrer" class="help-card-link">
                     <span data-i18n="settings_help_issue_link">Open GitHub Issues</span>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
                   </a>
@@ -1895,6 +2251,7 @@
 <script src="static/messages.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/extension_settings.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/panels.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/dispatcher.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/characters.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/onboarding.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/boot.js?v=__WEBUI_VERSION__" defer></script>

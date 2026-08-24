@@ -40,11 +40,11 @@ let _logsSeverityFilter = 'all';
 
 // Map of panel names → i18n keys for the app titlebar label.
 const APP_TITLEBAR_KEYS = {
-  chat: 'tab_chat', tasks: 'tab_tasks', skills: 'tab_skills',
+  chat: 'tab_chat', dispatcher: 'tab_dispatcher', tasks: 'tab_tasks', skills: 'tab_skills',
   memory: 'tab_memory', workspaces: 'tab_workspaces',
   profiles: 'tab_profiles', characters: 'tab_characters', todos: 'tab_todos', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
 };
-const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','workspaces','profiles','characters','insights','logs','plugin'];
+const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','workspaces','profiles','characters','insights','logs','plugin','dispatcher'];
 const MAIN_VIEW_SIDEBAR_PANEL_FALLBACKS = { plugin: 'settings' };
 
 /**
@@ -390,9 +390,127 @@ function _syncMobileSidebarPanelFromMainView(){
   return panel;
 }
 
+
+// ── runtime capability gating ────────────────────────────────────────
+//
+// Restored after 06b924444 ("fresh reinstall of WebUI static code from donor
+// Hermes app") deleted it. ARES's backend never stopped negotiating
+// capabilities per runtime — api/ares_capabilities.py behind
+// /api/ares/backend is live and was simply left with no consumer — so between
+// that commit and this one, a panel whose runtime could not serve it looked
+// identical to one that could.
+//
+// Only surfaces that STILL EXIST are listed. The old table also covered
+// `content` and `modelLab`; both panels, and the tools behind the content
+// capabilities (deep_research, youtube_ingest, pdf_forms, image_gallery,
+// image_editor, visual_reports), were retired in 651c14433. Declaring a
+// requirement for a panel that is gone would re-advertise a backend that no
+// longer exists, which is the failure this mechanism is meant to prevent.
+const ARES_PANEL_CAPABILITIES={tasks:['schedules'],kanban:['kanban'],skills:['skills']};
+let _aresCapabilityFlags=null;
+let _aresCapabilityRequest=null;
+let _aresCapabilityPayload=null;
+window._hideUnavailableFeatures=window._hideUnavailableFeatures===true;
+
+function _renderRuntimeCapabilityState(payload){
+  const banner=$('runtimeCapabilityBanner');
+  if(!banner)return;
+  const current=String((payload&&payload.current)||'selected runtime');
+  const health=payload&&payload.status&&payload.status[current];
+  const negotiated=payload&&payload.capability_negotiated===true;
+  const unavailable=!negotiated||health===false;
+  banner.hidden=!unavailable;
+  if(!unavailable)return;
+  const title=$('runtimeCapabilityTitle');
+  const detail=$('runtimeCapabilityDetail');
+  if(title)title.textContent=`${current} is unavailable`;
+  if(detail){
+    const error=String((payload&&payload.capability_error)||'').trim();
+    detail.textContent=error||'Runtime-owned features are unavailable until capability negotiation succeeds.';
+  }
+}
+
+function _applyAresCapabilityFlags(flags,payload){
+  _aresCapabilityFlags=(flags&&typeof flags==='object')?flags:{};
+  _aresCapabilityPayload=payload&&typeof payload==='object'?payload:null;
+  const ownership=(_aresCapabilityPayload&&_aresCapabilityPayload.capability_ownership)||{};
+  const features=(_aresCapabilityPayload&&_aresCapabilityPayload.capability_features)||{};
+  // DIMMED, not hidden, unless the operator asked otherwise: a control the
+  // runtime cannot serve should be explicable, not absent.
+  const hideUnavailable=window._hideUnavailableFeatures===true;
+  document.querySelectorAll('[data-requires-capability]').forEach(el=>{
+    const capability=String(el.dataset.requiresCapability||'').trim();
+    const available=_aresCapabilityFlags[capability]===true;
+    const reason=String((features[capability]&&features[capability].reason)||'').trim();
+    el.dataset.capabilityAvailable=available?'true':'false';
+    el.dataset.capabilityOwner=String(ownership[capability]||'none');
+    el.classList.toggle('capability-unavailable',!available);
+    el.hidden=hideUnavailable&&!available;
+    el.setAttribute('aria-hidden',el.hidden?'true':'false');
+    if(!available&&reason)el.setAttribute('aria-description',`Unavailable: ${reason}`);
+    else el.removeAttribute('aria-description');
+  });
+  document.documentElement.dataset.aresCapabilitiesReady='true';
+  document.documentElement.dataset.aresRuntimeState=(
+    _aresCapabilityPayload&&_aresCapabilityPayload.capability_negotiated===true
+  )?'negotiated':'unavailable';
+  _renderRuntimeCapabilityState(_aresCapabilityPayload);
+  const required=ARES_PANEL_CAPABILITIES[_currentPanel]||[];
+  if(hideUnavailable&&required.length&&!required.some(capability=>_aresCapabilityFlags[capability]===true)){
+    switchPanel('chat',{bypassCapabilityGuard:true});
+  }
+  return _aresCapabilityFlags;
+}
+
+function setHideUnavailableFeatures(enabled){
+  window._hideUnavailableFeatures=enabled===true;
+  if(_aresCapabilityFlags)_applyAresCapabilityFlags(_aresCapabilityFlags,_aresCapabilityPayload);
+}
+window.setHideUnavailableFeatures=setHideUnavailableFeatures;
+
+async function refreshAresCapabilities(){
+  if(_aresCapabilityRequest)return _aresCapabilityRequest;
+  _aresCapabilityRequest=(async()=>{
+    try{
+      const sid=typeof S!=='undefined'&&S.session&&S.session.session_id?`?session_id=${encodeURIComponent(S.session.session_id)}`:'';
+      const response=await fetch(new URL(`api/ares/backend${sid}`,document.baseURI||location.href).href,{credentials:'include',cache:'no-store'});
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      const payload=await response.json();
+      return _applyAresCapabilityFlags(payload&&payload.capabilities,payload);
+    }catch(error){
+      // Fail CLOSED: a negotiation we could not complete marks features
+      // unavailable rather than leaving them looking ready.
+      console.warn('ARES capability negotiation failed; runtime features marked unavailable',error);
+      return _applyAresCapabilityFlags({}, {
+        capability_negotiated:false,
+        capability_error:error&&error.message?error.message:String(error),
+      });
+    }finally{
+      _aresCapabilityRequest=null;
+    }
+  })();
+  return _aresCapabilityRequest;
+}
+
+async function _ensureAresCapabilities(){
+  return _aresCapabilityFlags||refreshAresCapabilities();
+}
+
+window.refreshAresCapabilities=refreshAresCapabilities;
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',refreshAresCapabilities,{once:true});
+else refreshAresCapabilities();
+
 async function switchPanel(name, opts = {}) {
   const nextPanel = name || 'chat';
   const prevPanel = _currentPanel;
+  const requiredCapabilities=ARES_PANEL_CAPABILITIES[nextPanel]||[];
+  if(window._hideUnavailableFeatures===true&&requiredCapabilities.length&&!opts.bypassCapabilityGuard){
+    const capabilities=await _ensureAresCapabilities();
+    if(!requiredCapabilities.some(capability=>capabilities[capability]===true)){
+      if(typeof showToast==='function')showToast(`${nextPanel} is unavailable for the selected runtime`,'error');
+      return false;
+    }
+  }
   // ── Desktop sidebar collapse toggle (rail-click only) ──
   // If the click came from a rail icon AND we're on desktop, the rail icon
   // does double duty: clicking the already-active panel collapses the sidebar;
@@ -419,6 +537,9 @@ async function switchPanel(name, opts = {}) {
   // so we don't keep a stale connection open in the background.
   if (prevPanel === 'kanban' && nextPanel !== 'kanban') {
     if (typeof _kanbanStopPolling === 'function') _kanbanStopPolling();
+  }
+  if (prevPanel === 'dispatcher' && nextPanel !== 'dispatcher') {
+    if (typeof leaveDispatcher === 'function') await leaveDispatcher(nextPanel);
   }
   _currentPanel = nextPanel;
   // Mobile drawer visibility: a rail/tab click on a phone should surface the
@@ -460,6 +581,7 @@ async function switchPanel(name, opts = {}) {
   if (nextPanel === 'todos') loadTodos();
   if (nextPanel === 'insights') await loadInsights();
   if (nextPanel === 'logs') await loadLogs();
+  if (nextPanel === 'dispatcher' && typeof loadDispatcher === 'function') await loadDispatcher();
   _syncLogsAutoRefresh();
   if (typeof _syncSystemHealthMonitorVisibility === 'function') _syncSystemHealthMonitorVisibility();
   if (nextPanel === 'settings') {
@@ -3257,7 +3379,7 @@ async function _kanbanPopulateAssigneeSelect(currentValue){
   // it last so the default-selected option is the first profile, not "no one".
   let html = '';
   if (profiles.length) {
-    html += `<optgroup label="${esc(t('kanban_assignee_profiles_label') || 'Hermes profiles')}">`;
+    html += `<optgroup label="${esc(t('kanban_assignee_profiles_label') || 'ARES profiles')}">`;
     html += profiles.map(v => `<option value="${esc(v)}"${v === currentValue ? ' selected' : ''}>${esc(v)}</option>`).join('');
     html += '</optgroup>';
   }
@@ -10710,29 +10832,16 @@ function _partitionPluginsActiveFirst(plugins){
 }
 
 async function loadPluginsPanel(){
-  const list=$('pluginsList');
-  const empty=$('pluginsEmpty');
-  if(!list) return;
-  try{
-    const data=await api('/api/plugins');
-    const plugins=Array.isArray((data||{}).plugins)?data.plugins:[];
-    // Hide the Plugins tab when no plugins are installed (#3457)
-    const tabBtn=document.querySelector('[data-settings-section="plugins"]');
-    if(tabBtn) tabBtn.style.display=(data&&data.empty)?'none':'';
-    list.innerHTML='';
-    if(plugins.length===0){
-      list.style.display='none';
-      if(empty) empty.style.display='';
-      return;
-    }
-    if(empty) empty.style.display='none';
-    list.style.display='';
-    for(const plugin of _partitionPluginsActiveFirst(plugins)){
-      list.appendChild(_buildPluginCard(plugin));
-    }
-  }catch(e){
-    list.innerHTML='<div style="color:var(--error);padding:12px;font-size:13px">'+t('plugins_load_failed')+esc(e.message||String(e))+'</div>';
-  }
+  // No-op: the plugins settings surface is not part of ARES's UI.
+  //
+  // Its nav item and settings pane arrived with the donor WebUI reinstall
+  // (06b924444), which restored a surface ARES had deliberately removed. Both
+  // are gone again, so there is nothing here to populate — and querying
+  // /api/plugins to fill a pane that does not exist would put a request on
+  // every settings open for no visible result.
+  //
+  // The route itself is left alone: it has other consumers. Kept as a stub
+  // rather than deleted because call sites elsewhere still invoke it.
 }
 
 function _buildPluginCard(plugin){

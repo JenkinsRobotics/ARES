@@ -34,8 +34,16 @@ def get_active_backend(config: dict) -> str:
     not lose the default to whichever other worker happens to be installed.
     When it is not ready the result stays empty, which is what surfaces the
     "choose a provider" state rather than electing a silent substitute.
+
+    ``ARES_NO_JAEGER`` is the test/CI seam that makes this process behave as
+    though JaegerAI is not installed. An election of Jaeger in that mode is
+    treated as unelected so ARES-owned persistence remains available.
     """
+    from api.providers.jaeger.paths import jaeger_integration_disabled
+
     elected = normalize_backend((config or {}).get("ares_backend", ""))
+    if elected == BACKEND_JAEGER and jaeger_integration_disabled():
+        elected = ""
     if elected:
         return elected
 
@@ -55,8 +63,11 @@ def get_session_backend(session: object, config: dict) -> str:
 def is_jaeger_available() -> bool:
     """Whether JaegerAI can run a turn through its supported bridge."""
 
+    from api.providers.jaeger.paths import jaeger_integration_disabled
     from api.providers.jaeger.status import check_status
 
+    if jaeger_integration_disabled():
+        return False
     return check_status().available
 
 

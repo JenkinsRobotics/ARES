@@ -1913,7 +1913,9 @@ async function saveDashboardSettings(opts){
     if(opts.raiseOnError) throw err;
   }
 }
-function openHermesDashboard(event){
+// Named for what it does, not for the donor product this file was
+// reinstalled from (06b924444). The body is unchanged.
+function openExternalDashboard(event){
   if(event){event.preventDefault();event.stopPropagation();}
   const btn=event&&event.currentTarget?event.currentTarget:document.querySelector('[data-dashboard-link]');
   const url=(btn&&btn.dataset&&btn.dataset.dashboardUrl)||_dashboardBrowserUrl(_dashboardStatusCache);
@@ -1921,6 +1923,9 @@ function openHermesDashboard(event){
   window.open(url,'_blank','noopener,noreferrer');
   return false;
 }
+// Compatibility alias for extensions and cached pages using the
+// inherited name.
+const openARESDashboard=openExternalDashboard;
 function _initDashboardLinkProbe(){
   loadDashboardSettings();
   refreshDashboardStatus(true);
@@ -7493,7 +7498,10 @@ function renderMd(raw){
       const id='mermaid-'+Math.random().toString(36).slice(2,10);
       _preBlock_stash.push(`<div class="mermaid-block" data-mermaid-id="${id}">${esc(code.trim())}</div>`);
     } else {
-      const h=lang?`<div class="pre-header">${esc(lang)}</div>`:'';
+      const isExecutableLang=/^(bash|sh|zsh|shell|python|py|swift|terminal)$/.test(lang);
+      const copyBtnHtml=`<button class="pre-action-btn pre-copy-btn" type="button" onclick="_copyPreCode(this);event.stopPropagation()" title="Copy code">${typeof li==='function'?li('copy',12):''}<span class="btn-text">Copy</span></button>`;
+      const runBtnHtml=isExecutableLang?`<button class="pre-action-btn pre-run-btn" type="button" onclick="_runPreCode(this);event.stopPropagation()" title="Run in Terminal">${typeof li==='function'?li('play',12):''}<span class="btn-text">Run</span></button>`:'';
+      const h=lang?`<div class="pre-header"><span class="pre-lang">${esc(lang)}</span><div class="pre-actions">${runBtnHtml}${copyBtnHtml}</div></div>`:`<div class="pre-header"><span class="pre-lang">code</span><div class="pre-actions">${copyBtnHtml}</div></div>`;
       const langAttr=lang?` class="language-${esc(lang)}"`:'';
       const preClass=/^(md|markdown|mdx)$/.test(lang)?' class="md-source-block"':'';
       // For diff/patch blocks, wrap each line in a colored span
@@ -8799,6 +8807,61 @@ function _copyThinkingText(btn){
   }).catch(()=>showToast(t('copy_failed')));
 }
 
+function _copyPreCode(btn){
+  const header=btn&&btn.closest?btn.closest('.pre-header'):null;
+  const next=header?header.nextElementSibling:null;
+  const pre=next&&(next.tagName==='PRE'?next:next.querySelector('pre'))||(btn&&btn.closest?btn.closest('pre'):null);
+  const codeEl=pre?pre.querySelector('code'):null;
+  const text=(codeEl||pre||{}).textContent||'';
+  if(!text)return;
+  _copyText(text).then(()=>{
+    const textSpan=btn.querySelector('.btn-text');
+    if(textSpan){
+      const old=textSpan.textContent;
+      textSpan.textContent='Copied!';
+      btn.classList.add('is-copied');
+      setTimeout(()=>{
+        textSpan.textContent=old;
+        btn.classList.remove('is-copied');
+      },1500);
+    }
+  }).catch(()=>showToast(t('copy_failed')||'Copy failed'));
+}
+
+// Resolve the composer the user is actually looking at. #dispatcherInput is
+// always in the DOM — it lives in the dispatcher panel whether or not that
+// panel is on screen — so an id-order fallback silently types into a hidden
+// textarea when the user is in chat. Pick by active panel instead.
+function _activeComposerInput(){
+  const dispatcher=document.getElementById('dispatcherInput');
+  const chat=document.getElementById('msg');
+  const panel=(typeof _currentPanel==='string'&&_currentPanel)?_currentPanel:'chat';
+  const preferred=panel==='dispatcher'?dispatcher:chat;
+  return preferred||chat||dispatcher||null;
+}
+
+function _runPreCode(btn){
+  const header=btn&&btn.closest?btn.closest('.pre-header'):null;
+  const next=header?header.nextElementSibling:null;
+  const pre=next&&(next.tagName==='PRE'?next:next.querySelector('pre'))||(btn&&btn.closest?btn.closest('pre'):null);
+  const codeEl=pre?pre.querySelector('code'):null;
+  const text=(codeEl||pre||{}).textContent||'';
+  if(!text)return;
+  const input=_activeComposerInput();
+  if(input){
+    input.value=text;
+    input.focus();
+    // Let the composer's own 'input' listener run so the textarea resizes and
+    // the send button enables — assigning .value alone fires no event.
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    if(typeof showToast==='function') showToast('Command inserted into input. Press Enter to send.');
+  } else {
+    _copyText(text).then(()=>{
+      if(typeof showToast==='function') showToast('Copied command to clipboard.');
+    }).catch(()=>{});
+  }
+}
+
 // ── TTS: Text-to-Speech via Web Speech API (#499) ──
 // Strips markdown, code blocks, and MEDIA: paths for clean speech output.
 function _stripForTTS(text){
@@ -9793,7 +9856,7 @@ function _showAgentHealthAlert(payload){
   const title=$('agentHealthTitle');
   const details=$('agentHealthDetails');
   if(!banner) return;
-  if(title) title.textContent='Hermes agent is not responding';
+  if(title) title.textContent='ARES messaging gateway is not responding';
   const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
   if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
   banner.hidden=false;
@@ -9905,7 +9968,7 @@ function _formatUpdateTargetStatus(label,info){
 }
 function _formatManualUpdateInstruction(info){
   if(!(info&&info.no_git&&info.manual_update&&info.behind>0)) return null;
-  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/hermes-webui:latest');
+  return t('settings_update_manual_docker','docker pull ghcr.io/nesquena/ares-webui:latest');
 }
 function _formatUpdateCheckError(label,info){
   if(!info||!info.error) return null;

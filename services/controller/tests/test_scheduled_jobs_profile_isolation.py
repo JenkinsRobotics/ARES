@@ -129,9 +129,12 @@ def test_cron_profile_context_serializes_concurrent_access(tmp_path):
     home_b.mkdir()
 
     # Ensure the context lock is released between tests.
+    # threading.RLock.locked() is 3.14+; probe with a non-blocking acquire.
     from api import profiles as p
-    assert not p._cron_env_lock.locked(), \
-        "Lock leaked from a previous test"
+    got = p._cron_env_lock.acquire(blocking=False)
+    if got:
+        p._cron_env_lock.release()
+    assert got, "Lock leaked from a previous test"
 
     observed = []
     barrier = threading.Barrier(2)

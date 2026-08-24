@@ -7,7 +7,11 @@ trust engine, worker registry, orchestration, and disclosure audit.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+import logging
+
+from fastapi import APIRouter, Query, Response
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/si", tags=["si"])
 
@@ -547,10 +551,47 @@ def si_approve_worker(worker_id: str):
 # ── Migration ──────────────────────────────────────────────────────────
 
 @router.post("/migrate")
-def si_migrate():
-    """Run the SI schema migration (add sensitivity columns to Journal)."""
+def si_migrate(response: Response):
+    """Run the SI schema migration against the Journal database.
+
+    Phase 0 finding F4: this used to call a function that caught every
+    per-column exception, wrote ``f"error: {e}"`` into a dict, and returned it
+    with HTTP 200. A failed migration of a 296 MB journal of irreplaceable
+    personal state was indistinguishable from a successful one to every client,
+    log scraper and health check — the caller had to string-match values to
+    find out.
+
+    The status code now carries the outcome:
+
+      200 — SUCCESS, at the target schema version.
+      500 — FAILED, nothing applied; the database is untouched.
+      207 — PARTIAL_FAILURE (Multi-Status): some migrations committed, one
+            failed and was rolled back. The database is coherent at
+            ``version_after``; re-running resumes from there.
+      409 — the database was written by a NEWER ARES than this build. Running
+            an older schema over it would corrupt it, so nothing was attempted.
+
+    The body is the full report either way: which steps applied, which failed,
+    the error, and the backup path if one was taken.
+    """
     from api.journal.schema import get_db
-    from api.si.migration import migrate_journal_sensitivity
+    from core.si.migration import migrate_journal
+    from core.store.migrations import MigrationError, MigrationStatus
+
     db = get_db()
-    results = migrate_journal_sensitivity(db)
-    return results
+    try:
+        report = migrate_journal(db)
+    except MigrationError as exc:
+        logger.error("SI migration refused: %s", exc)
+        response.status_code = 409
+        return {
+            "status": "refused",
+            "error": str(exc),
+            "version_found": exc.version,
+        }
+
+    if report.status is MigrationStatus.PARTIAL_FAILURE:
+        response.status_code = 207
+    elif report.status is MigrationStatus.FAILED:
+        response.status_code = 500
+    return report.as_dict()

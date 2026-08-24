@@ -30,6 +30,8 @@ const SHELL_ASSETS = [
   './static/messages.js' + VQ,
   './static/sessions.js' + VQ,
   './static/panels.js' + VQ,
+  './static/dispatcher.js' + VQ,
+  './static/dispatcher.css' + VQ,
   './static/commands.js' + VQ,
   './static/icons.js' + VQ,
   './static/i18n.js' + VQ,

@@ -17,10 +17,53 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from core.modes import CognitiveMode, get_mode_manager
 from core.knowledge.repomap import build_workspace_repomap
 
 logger = logging.getLogger(__name__)
+
+
+# ── Tool argument models ──────────────────────────────────────────────────
+# Every tool in ARES_TOOL_DEFS carries an args_model so MCP discovery and the
+# JaegerAI ToolDef bridge can publish a real JSON Schema instead of an empty
+# object. Field constraints are the tool boundary's first validation pass.
+
+
+class AddWorkspaceArgs(BaseModel):
+    path: str = Field(min_length=1, max_length=4096, description="Absolute path to register as a workspace")
+    name: str | None = Field(default=None, max_length=256, description="Optional display name for the workspace")
+
+
+class NoArgs(BaseModel):
+    """No arguments."""
+
+
+class SetModeArgs(BaseModel):
+    mode: str = Field(min_length=1, max_length=32, description="Cognitive mode: standby, focus, or wonder")
+
+
+class TriggerDreamArgs(BaseModel):
+    workspaces: list[str] | None = Field(
+        default=None,
+        max_length=64,
+        description="Workspace paths to reflect over; defaults to all registered workspaces",
+    )
+
+
+class WriteMemoryNoteArgs(BaseModel):
+    section: str = Field(min_length=1, max_length=32, description="Memory file to write: memory, user, or soul")
+    content: str = Field(min_length=1, max_length=65536, description="Content to append to the memory file")
+
+
+class RepoMapArgs(BaseModel):
+    workspace: str | None = Field(default=None, max_length=4096, description="Workspace path; defaults to the active workspace")
+    max_files: int = Field(default=50, ge=1, le=2000, description="Maximum number of files to include in the map")
+
+
+class RunVerificationArgs(BaseModel):
+    workspace: str | None = Field(default=None, max_length=4096, description="Workspace path; defaults to the active workspace")
 
 
 def ares_add_workspace(path: str, name: str | None = None) -> dict[str, Any]:
@@ -178,16 +221,68 @@ def ares_run_verification(workspace: str | None = None) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
-# Tool registry map for dynamic dispatch
+# ── Canonical tool catalog ────────────────────────────────────────────────
+# ARES_TOOL_DEFS is the single registration point for ARES-owned tools
+# (AGENTS.md rule 4). The MCP boundary, the JaegerAI ToolDef bridge, the
+# dynamic inventory route, and dispatch below all read this one list, so a
+# tool added here shows up everywhere without a second edit.
+ARES_TOOL_DEFS: list[dict[str, Any]] = [
+    {
+        "name": "ares_add_workspace",
+        "description": "Add a new directory as a registered ARES workspace.",
+        "fn": ares_add_workspace,
+        "args_model": AddWorkspaceArgs,
+    },
+    {
+        "name": "ares_list_workspaces",
+        "description": "List all registered ARES workspaces.",
+        "fn": ares_list_workspaces,
+        "args_model": NoArgs,
+    },
+    {
+        "name": "ares_set_mode",
+        "description": "Switch the ARES cognitive operating mode (standby, focus, wonder).",
+        "fn": ares_set_mode,
+        "args_model": SetModeArgs,
+    },
+    {
+        "name": "ares_get_mode",
+        "description": "Get the current ARES cognitive operating mode and dream statistics.",
+        "fn": ares_get_mode,
+        "args_model": NoArgs,
+    },
+    {
+        "name": "ares_trigger_dream",
+        "description": (
+            "Trigger an on-demand Wonder/Dream reflection cycle to index codebase "
+            "symbols and synthesize knowledge."
+        ),
+        "fn": ares_trigger_dream,
+        "args_model": TriggerDreamArgs,
+    },
+    {
+        "name": "ares_write_memory_note",
+        "description": "Write content directly to an ARES memory file ('memory', 'user', or 'soul').",
+        "fn": ares_write_memory_note,
+        "args_model": WriteMemoryNoteArgs,
+    },
+    {
+        "name": "ares_get_repo_map",
+        "description": "Generate an AST codebase symbol map for a workspace.",
+        "fn": ares_get_repo_map,
+        "args_model": RepoMapArgs,
+    },
+    {
+        "name": "ares_run_verification",
+        "description": "Automatically detect and run the test suite for the active workspace.",
+        "fn": ares_run_verification,
+        "args_model": RunVerificationArgs,
+    },
+]
+
+# Name -> callable map for dynamic dispatch, derived so it cannot drift.
 ARES_TOOLS_REGISTRY: dict[str, Any] = {
-    "ares_add_workspace": ares_add_workspace,
-    "ares_list_workspaces": ares_list_workspaces,
-    "ares_set_mode": ares_set_mode,
-    "ares_get_mode": ares_get_mode,
-    "ares_trigger_dream": ares_trigger_dream,
-    "ares_write_memory_note": ares_write_memory_note,
-    "ares_get_repo_map": ares_get_repo_map,
-    "ares_run_verification": ares_run_verification,
+    str(definition["name"]): definition["fn"] for definition in ARES_TOOL_DEFS
 }
 
 

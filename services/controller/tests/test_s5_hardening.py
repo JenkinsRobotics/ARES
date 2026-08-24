@@ -79,6 +79,7 @@ def test_stale_jaeger_override_names_the_variable_and_the_repair(monkeypatch):
         paths.ARES_JAEGER_HOME_ENV,
         paths.JAEGER_HOME_ENV,
         paths.ARES_JAEGER_SOURCE_DIR_ENV,
+        paths.ARES_NO_JAEGER_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(paths.ARES_JAEGER_HOME_ENV, "/nonexistent/JaegerAI")

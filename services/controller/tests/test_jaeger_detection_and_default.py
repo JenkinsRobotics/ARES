@@ -35,6 +35,7 @@ def _clear_jaeger_env(monkeypatch):
         paths.JAEGER_HOME_ENV,
         paths.ARES_JAEGER_SOURCE_DIR_ENV,
         paths.ARES_JAEGER_INSTANCE_ENV,
+        paths.ARES_NO_JAEGER_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
 

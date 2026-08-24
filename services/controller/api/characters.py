@@ -25,6 +25,7 @@ def _normalize(row: dict[str, Any]) -> dict[str, Any]:
         "role": str(row.get("role") or ""),
         "voice_tone": str(row.get("voice_tone") or ""),
         "voice_id": str(row.get("voice_id") or ""),
+        "soul": str(row.get("soul") or ""),
         "level": int(row.get("level") or 1),
         "revision": float(row.get("revision") or 1.0),
         "card_url": row.get("card") or row.get("icon") or "/assets/ares-app-icon.png",
@@ -41,7 +42,23 @@ def list_characters() -> list[dict[str, Any]]:
         rows = _query("characters")
     except Exception:
         return []
-    return [_normalize(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    if not isinstance(rows, list):
+        return []
+    projected: list[dict[str, Any]] = []
+    for summary in rows:
+        if not isinstance(summary, dict):
+            continue
+        row = dict(summary)
+        char_id = str(row.get("id") or "")
+        if char_id:
+            try:
+                detail = _query("character", {"id": char_id})
+            except Exception:
+                detail = None
+            if isinstance(detail, dict):
+                row.update(detail)
+        projected.append(_normalize(row))
+    return projected
 
 
 def get_character(char_id: str) -> Optional[dict[str, Any]]:

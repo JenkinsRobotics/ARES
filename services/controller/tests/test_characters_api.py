@@ -77,6 +77,20 @@ def test_characters_api(monkeypatch):
     assert char_none is None
 
 
+def test_character_list_enriches_bridge_summaries_with_owner_detail(monkeypatch):
+    def query(what, args=None):
+        if what == "characters":
+            return [{"id": "systems_principal", "name": "Systems Principal", "stats": []}]
+        return {
+            "id": "systems_principal", "name": "Systems Principal",
+            "soul": "Build reliable systems.",
+            "traits": {"hexaco": {"honesty_humility": 0.8}},
+        }
+    monkeypatch.setattr("api.characters._query", query)
+    row = list_characters()[0]
+    assert row["soul"] == "Build reliable systems."
+    assert row["traits"]["hexaco"]["honesty_humility"] == 0.8
+
 def test_sync_main_model_to_jaeger_success(monkeypatch):
     called_sync = []
     called_reset = []

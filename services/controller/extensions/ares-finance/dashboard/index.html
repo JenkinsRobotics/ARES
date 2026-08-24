@@ -21,77 +21,158 @@
         <div class="status-badge" id="sidecarStatus">
           <span class="dot"></span> Sidecar Online
         </div>
+        <button id="authModalBtn" class="btn-secondary">🔑 Monarch Auth</button>
         <button id="syncBtn" class="btn-primary">
           <span class="btn-icon">⚡</span> Sync Monarch
         </button>
       </div>
     </header>
 
-    <!-- Main Grid -->
-    <div class="dashboard-grid">
-      <!-- Net Worth & Overview Card -->
-      <section class="card stat-card">
-        <div class="card-header">
-          <h2>Net Worth & Balances</h2>
-          <span class="badge" id="lastUpdated">Updated just now</span>
-        </div>
-        <div class="stat-highlight">
-          <span class="currency">$</span>
-          <span class="amount" id="netWorthDisplay">135,509.00</span>
-        </div>
-        <div class="breakdown-grid" id="accountsBreakdown">
-          <!-- Filled dynamically -->
-        </div>
-      </section>
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="overviewTab">📊 Overview & Optimizer</button>
+      <button class="nav-tab" data-tab="walletTab">💳 My Wallet & Rules</button>
+      <button class="nav-tab" data-tab="analyticsTab">📈 Spending Analytics</button>
+    </nav>
 
-      <!-- Card Optimizer Card -->
-      <section class="card optimizer-card">
-        <div class="card-header">
-          <h2>⚡ Credit Card Optimizer</h2>
-          <span class="badge badge-accent">Auto-Multiplier</span>
-        </div>
-        <p class="section-desc">Type a merchant to find the highest reward multiplier in your wallet:</p>
-        
-        <div class="optimizer-input-row">
-          <input type="text" id="merchantInput" placeholder="e.g. Whole Foods, Chevron, Starbucks, Delta..." />
-          <button id="optimizeBtn" class="btn-accent">Evaluate</button>
-        </div>
-
-        <div id="optimizerResult" class="optimizer-result">
-          <div class="rec-box">
-            <span class="rec-label">RECOMMENDED CARD</span>
-            <div class="rec-card-name" id="recCardName">Chase Sapphire Preferred</div>
-            <div class="rec-multiplier" id="recMultiplier">3.0x Multiplier (Dining)</div>
+    <!-- TAB 1: Overview & Optimizer -->
+    <section id="overviewTab" class="tab-content active">
+      <div class="dashboard-grid">
+        <!-- Net Worth & Overview Card -->
+        <div class="card stat-card">
+          <div class="card-header">
+            <h2>Net Worth & Balances</h2>
+            <span class="badge" id="lastUpdated">Updated just now</span>
           </div>
-          <div class="rec-tip" id="recTip">Swipe for 3x points on worldwide restaurants & food delivery.</div>
+          <div class="stat-highlight">
+            <span class="currency">$</span>
+            <span class="amount" id="netWorthDisplay">135,509.00</span>
+          </div>
+          <div class="breakdown-grid" id="accountsBreakdown">
+            <!-- Dynamically filled -->
+          </div>
         </div>
-      </section>
 
-      <!-- Recent Transactions -->
-      <section class="card full-width">
+        <!-- Card Optimizer Card -->
+        <div class="card optimizer-card">
+          <div class="card-header">
+            <h2>⚡ Credit Card Optimizer</h2>
+            <span class="badge badge-accent">Auto-Multiplier</span>
+          </div>
+          <p class="section-desc">Type a merchant or store to identify the maximum point multiplier in your wallet:</p>
+          
+          <div class="optimizer-input-row">
+            <input type="text" id="merchantInput" placeholder="e.g. Whole Foods, Chevron, Starbucks, Delta, Costco..." />
+            <button id="optimizeBtn" class="btn-accent">Evaluate</button>
+          </div>
+
+          <div id="optimizerResult" class="optimizer-result">
+            <div class="rec-box">
+              <span class="rec-label">RECOMMENDED CARD</span>
+              <div class="rec-card-name" id="recCardName">Chase Sapphire Preferred</div>
+              <div class="rec-multiplier" id="recMultiplier">3.0x Multiplier (DINING)</div>
+            </div>
+            <div class="rec-tip" id="recTip">Swipe for 3x points on worldwide restaurants & food delivery.</div>
+          </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="card full-width">
+          <div class="card-header">
+            <h2>Recent Activity Ledger</h2>
+            <span class="badge" id="txCountBadge">5 Transactions</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Merchant</th>
+                  <th>Category</th>
+                  <th>Optimal Card</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody id="txTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: My Wallet & Rules -->
+    <section id="walletTab" class="tab-content">
+      <div class="card full-width">
         <div class="card-header">
-          <h2>Recent Activity Ledger</h2>
-          <span class="badge" id="txCountBadge">5 Transactions</span>
+          <h2>Active Wallet Cards & Bonus Rules</h2>
+          <button id="addCardBtn" class="btn-primary">+ Add New Card</button>
         </div>
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Merchant</th>
-                <th>Category</th>
-                <th>Optimal Card</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody id="txTableBody">
-              <!-- Dynamically populated -->
-            </tbody>
-          </table>
+        <p class="section-desc">The optimizer evaluates these cards against merchant category codes and spend caps:</p>
+        <div class="cards-grid" id="cardsGridContainer">
+          <!-- Dynamically populated -->
         </div>
-      </section>
+      </div>
+    </section>
+
+    <!-- TAB 3: Spending Analytics -->
+    <section id="analyticsTab" class="tab-content">
+      <div class="card full-width">
+        <div class="card-header">
+          <h2>Spending Breakdown by Category</h2>
+          <span class="badge badge-accent">Auto-Categorized</span>
+        </div>
+        <div class="analytics-bars-container" id="analyticsBarsContainer">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Monarch Auth Modal -->
+  <div id="authModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="card-header">
+        <h2>Monarch Money Credentials</h2>
+        <button id="closeAuthModal" class="btn-close">✕</button>
+      </div>
+      <p class="section-desc">Enter your Monarch API Token or Session Key to enable live cloud sync:</p>
+      <div class="form-group">
+        <label>Session Token / API Key</label>
+        <input type="password" id="monarchTokenInput" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+      </div>
+      <div class="modal-actions">
+        <button id="saveTokenBtn" class="btn-primary">Save & Connect</button>
+      </div>
     </div>
   </div>
+
+  <!-- Add Card Modal -->
+  <div id="addCardModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="card-header">
+        <h2>Add Credit Card</h2>
+        <button id="closeAddCardModal" class="btn-close">✕</button>
+      </div>
+      <div class="form-group">
+        <label>Card Name</label>
+        <input type="text" id="newCardName" placeholder="e.g. Chase Freedom Unlimited">
+      </div>
+      <div class="form-group">
+        <label>Issuer</label>
+        <input type="text" id="newCardIssuer" placeholder="e.g. Chase">
+      </div>
+      <div class="form-group">
+        <label>Top Categories (JSON Multipliers)</label>
+        <input type="text" id="newCardRewards" placeholder='{"dining": 3.0, "drugstores": 3.0, "default": 1.5}'>
+      </div>
+      <div class="modal-actions">
+        <button id="saveNewCardBtn" class="btn-primary">Add to Wallet</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,5 +1,20 @@
 const API_BASE = "http://127.0.0.1:3848";
 
+// Tab Navigation
+document.querySelectorAll(".nav-tab").forEach(tabBtn => {
+  tabBtn.addEventListener("click", () => {
+    document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    
+    tabBtn.classList.add("active");
+    const targetId = tabBtn.getAttribute("data-tab");
+    document.getElementById(targetId).classList.add("active");
+    
+    if (targetId === "walletTab") loadWalletCards();
+    if (targetId === "analyticsTab") loadAnalytics();
+  });
+});
+
 async function fetchSummary() {
   try {
     const res = await fetch(`${API_BASE}/api/summary`);
@@ -12,15 +27,15 @@ async function fetchSummary() {
     breakdownContainer.innerHTML = `
       <div class="breakdown-item">
         <div class="breakdown-label">Liquid Assets</div>
-        <div class="breakdown-val text-green">$${Number(data.breakdown.depository || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+        <div class="breakdown-val" style="color: var(--accent-green)">$${Number(data.breakdown.depository || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
       </div>
       <div class="breakdown-item">
         <div class="breakdown-label">Investments</div>
-        <div class="breakdown-val text-blue">$${Number(data.breakdown.investment || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+        <div class="breakdown-val" style="color: var(--accent-blue)">$${Number(data.breakdown.investment || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
       </div>
       <div class="breakdown-item">
         <div class="breakdown-label">Credit Balance</div>
-        <div class="breakdown-val text-gold">$${Number(data.breakdown.credit || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+        <div class="breakdown-val" style="color: var(--accent-gold)">$${Number(data.breakdown.credit || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
       </div>
     `;
     setOnlineStatus(true);
@@ -47,7 +62,7 @@ async function fetchTransactions() {
         <td>${tx.date}</td>
         <td><strong>${tx.merchant_name}</strong></td>
         <td><span class="tx-cat">${tx.category}</span></td>
-        <td><span class="badge badge-accent">Best Card Matched</span></td>
+        <td><span class="badge badge-accent">Best Multiplier Matched</span></td>
         <td class="${isPos ? 'amount-pos' : 'amount-neg'}">${amtFormatted}</td>
       `;
       tbody.appendChild(tr);
@@ -56,6 +71,71 @@ async function fetchTransactions() {
     document.getElementById("txCountBadge").innerText = `${data.transactions.length} Recorded`;
   } catch (err) {
     console.error("Failed to load transactions", err);
+  }
+}
+
+async function loadWalletCards() {
+  try {
+    const res = await fetch(`${API_BASE}/api/cards`);
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    const container = document.getElementById("cardsGridContainer");
+    container.innerHTML = "";
+    
+    data.cards.forEach(card => {
+      const div = document.createElement("div");
+      div.className = "wallet-card-item";
+      
+      const tags = Object.entries(card.rewards)
+        .map(([cat, mult]) => `<span class="mult-tag">${cat}: ${mult}x</span>`)
+        .join("");
+        
+      div.innerHTML = `
+        <div>
+          <div class="wallet-card-title">${card.name}</div>
+          <div class="wallet-card-issuer">${card.issuer}</div>
+          <div class="wallet-multipliers-tags">${tags}</div>
+        </div>
+        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">
+          ${card.notes || "Standard card terms."}
+        </div>
+      `;
+      container.appendChild(div);
+    });
+  } catch (err) {
+    console.error("Failed to load cards", err);
+  }
+}
+
+async function loadAnalytics() {
+  try {
+    const res = await fetch(`${API_BASE}/api/analytics/spending`);
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    const container = document.getElementById("analyticsBarsContainer");
+    container.innerHTML = "";
+    
+    const maxSpent = Math.max(...data.spending_by_category.map(c => c.total_spent), 1);
+    
+    data.spending_by_category.forEach(cat => {
+      const pct = Math.round((cat.total_spent / maxSpent) * 100);
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      row.innerHTML = `
+        <div class="bar-label-row">
+          <span><strong>${cat.category}</strong> (${cat.count} tx)</span>
+          <span>$${cat.total_spent.toFixed(2)}</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: ${pct}%"></div>
+        </div>
+      `;
+      container.appendChild(row);
+    });
+  } catch (err) {
+    console.error("Failed to load analytics", err);
   }
 }
 
@@ -91,6 +171,50 @@ function setOnlineStatus(online) {
     badge.style.color = "var(--danger)";
   }
 }
+
+// Modals
+const authModal = document.getElementById("authModal");
+document.getElementById("authModalBtn").addEventListener("click", () => authModal.classList.remove("hidden"));
+document.getElementById("closeAuthModal").addEventListener("click", () => authModal.classList.add("hidden"));
+
+document.getElementById("saveTokenBtn").addEventListener("click", async () => {
+  const token = document.getElementById("monarchTokenInput").value.trim();
+  if (!token) return;
+  await fetch(`${API_BASE}/api/auth/monarch-token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token })
+  });
+  authModal.classList.add("hidden");
+  alert("Monarch token saved securely.");
+});
+
+const addCardModal = document.getElementById("addCardModal");
+document.getElementById("addCardBtn").addEventListener("click", () => addCardModal.classList.remove("hidden"));
+document.getElementById("closeAddCardModal").addEventListener("click", () => addCardModal.classList.add("hidden"));
+
+document.getElementById("saveNewCardBtn").addEventListener("click", async () => {
+  const name = document.getElementById("newCardName").value.trim();
+  const issuer = document.getElementById("newCardIssuer").value.trim();
+  let rewards = {};
+  try {
+    rewards = JSON.parse(document.getElementById("newCardRewards").value.trim() || '{"default": 1.0}');
+  } catch (e) {
+    rewards = { "default": 1.0 };
+  }
+  
+  if (!name) return;
+  const id = name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+  
+  await fetch(`${API_BASE}/api/cards`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, name, issuer, rewards })
+  });
+  
+  addCardModal.classList.add("hidden");
+  loadWalletCards();
+});
 
 document.getElementById("optimizeBtn").addEventListener("click", evaluateCard);
 document.getElementById("merchantInput").addEventListener("keypress", (e) => {

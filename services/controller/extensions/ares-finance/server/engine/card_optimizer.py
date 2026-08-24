@@ -1,14 +1,14 @@
 import json
 from typing import Dict, Any, List
-from .db import get_db
+from .db import get_all_cards, get_db
 
 CATEGORY_KEYWORDS = {
-    "dining": ["restaurant", "cafe", "coffee", "bistro", "starbucks", "mcdonald", "chipotle", "doordash", "uber eats", "grubhub", "blue bottle"],
-    "gas": ["chevron", "shell", "exxon", "mobil", "76", "bp", "speedway", "costco gas"],
-    "ev_charging": ["tesla supercharger", "evgo", "electrify america", "chargepoint", "blink"],
-    "groceries": ["whole foods", "trader joe", "kroger", "safeway", "aldi", "sprouts", "heb", "publix"],
-    "travel": ["united airlines", "delta", "american airlines", "marriott", "hilton", "airbnb", "uber", "lyft", "expedia"],
-    "streaming": ["netflix", "spotify", "hulu", "disney", "apple music", "youtube premium", "hbo"]
+    "dining": ["restaurant", "cafe", "coffee", "bistro", "starbucks", "mcdonald", "chipotle", "doordash", "uber eats", "grubhub", "blue bottle", "sweetgreen", "shake shack"],
+    "gas": ["chevron", "shell", "exxon", "mobil", "76", "bp", "speedway", "costco gas", "arco", "valero"],
+    "ev_charging": ["tesla supercharger", "evgo", "electrify america", "chargepoint", "blink", "rivian"],
+    "groceries": ["whole foods", "trader joe", "kroger", "safeway", "aldi", "sprouts", "heb", "publix", "wegmans", "h mart", "target"],
+    "travel": ["united airlines", "delta", "american airlines", "marriott", "hilton", "hyatt", "airbnb", "uber", "lyft", "expedia", "booking.com"],
+    "streaming": ["netflix", "spotify", "hulu", "disney", "apple music", "youtube premium", "hbo", "max", "peacock"]
 }
 
 def infer_category(merchant_name: str) -> str:
@@ -20,51 +20,45 @@ def infer_category(merchant_name: str) -> str:
 
 def recommend_best_card(merchant_name: str, category_override: str = None) -> Dict[str, Any]:
     category = category_override if category_override else infer_category(merchant_name)
+    cards = get_all_cards()
     
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name, issuer, reward_structure, notes FROM cards")
-        rows = cursor.fetchall()
+    best_card = None
+    max_multiplier = 0.0
+    all_options = []
+    
+    for card in cards:
+        rewards = card.get("rewards", {})
+        multiplier = rewards.get(category, rewards.get("default", 1.0))
         
-        best_card = None
-        max_multiplier = 0.0
-        all_options = []
-        
-        for row in rows:
-            card_id, name, issuer, reward_json, notes = row
-            try:
-                rewards = json.loads(reward_json)
-            except Exception:
-                rewards = {}
+        # Check quarterly category bonus if applicable
+        if card.get("quarterly_category") and card.get("quarterly_category").lower() == category.lower():
+            multiplier = max(multiplier, 5.0)
             
-            # Check specific category, then normalized category, then default
-            multiplier = rewards.get(category, rewards.get("default", 1.0))
-            all_options.append({
-                "card_id": card_id,
-                "name": name,
-                "issuer": issuer,
-                "multiplier": multiplier,
-                "notes": notes
-            })
-            
-            if multiplier > max_multiplier:
-                max_multiplier = multiplier
-                best_card = {
-                    "card_id": card_id,
-                    "name": name,
-                    "issuer": issuer,
-                    "multiplier": multiplier,
-                    "notes": notes
-                }
-        
-        # Sort options descending by multiplier
-        all_options.sort(key=lambda x: x["multiplier"], reverse=True)
-        
-        return {
-            "merchant": merchant_name,
-            "detected_category": category,
-            "recommended_card": best_card,
-            "multiplier": max_multiplier,
-            "all_cards_ranking": all_options,
-            "tip": f"Use {best_card['name']} for {max_multiplier}x rewards on {category} spend." if best_card else "Use standard catch-all card."
+        card_option = {
+            "card_id": card["id"],
+            "name": card["name"],
+            "issuer": card["issuer"],
+            "multiplier": multiplier,
+            "spend_cap_monthly": card.get("spend_cap_monthly", 0),
+            "notes": card.get("notes", "")
         }
+        all_options.append(card_option)
+        
+        if multiplier > max_multiplier:
+            max_multiplier = multiplier
+            best_card = card_option
+    
+    all_options.sort(key=lambda x: x["multiplier"], reverse=True)
+    
+    tip = f"Swipe {best_card['name']} for {max_multiplier}x on {category.upper()} spend." if best_card else "Use standard catch-all card."
+    if best_card and best_card.get("spend_cap_monthly", 0) > 0:
+        tip += f" (Note: ${best_card['spend_cap_monthly']:,.0f}/mo cap on bonus rate)"
+        
+    return {
+        "merchant": merchant_name,
+        "detected_category": category,
+        "recommended_card": best_card,
+        "multiplier": max_multiplier,
+        "all_cards_ranking": all_options,
+        "tip": tip
+    }

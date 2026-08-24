@@ -195,11 +195,14 @@ h1 {
   border-radius: 10px;
   position: relative;
   overflow: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: center;
   border: 1px solid var(--border-color);
   margin-bottom: 16px;
+}
+
+.avatar-canvas-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
 }
 
 .avatar-hud {
@@ -208,6 +211,7 @@ h1 {
   left: 10px;
   display: flex;
   gap: 8px;
+  z-index: 10;
 }
 
 .hud-tag {
@@ -217,55 +221,6 @@ h1 {
   border-radius: 4px;
   color: var(--accent-cyan);
   font-family: monospace;
-}
-
-.avatar-character {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.avatar-head {
-  width: 100px;
-  height: 100px;
-  background: #ffccbc;
-  border-radius: 50%;
-  position: relative;
-  box-shadow: 0 0 20px rgba(0, 229, 255, 0.3);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.avatar-eyes {
-  display: flex;
-  gap: 24px;
-}
-
-.eye {
-  width: 12px;
-  height: 12px;
-  background: #1a237e;
-  border-radius: 50%;
-  transition: transform 0.1s;
-}
-
-.avatar-mouth {
-  width: 14px;
-  height: 6px;
-  background: #d84315;
-  border-radius: 0 0 10px 10px;
-  margin-top: 12px;
-  transition: all 0.1s ease;
-}
-
-.avatar-body {
-  width: 140px;
-  height: 100px;
-  background: #283593;
-  border-radius: 30px 30px 0 0;
-  margin-top: 10px;
 }
 
 .control-row {
@@ -280,8 +235,10 @@ h1 {
   border: 1px solid var(--border-color);
   margin: 12px 0;
   font-family: monospace;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--accent-cyan);
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .subsection-title {
@@ -317,7 +274,7 @@ h1 {
   margin-bottom: 6px;
 }
 
-.form-group input, .optimizer-input-row input {
+.form-group input, .form-select, .optimizer-input-row input {
   width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border-color);

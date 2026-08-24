@@ -1,6 +1,6 @@
 const API_BASE = "http://127.0.0.1:3849";
 
-// Tab Switching Logic
+// Tab Navigation
 document.querySelectorAll(".nav-tab").forEach(tabBtn => {
   tabBtn.addEventListener("click", () => {
     document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
@@ -12,41 +12,127 @@ document.querySelectorAll(".nav-tab").forEach(tabBtn => {
   });
 });
 
-// Copy OBS Browser Source URL
+// Three.js 3D Avatar Viewport in Dashboard
+let scene, camera, renderer, headGroup, mouthMesh;
+let isLipSyncing = false;
+
+function init3DStage() {
+  const container = document.getElementById("threeStage");
+  if (!container) return;
+  
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+  camera.position.set(0, 1.0, 3.2);
+
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(renderer.domElement);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+  scene.add(ambient);
+  const point = new THREE.PointLight(0x00e5ff, 1.8, 50);
+  point.position.set(2, 3, 4);
+  scene.add(point);
+
+  // Avatar Model
+  headGroup = new THREE.Group();
+
+  const headGeo = new THREE.SphereGeometry(0.65, 32, 32);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x18243c, roughness: 0.2, metalness: 0.8 });
+  const head = new THREE.Mesh(headGeo, headMat);
+  headGroup.add(head);
+
+  const visorGeo = new THREE.BoxGeometry(0.75, 0.18, 0.3);
+  const visorMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+  const visor = new THREE.Mesh(visorGeo, visorMat);
+  visor.position.set(0, 0.08, 0.55);
+  headGroup.add(visor);
+
+  const mouthGeo = new THREE.BoxGeometry(0.28, 0.04, 0.1);
+  const mouthMat = new THREE.MeshBasicMaterial({ color: 0xb388ff });
+  mouthMesh = new THREE.Mesh(mouthGeo, mouthMat);
+  mouthMesh.position.set(0, -0.28, 0.55);
+  headGroup.add(mouthMesh);
+
+  const bodyGeo = new THREE.CylinderGeometry(0.45, 0.65, 1.0, 32);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0f1828, roughness: 0.3, metalness: 0.7 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = -1.1;
+  headGroup.add(body);
+
+  headGroup.position.y = 0.2;
+  scene.add(headGroup);
+
+  const clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+
+    if (document.getElementById("tiltCheck")?.checked) {
+      headGroup.position.y = 0.2 + Math.sin(t * 1.5) * 0.03;
+      headGroup.rotation.y = Math.sin(t * 0.8) * 0.15;
+      headGroup.rotation.x = Math.sin(t * 1.2) * 0.05;
+    }
+
+    if (isLipSyncing && document.getElementById("visemeCheck")?.checked) {
+      mouthMesh.scale.y = 1.0 + Math.abs(Math.sin(t * 10.0)) * 3.0;
+    } else {
+      mouthMesh.scale.y = 1.0;
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    if (!container) return;
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+}
+
+// Copy OBS Overlay URL
 document.getElementById("copyObsBtn").addEventListener("click", () => {
   navigator.clipboard.writeText("http://127.0.0.1:3849/overlay/avatar");
   const btn = document.getElementById("copyObsBtn");
-  btn.innerText = "✅ URL Copied!";
-  setTimeout(() => { btn.innerText = "📋 Copy OBS Overlay URL"; }, 2000);
+  btn.innerText = "✅ Copied to Clipboard!";
+  setTimeout(() => { btn.innerText = "📋 Copy OBS Overlay URL"; }, 2500);
 });
 
-// Avatar Viseme & Speech Test
-let isSpeaking = false;
-document.getElementById("testSpeechBtn").addEventListener("click", () => {
-  if (isSpeaking) return;
-  isSpeaking = true;
-  const mouth = document.getElementById("avatarMouth");
-  let count = 0;
-  
-  const interval = setInterval(() => {
-    count++;
-    const height = (count % 2 === 0) ? "16px" : "4px";
-    const width = (count % 2 === 0) ? "20px" : "14px";
-    mouth.style.height = height;
-    mouth.style.width = width;
-    
-    if (count > 20) {
-      clearInterval(interval);
-      mouth.style.height = "6px";
-      mouth.style.width = "14px";
-      isSpeaking = false;
+// Toggle Lip Sync
+document.getElementById("toggleLipSyncBtn").addEventListener("click", () => {
+  isLipSyncing = !isLipSyncing;
+  const btn = document.getElementById("toggleLipSyncBtn");
+  btn.innerText = isLipSyncing ? "⏹ Stop Lip-Sync" : "🔊 Test Speech Lip-Sync";
+});
+
+// Webcam toggle
+let webcamActive = false;
+document.getElementById("toggleWebcamBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("toggleWebcamBtn");
+  if (!webcamActive) {
+    try {
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      webcamActive = true;
+      btn.innerText = "⏹ Stop Webcam Tracking";
+      btn.className = "btn-accent";
+    } catch (e) {
+      alert("Webcam access not granted or not available in this window.");
     }
-  }, 100);
+  } else {
+    webcamActive = false;
+    btn.innerText = "📷 Enable Webcam Tracking";
+    btn.className = "btn-primary";
+  }
 });
 
-// Video Script Generator
+// Video Script & Remotion Generator
+let currentScriptData = null;
 document.getElementById("generateScriptBtn").addEventListener("click", async () => {
-  const topic = document.getElementById("videoTopicInput").value.trim() || "Autonomous Agent Coding in 2026";
+  const topic = document.getElementById("videoTopicInput").value.trim() || "Autonomous Agent Robotics in 2026";
   const btn = document.getElementById("generateScriptBtn");
   btn.innerText = "Generating Script & Scenes...";
   
@@ -57,6 +143,7 @@ document.getElementById("generateScriptBtn").addEventListener("click", async () 
       body: JSON.stringify({ topic, duration_secs: 60 })
     });
     const data = await res.json();
+    currentScriptData = data;
     
     const container = document.getElementById("storyboardContainer");
     container.innerHTML = "";
@@ -73,13 +160,23 @@ document.getElementById("generateScriptBtn").addEventListener("click", async () 
     });
     
     document.getElementById("renderSpecsBox").innerHTML = `
-      <pre>${JSON.stringify(data.remotion_composition_spec, null, 2)}</pre>
+      <pre>${JSON.stringify(data.remotion_manifest, null, 2)}</pre>
     `;
   } catch (err) {
     console.error("Script generation failed", err);
   } finally {
-    btn.innerText = "✨ Generate Script & Storyboard";
+    btn.innerText = "✨ Generate Script & Remotion Schema";
   }
+});
+
+document.getElementById("exportMp4Btn").addEventListener("click", () => {
+  if (!currentScriptData) {
+    alert("Please generate a video script first!");
+    return;
+  }
+  const cmd = currentScriptData.remotion_manifest?.render_command || "npx remotion render ...";
+  navigator.clipboard.writeText(cmd);
+  alert("Render command copied to clipboard:\n" + cmd);
 });
 
 // YouTube Ingestion
@@ -111,7 +208,7 @@ document.getElementById("learnYtBtn").addEventListener("click", async () => {
   } catch (err) {
     console.error("Ingestion failed", err);
   } finally {
-    btn.innerText = "🧠 Ingest Video";
+    btn.innerText = "🧠 Ingest";
   }
 });
 
@@ -123,7 +220,7 @@ async function loadLibrary() {
     
     const list = document.getElementById("knowledgeLibraryList");
     list.innerHTML = "";
-    document.getElementById("libraryCount").innerText = `${data.library.length} Ingested`;
+    document.getElementById("libraryCount").innerText = `${data.library.length} Videos`;
     
     data.library.forEach(item => {
       const div = document.createElement("div");
@@ -139,4 +236,5 @@ async function loadLibrary() {
   }
 }
 
+init3DStage();
 loadLibrary();

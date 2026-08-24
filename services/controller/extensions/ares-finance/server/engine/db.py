@@ -46,20 +46,29 @@ def init_db():
                 name TEXT NOT NULL,
                 issuer TEXT NOT NULL,
                 reward_structure TEXT NOT NULL,
+                spend_cap_monthly REAL DEFAULT 0,
+                quarterly_category TEXT,
                 notes TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
         cursor.execute("SELECT COUNT(*) FROM cards")
         if cursor.fetchone()[0] == 0:
             default_cards = [
-                ("csp", "Chase Sapphire Preferred", "Chase", json.dumps({"dining": 3.0, "travel": 2.0, "streaming": 3.0, "online_grocery": 3.0, "default": 1.0}), "3x on dining, select streaming, online groceries"),
-                ("citi_cc", "Citi Custom Cash", "Citi", json.dumps({"gas": 5.0, "groceries": 5.0, "dining": 5.0, "travel": 5.0, "ev_charging": 5.0, "default": 1.0}), "5x on top eligible spend category up to $500/mo"),
-                ("amex_gold", "Amex Gold", "American Express", json.dumps({"dining": 4.0, "groceries": 4.0, "flights": 3.0, "default": 1.0}), "4x on worldwide dining & US supermarkets"),
-                ("venture_x", "Capital One Venture X", "Capital One", json.dumps({"travel_portal": 10.0, "flights_portal": 5.0, "default": 2.0}), "2x miles catch-all on all purchases"),
-                ("apple_card", "Apple Card", "Goldman Sachs", json.dumps({"apple_pay": 2.0, "apple_merchants": 3.0, "default": 1.0}), "2% Daily Cash with Apple Pay, 3% at Apple/Nike/Uber")
+                ("csp", "Chase Sapphire Preferred", "Chase", json.dumps({"dining": 3.0, "travel": 2.0, "streaming": 3.0, "online_grocery": 3.0, "default": 1.0}), 0, "", "3x on dining, select streaming, online groceries"),
+                ("citi_cc", "Citi Custom Cash", "Citi", json.dumps({"gas": 5.0, "groceries": 5.0, "dining": 5.0, "travel": 5.0, "ev_charging": 5.0, "default": 1.0}), 500.0, "", "5x on top eligible spend category up to $500/mo"),
+                ("amex_gold", "Amex Gold", "American Express", json.dumps({"dining": 4.0, "groceries": 4.0, "flights": 3.0, "default": 1.0}), 25000.0, "", "4x on worldwide dining & US supermarkets up to $25k/yr"),
+                ("venture_x", "Capital One Venture X", "Capital One", json.dumps({"travel_portal": 10.0, "flights_portal": 5.0, "default": 2.0}), 0, "", "2x miles catch-all on all purchases"),
+                ("apple_card", "Apple Card", "Goldman Sachs", json.dumps({"apple_pay": 2.0, "apple_merchants": 3.0, "default": 1.0}), 0, "", "2% Daily Cash with Apple Pay, 3% at Apple/Nike/Uber")
             ]
-            cursor.executemany("INSERT INTO cards (id, name, issuer, reward_structure, notes) VALUES (?, ?, ?, ?, ?)", default_cards)
+            cursor.executemany("INSERT INTO cards (id, name, issuer, reward_structure, spend_cap_monthly, quarterly_category, notes) VALUES (?, ?, ?, ?, ?, ?, ?)", default_cards)
         
         cursor.execute("SELECT COUNT(*) FROM accounts")
         if cursor.fetchone()[0] == 0:
@@ -81,5 +90,45 @@ def init_db():
             ]
             cursor.executemany("INSERT INTO transactions (id, account_id, amount, date, merchant_name, category, notes, pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", sample_tx)
         conn.commit()
+
+def get_all_cards() -> List[Dict[str, Any]]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, issuer, reward_structure, spend_cap_monthly, quarterly_category, notes FROM cards")
+        cards = []
+        for row in cursor.fetchall():
+            cards.append({
+                "id": row["id"],
+                "name": row["name"],
+                "issuer": row["issuer"],
+                "rewards": json.loads(row["reward_structure"]),
+                "spend_cap_monthly": row["spend_cap_monthly"],
+                "quarterly_category": row["quarterly_category"],
+                "notes": row["notes"]
+            })
+        return cards
+
+def save_card(card_id: str, name: str, issuer: str, rewards: Dict[str, float], spend_cap: float = 0, quarterly: str = "", notes: str = "") -> None:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO cards (id, name, issuer, reward_structure, spend_cap_monthly, quarterly_category, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                issuer=excluded.issuer,
+                reward_structure=excluded.reward_structure,
+                spend_cap_monthly=excluded.spend_cap_monthly,
+                quarterly_category=excluded.quarterly_category,
+                notes=excluded.notes
+        """, (card_id, name, issuer, json.dumps(rewards), spend_cap, quarterly, notes))
+        conn.commit()
+
+def delete_card(card_id: str) -> bool:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+        conn.commit()
+        return cursor.rowcount > 0
 
 init_db()

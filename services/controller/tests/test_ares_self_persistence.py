@@ -38,11 +38,11 @@ def test_self_persistence_prompt_section_instructs_ares_not_backend():
 
     prompt = render_self_persistence_prompt({"ares_backend": "claude_local"})
 
-    assert "ARES owns shared resources, routing, permissions, and task continuity" in prompt
-    assert "selected external runtime supplies inference" in prompt
+    assert "ARES owns the experience surface, shared resources, and approval UI" in prompt
+    assert "selected runtime owns inference, identity, and task continuity" in prompt
     assert "Ares supplies the agent loop" not in prompt
     assert "ARES identity APIs are projections of the active runtime" in prompt
-    assert "Do not bury task continuity inside a swappable backend" in prompt
+    assert "Do not duplicate runtime continuity inside ARES" in prompt
     assert "Active runtime: claude_local" in prompt
 
 

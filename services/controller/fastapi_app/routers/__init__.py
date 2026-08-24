@@ -41,6 +41,7 @@ from .prompts import router as prompts_router
 from .providers import router as providers_router
 from .schedules import router as schedules_router
 from .effects import router as effects_router
+from .jaeger_runtime import router as jaeger_runtime_router
 from .realtime import router as realtime_router
 from .session import router as session_router
 from .settings import router as settings_router
@@ -116,6 +117,7 @@ CORE_ROUTER_REGISTRY = (
     RouterRegistration("pairing", pairing_router),
     RouterRegistration("schedules", schedules_router),
     RouterRegistration("effects", effects_router),
+    RouterRegistration("jaeger-runtime", jaeger_runtime_router),
     RouterRegistration("settings", settings_router),
     RouterRegistration("env", env_router),
     RouterRegistration("shares", shares_router),

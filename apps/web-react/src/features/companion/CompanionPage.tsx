@@ -206,7 +206,7 @@ export function CompanionPage() {
       </Card>
 
       <SurfaceNote>
-        Projects (`/chat`) group your discussions with the agent by subject. The Companion surface (`/companion`) provides high-level intent routing, memory retrieval, and approval management.
+        Projects (`/chat`) group discussions by subject. Companion presents today&apos;s runtime state and approval controls; identity, memory, routing, and continuity remain owned by the selected runtime.
       </SurfaceNote>
     </SurfaceShell>
   );

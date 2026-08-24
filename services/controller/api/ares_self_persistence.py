@@ -62,8 +62,8 @@ def build_self_persistence_contract(config: dict[str, Any] | None) -> dict[str, 
         "runtime_required": True,
         "capabilities": list(SELF_PERSISTENCE_CAPABILITIES),
         "backend_roles": {
-            "ares": "shared_resources_routing_permissions_and_continuity",
-            "active_runtime": "inference_and_projected_identity",
+            "ares": "experience_shared_resources_and_approvals",
+            "active_runtime": "inference_identity_and_task_continuity",
         },
         "rationale": _DEFERRED_FORK_RATIONALE,
     }
@@ -75,15 +75,14 @@ def render_self_persistence_prompt(config: dict[str, Any] | None) -> str:
     contract = build_self_persistence_contract(config)
     capabilities = ", ".join(contract["capabilities"])
     return (
-        "ARES owns shared resources, routing, permissions, and task continuity. "
-        "The explicitly selected external runtime supplies inference and projected identity. "
+        "ARES owns the experience surface, shared resources, and approval UI. "
+        "The explicitly selected runtime owns inference, identity, and task continuity. "
         "ARES identity APIs are projections of the active runtime, not a canonical soul. "
-        "Do not bury task continuity inside a swappable backend.\n\n"
+        "Do not duplicate runtime continuity inside ARES.\n\n"
         f"Active runtime: {contract['active_backend'] or 'none selected'}\n"
         "Adapter policy: adapter-first; fork decision deferred.\n"
         f"ARES presentation/continuity capabilities: {capabilities}.\n"
         "Operational rule: promises, follow-up obligations, self-audit results, "
-        "and continuity state must be treated as ARES product behavior that can "
-        "survive backend replacement. Persona and runtime state remain owned by "
-        "the active backend."
+        "persona, and continuity state remain owned by the active runtime and "
+        "may only be projected through its supported adapter."
     )

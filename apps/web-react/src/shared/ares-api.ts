@@ -656,6 +656,15 @@ export const aresApi = {
       body: JSON.stringify({ key }),
     });
   },
+  async jaegerRuntime() {
+    return apiFetch<{ owner: string; commitments: Array<Record<string, unknown>>; runs: Array<Record<string, unknown>> }>("/api/jaeger-runtime");
+  },
+  async deliverJaegerEvent(wakeKey: string) {
+    return apiFetch<{ ok: boolean }>("/api/jaeger-runtime/deliver-event", {
+      method: "POST",
+      body: JSON.stringify({ wake_key: wakeKey }),
+    });
+  },
 
   async schedules(allProfiles = false) {
     return apiFetch<{ schedules: ScheduleEntry[] }>(`/api/crons?all_profiles=${allProfiles ? "1" : "0"}`);

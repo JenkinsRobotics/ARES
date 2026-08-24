@@ -66,6 +66,7 @@ export function GoalsPage() {
   const [pendingEffects, setPendingEffects] = useState<Array<Record<string, unknown>>>([]);
   const [effectError, setEffectError] = useState("");
   const [effectBusy, setEffectBusy] = useState("");
+  const [runtime, setRuntime] = useState<{ commitments: Array<Record<string, unknown>>; runs: Array<Record<string, unknown>> }>({ commitments: [], runs: [] });
 
   const refreshEffects = useCallback(() => {
     void aresApi.pendingEffects()
@@ -80,6 +81,7 @@ export function GoalsPage() {
 
   useEffect(() => {
     refreshEffects();
+    void aresApi.jaegerRuntime().then(setRuntime).catch(() => setRuntime({ commitments: [], runs: [] }));
   }, [refreshEffects]);
 
   const filtered = goals
@@ -212,6 +214,40 @@ export function GoalsPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      {(runtime.commitments.length > 0 || runtime.runs.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Jaeger runtime</CardTitle>
+            <p className="text-sm text-muted-foreground">Read-only commitments and durable runs owned by JaegerAI.</p>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {runtime.commitments.map((item) => (
+              <div key={String(item.id)} className="rounded-lg border p-3">
+                <p className="font-medium">{String(item.title || item.kind || item.id)}</p>
+                <p className="text-xs text-muted-foreground">commitment · {String(item.state || "unknown")}</p>
+              </div>
+            ))}
+            {runtime.runs.map((run) => {
+              const wakeKey = String(run.wake_key || "");
+              const state = String(run.state || "unknown");
+              return (
+                <div key={String(run.id)} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium">Run {String(run.id)}</p>
+                    <p className="text-xs text-muted-foreground">{state}{wakeKey ? ` · wake key: ${wakeKey}` : ""}</p>
+                  </div>
+                  {state === "waiting_for_event" && wakeKey && (
+                    <Button size="sm" variant="outline" onClick={() => void aresApi.deliverJaegerEvent(wakeKey)}>
+                      Deliver event
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs
         value={filter}

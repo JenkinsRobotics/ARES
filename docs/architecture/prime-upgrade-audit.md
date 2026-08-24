@@ -41,3 +41,5 @@ Exact operator loop:
 4. Send `this UI is broken`. An image-only turn is also converted into a usable `[Image …]` message, so either form can begin the repair.
 
 When attachment is intentionally enabled and Jaeger is running, the character picker enriches summaries through Jaeger's `character` detail bridge query. ARES never reads or owns the sheets.
+
+Completion verification (2026-08-24): controller `5634 passed, 91 skipped, 1 xfailed, 2 xpassed, 16 subtests`; frontend `61 passed`; TypeScript and source-ownership gates passed. Implementation commits: `7c30f7846`, `7a02bf5d9`, `3e6172007`.

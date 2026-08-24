@@ -6,6 +6,25 @@ on:
   pull_request:
 
 jobs:
+  frontend-and-ownership:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web-react/package-lock.json
+      - name: Reject orphaned or cross-owned source
+        run: bash .github/scripts/check-source-ownership.sh
+      - name: Install frontend dependencies
+        working-directory: apps/web-react
+        run: npm ci
+      - name: Typecheck and test frontend
+        working-directory: apps/web-react
+        run: npx tsc -b && npm test -- --run
+
   build-and-test:
     runs-on: macos-15
     timeout-minutes: 45

@@ -32,3 +32,12 @@ ARES lists them through the existing `characters` bridge query.
 `inspect_image_bytes` reads screenshot metadata locally (`jaeger_involved:
 false`). Set `ARES_NO_JAEGER=1` when working on the ARES checkout so this
 process does not attach to the live Jaeger instance.
+
+Exact operator loop:
+
+1. In a fresh terminal export `ARES_NO_JAEGER=1` and `ARES_NO_JAEGER_ATTACH=1`, then start the ARES controller. Do not stop or restart the live Jaeger flock.
+2. In ARES, select `/Users/matthewjenkins/GitHub/ARES` as the session workspace.
+3. Attach the UI screenshot in Chat. Local Pillow inspection reports `jaeger_involved: false` and never opens Jaeger's `state.db`.
+4. Send `this UI is broken`. An image-only turn is also converted into a usable `[Image …]` message, so either form can begin the repair.
+
+When attachment is intentionally enabled and Jaeger is running, the character picker enriches summaries through Jaeger's `character` detail bridge query. ARES never reads or owns the sheets.

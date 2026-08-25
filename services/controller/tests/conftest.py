@@ -15,6 +15,7 @@ PATH DISCOVERY:
 """
 import json
 import inspect
+import logging
 import multiprocessing
 import os
 import pathlib
@@ -25,6 +26,19 @@ import time
 import urllib.request
 import urllib.error
 import pytest
+
+
+def pytest_unconfigure(config):
+    """Silence LiteLLM's late asyncio atexit debug after pytest closes capture.
+
+    LiteLLM creates one final event loop from an atexit callback.  On Python
+    3.11, asyncio logs selector creation to pytest's already-closed capture
+    stream, producing a false post-success ``Logging error`` traceback.
+    Disabling only that debug logger during pytest teardown preserves product
+    logging and real test failures while keeping the release transcript clean.
+    """
+    del config
+    logging.getLogger("asyncio").disabled = True
 
 if not (3, 11) <= sys.version_info[:2] <= (3, 13):
     pytest.exit(

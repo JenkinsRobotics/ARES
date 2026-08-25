@@ -34,11 +34,20 @@ def test_ssrf_trusted_hosts_populated_from_custom_providers():
 
 
 def test_ssrf_check_uses_trusted_hosts():
-    """The SSRF check must consult _ssrf_trusted_hosts before blocking."""
-    with open("api/config.py") as f:
-        src = f.read()
-    # The is_known_local check must include _ssrf_trusted_hosts
-    assert "in _ssrf_trusted_hosts" in src
+    """The SSRF check must consult the trusted-host set before blocking.
+
+    Asserted against BEHAVIOUR, not source text. This test previously read
+    api/config.py and looked for the literal "in _ssrf_trusted_hosts",
+    which broke the moment the predicate was extracted into a helper —
+    even though the behaviour it was guarding got strictly stricter. A
+    source-grep assertion fails on refactors and passes on bugs, which is
+    the wrong way round.
+    """
+    from api.config import _ssrf_host_is_known_local
+
+    assert _ssrf_host_is_known_local("gpu.mylan.internal",
+                                     {"gpu.mylan.internal"}) is True
+    assert _ssrf_host_is_known_local("gpu.mylan.internal", set()) is False
 
 
 def test_ssrf_known_local_still_present():

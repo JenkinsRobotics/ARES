@@ -1,0 +1,14 @@
+{
+  "01-static": {
+    "seconds": 0.05
+  },
+  "03-protocol": {
+    "seconds": 5.31
+  },
+  "04-bridge-lifecycle": {
+    "seconds": 1.3
+  },
+  "05-ares-http": {
+    "seconds": 6.18
+  }
+}

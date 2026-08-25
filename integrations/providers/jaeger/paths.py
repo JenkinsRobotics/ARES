@@ -8,6 +8,14 @@ ARES_JAEGER_HOME_ENV = "ARES_JAEGER_HOME"
 JAEGER_HOME_ENV = "JAEGER_HOME"
 ARES_JAEGER_SOURCE_DIR_ENV = "ARES_JAEGER_SOURCE_DIR"
 ARES_JAEGER_INSTANCE_ENV = "ARES_JAEGER_INSTANCE"
+ARES_NO_JAEGER_ENV = "ARES_NO_JAEGER"
+
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def jaeger_integration_disabled() -> bool:
+    """Return whether this process must skip all JaegerAI discovery."""
+    return str(os.environ.get(ARES_NO_JAEGER_ENV, "")).strip().lower() in _TRUTHY
 
 
 def expand_path(value: str | os.PathLike[str]) -> Path:
@@ -112,8 +120,10 @@ def jaeger_update_repo() -> Path | None:
 
 __all__ = [
     "ARES_JAEGER_HOME_ENV", "ARES_JAEGER_INSTANCE_ENV", "ARES_JAEGER_SOURCE_DIR_ENV",
-    "JAEGER_HOME_ENV", "configured_root_override", "discover_jaeger_ai_source_root",
+    "ARES_NO_JAEGER_ENV", "JAEGER_HOME_ENV", "configured_root_override",
+    "discover_jaeger_ai_source_root",
     "discover_jaeger_source_root", "expand_path", "is_jaeger_ai_root", "jaeger_home",
     "jaeger_bridge_socket_candidates",
-    "jaeger_instance_name", "jaeger_launcher", "jaeger_update_repo",
+    "jaeger_instance_name", "jaeger_integration_disabled", "jaeger_launcher",
+    "jaeger_update_repo",
 ]

@@ -30,6 +30,7 @@ STAGE_RUNNER="$REPO_ROOT/scripts/lib/field_stage.py"
 # starts needing twice as long shows up as a diff.
 BASELINE="$REPO_ROOT/scripts/field_baseline.json"
 GROW=""
+RECORD_BASELINE=""
 
 c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'
 c_dim=$'\033[2m';  c_bold=$'\033[1m'; c_off=$'\033[0m'
@@ -69,8 +70,6 @@ if lsof -nP -iTCP:"$ARES_WEBUI_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 cleanup() {
-  # Never leave a stage's stragglers behind — they would poison the next run.
-  pkill -f "ARES_WEBUI_PORT=$ARES_WEBUI_PORT" 2>/dev/null
   if [ "${FIELD_KEEP:-0}" = "1" ]; then
     printf '%srun dir kept: %s%s\n' "$c_dim" "$RUN_DIR" "$c_off"
   else
@@ -93,7 +92,7 @@ STAGES=(
   "09-crash-recovery|120|300|no|stale pid/lock/socket recovery"
   "10-restart|120|300|no|restart and persistence"
   "11-privacy|60|180|no|permissions and privacy"
-  "12-clean-install|300|900|no|clean-install qualification"
+  "12-clean-install|300|1800|yes|install and boot from the committed source artifact"
 )
 
 if [ "${1:-}" = "--list" ]; then
@@ -118,6 +117,7 @@ ARGS=()
 for a in "$@"; do
   case "$a" in
     --grow) GROW=1 ;;          # let a timed-out stage earn one longer retry
+    --record-baseline) RECORD_BASELINE=1 ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -133,6 +133,7 @@ stage() {  # stage <name> <floor> <ceiling> <cwd> -- cmd...
   printf '\n%s▸ %s%s\n' "$c_bold" "$name" "$c_off"
   python3 "$STAGE_RUNNER" --name "$name" --floor "$floor" --ceiling "$ceil" \
       --baseline "$BASELINE" ${GROW:+--grow} \
+      ${RECORD_BASELINE:+--record-baseline} \
       --cwd "$cwd" --log "$RUN_DIR/logs/$name.log" --report "$REPORT" -- "$@"
 }
 
@@ -148,7 +149,7 @@ want 01 && stage "01-static" 60 300 "$CTL" -- \
   "$PY" -m compileall -q cli fastapi_app api
 
 want 02 && stage "02-unit" 300 3600 "$CTL" -- \
-  "$PY" -m pytest tests -q -x --no-header
+  "$PY" -m pytest tests -q --no-header
 
 want 03 && stage "03-protocol" 60 300 "$JAEGER_REPO" -- \
   "$JAEGER_REPO/.venv/bin/python" -m pytest dev/tests/jaeger_ai/interfaces -q --no-header
@@ -158,6 +159,9 @@ want 04 && stage "04-bridge-lifecycle" 60 180 "$JAEGER_REPO" -- \
 
 want 05 && stage "05-ares-http" 120 300 "$CTL" -- \
   "$PY" "$REPO_ROOT/scripts/lib/field_http_probe.py"
+
+want 12 && stage "12-clean-install" 300 1800 "$REPO_ROOT" -- \
+  bash "$REPO_ROOT/scripts/smoke_clean_install.sh"
 
 # ── report ──────────────────────────────────────────────────────────────
 printf '\n%ssummary%s\n' "$c_bold" "$c_off"

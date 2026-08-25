@@ -224,7 +224,9 @@ def main() -> int:
     ap.add_argument("--ceiling", type=float, default=900.0,
                     help="the most this stage may ever be given")
     ap.add_argument("--baseline", default=None,
-                    help="committed JSON of observed passing durations")
+                    help="JSON of reviewed passing durations (read-only by default)")
+    ap.add_argument("--record-baseline", action="store_true",
+                    help="explicitly update the reviewed baseline")
     ap.add_argument("--grow", action="store_true",
                     help="on timeout, retry once with a larger budget")
     ap.add_argument("--log", default=None)
@@ -262,7 +264,7 @@ def main() -> int:
     rec["budget_s"] = rec.pop("timeout_s", None)
     rec["budget_source"] = why
 
-    if base_path is not None:
+    if base_path is not None and args.record_baseline:
         if rec["status"] == "pass":
             record_baseline(base_path, args.name, rec["seconds"])
         elif rec["status"] == "timeout":

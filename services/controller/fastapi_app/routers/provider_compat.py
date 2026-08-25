@@ -98,10 +98,16 @@ def _runtime_credential_names() -> set[str]:
 
 
 @router.get("/providers")
-async def list_providers(
+def list_providers(
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
 ):
-    """Return providers in the ARES provider format."""
+    """Return providers in the ARES provider format.
+
+    This route performs bounded synchronous probes (Ollama and Jaeger).  A
+    regular ``def`` route is intentional: FastAPI runs it in its worker pool,
+    keeping one slow local runtime from freezing the ASGI event loop and every
+    unrelated browser request.
+    """
     ollama_local = _ollama_local_models()
     credential_names = _runtime_credential_names()
     jaeger_models = _jaeger_models()

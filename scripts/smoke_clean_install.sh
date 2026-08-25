@@ -20,18 +20,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$SOURCE_COPY" "$SMOKE_HOME" "$STATE_HOME"
-rsync -a \
-  --exclude '/.git/' \
-  --exclude '/.build/' \
-  --exclude '/.venv/' \
-  --exclude '/apps/web/node_modules/' \
-  --exclude '/apps/web/dist/' \
-  --exclude '/services/controller/.venv/' \
-  --exclude '/services/controller/venv/' \
-  --exclude '/services/controller/node_modules/' \
-  --exclude '**/__pycache__/' \
-  --exclude '**/.pytest_cache/' \
-  "$REPO_ROOT/" "$SOURCE_COPY/"
+# Qualify exactly the committed artifact. Copying the working tree makes a
+# dirty checkout pass even when the pushed revision is missing the fix.
+git -C "$REPO_ROOT" archive --format=tar HEAD | tar -xf - -C "$SOURCE_COPY"
 
 HOME="$SMOKE_HOME" ARES_HOME="$STATE_HOME" \
   bash "$SOURCE_COPY/install.sh" \

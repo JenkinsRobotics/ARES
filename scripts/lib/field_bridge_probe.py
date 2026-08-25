@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 # Per-phase deadlines. Each is a separate number because each has a
@@ -42,17 +44,38 @@ def check(ok: bool, msg: str) -> bool:
     return ok
 
 
-def read_frame(proc, deadline: float, want: str | None = None):
+def _stdout_frames(proc) -> "queue.Queue[str | None]":
+    """Pump stdout off-thread so a silent child cannot defeat a deadline."""
+    frames: "queue.Queue[str | None]" = queue.Queue()
+
+    def pump() -> None:
+        try:
+            for line in proc.stdout:
+                frames.put(line)
+        finally:
+            frames.put(None)
+
+    threading.Thread(target=pump, name="field-bridge-reader", daemon=True).start()
+    return frames
+
+
+def read_frame(proc, frames, deadline: float, want: str | None = None):
     """Next NDJSON frame, or None if the deadline passes.
 
     Reads with a hard wall-clock bound: a bridge that stops emitting is the
     exact failure this stage exists to detect, so a blocking readline with
     no bound would hang the harness instead of reporting.
     """
-    end = time.time() + deadline
-    while time.time() < end:
-        line = proc.stdout.readline()
-        if not line:
+    end = time.monotonic() + deadline
+    while True:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return None
+        try:
+            line = frames.get(timeout=remaining)
+        except queue.Empty:
+            return None
+        if line is None:
             return None
         try:
             frame = json.loads(line)
@@ -76,10 +99,11 @@ def main() -> int:
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, bufsize=1, start_new_session=True,
     )
+    frames = _stdout_frames(proc)
 
     try:
         # 1. FAST READY — the transport must be usable before the agent boots.
-        ready = read_frame(proc, READY_DEADLINE, want="ready")
+        ready = read_frame(proc, frames, READY_DEADLINE, want="ready")
         check(ready is not None,
               f"ready frame within {READY_DEADLINE}s "
               f"({time.time() - t0:.2f}s)")
@@ -91,7 +115,7 @@ def main() -> int:
             {"op": "query", "id": "q1", "what": "instance_exists"}) + "\n")
         proc.stdin.flush()
         t1 = time.time()
-        res = read_frame(proc, QUERY_DEADLINE, want="result")
+        res = read_frame(proc, frames, QUERY_DEADLINE, want="result")
         check(res is not None,
               f"query answered within {QUERY_DEADLINE}s ({time.time() - t1:.2f}s)")
         if res is not None:
@@ -126,7 +150,7 @@ def main() -> int:
         proc.stdin.write(json.dumps({"op": "quit"}) + "\n")
         proc.stdin.flush()
         t2 = time.time()
-        bye = read_frame(proc, QUIT_DEADLINE, want="bye")
+        bye = read_frame(proc, frames, QUIT_DEADLINE, want="bye")
         check(bye is not None,
               f"bye frame within {QUIT_DEADLINE}s ({time.time() - t2:.2f}s)")
 

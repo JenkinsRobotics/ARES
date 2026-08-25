@@ -143,14 +143,13 @@ async def test_compat_provider_mutation_preserves_runtime_error_status(monkeypat
     assert result.status_code == 503
 
 
-@pytest.mark.asyncio
-async def test_jaeger_provider_never_claims_ares_config_ownership(monkeypatch):
+def test_jaeger_provider_never_claims_ares_config_ownership(monkeypatch):
     from fastapi_app.routers import provider_compat
 
     monkeypatch.setattr(provider_compat, "_runtime_credential_names", lambda: set())
     monkeypatch.setattr(provider_compat, "_jaeger_models", lambda: [])
     monkeypatch.setattr(provider_compat, "_ollama_local_models", lambda: [])
 
-    result = await provider_compat.list_providers(None)
+    result = provider_compat.list_providers(None)
     jaeger = next(row for row in result["providers"] if row["id"] == "jaeger")
     assert jaeger["key_source"] == "jaeger_credential_store"

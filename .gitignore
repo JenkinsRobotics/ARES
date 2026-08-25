@@ -67,6 +67,8 @@ services/controller/venv/
 apps/web/node_modules/
 apps/web/dist/
 apps/web/tsconfig.tsbuildinfo
+apps/web-react/tsconfig.tsbuildinfo
+apps/web-react/node_modules
 
 # Credential filenames anywhere (belt and suspenders)
 **/.pbkdf2_key
@@ -137,3 +139,11 @@ dares/__pycache__/
 
 # Reference sources (Paperclip, Hermes WebUI, etc.) — integrated into ARES
 reference_sources/
+
+# Local donor/reference snapshots used during upstream comparison. These are
+# preserved on the workstation but are not distributable project source.
+docs/reference_extensions/
+drafts/
+
+# Generated local evaluation output; canonical results live under ARES_HOME.
+model_eval_results.json

@@ -16,6 +16,18 @@ from .operating_modes import CognitiveMode, DreamReport, ModeState
 logger = logging.getLogger(__name__)
 
 _DEFAULT_STATE_FILE = "mode_state.json"
+_IDLE_DREAM_SECONDS = 300
+_last_user_activity = time.monotonic()
+
+
+def note_user_activity() -> None:
+    """Mark the user as active so Layer-3 dream/wonder stays off."""
+    global _last_user_activity
+    _last_user_activity = time.monotonic()
+
+
+def user_is_idle(threshold_s: float = _IDLE_DREAM_SECONDS) -> bool:
+    return (time.monotonic() - _last_user_activity) >= max(0.0, float(threshold_s))
 
 
 def _get_ares_home() -> Path:
@@ -110,8 +122,26 @@ class ModeManager:
         logger.info("ARES cognitive mode transitioned: %s -> %s", prev_mode.value, target_mode.value)
         return self._state
 
-    def trigger_dream_cycle(self, workspaces: list[str] | None = None) -> DreamReport:
-        """Execute a Wonder/Dream reflection cycle to synthesize knowledge & index codebase ASTs."""
+    def trigger_dream_cycle(
+        self,
+        workspaces: list[str] | None = None,
+        *,
+        automatic: bool = False,
+    ) -> DreamReport:
+        """Execute a Wonder/Dream reflection cycle to synthesize knowledge & index codebase ASTs.
+
+        Refuses while the user has been active in the last 5 minutes so
+        Layer 3 cannot steal CPU during a foreground turn.
+        """
+        if automatic and not user_is_idle():
+            started_at = time.time()
+            return DreamReport(
+                cycle_id=f"dream_skipped_{int(started_at)}",
+                started_at=started_at,
+                completed_at=started_at,
+                status="skipped",
+                error="user is active — dream/wonder runs only after 5+ minutes idle",
+            )
         with self._dream_lock:
             started_at = time.time()
             cycle_id = f"dream_{int(started_at)}_{uuid.uuid4().hex[:6]}"

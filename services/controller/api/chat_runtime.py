@@ -681,6 +681,12 @@ def start_session_turn(
     except Exception:
         logger.warning("Failed to append submitted turn journal event", exc_info=True)
 
+    try:
+        from core.modes import note_user_activity
+        note_user_activity()
+    except Exception:
+        pass
+
     set_last_workspace(effective_workspace)
     channel = create_stream_channel()
     register_stream_owner(stream_id, session.session_id)

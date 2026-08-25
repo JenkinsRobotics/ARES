@@ -256,3 +256,55 @@ def test_goal_evaluate_after_turn_only_increments_for_user_initiated(monkeypatch
     assert len(turns_incremented) == 1, (
         "turns_used should NOT increment when user_initiated=False"
     )
+
+
+def test_goal_halt_uses_structured_code_not_assistant_prose(monkeypatch):
+    from api import goals as webui_goals
+
+    class State:
+        status = "active"
+        goal = "test"
+        turns_used = 0
+        max_turns = 10
+        last_turn_at = 0.0
+        last_verdict = None
+        last_reason = None
+        paused_reason = None
+
+        def to_json(self):
+            return {"status": self.status, "goal": self.goal}
+
+    class Manager:
+        def __init__(self, *_args, **_kwargs):
+            self.state = State()
+            self.paused = False
+
+        def is_active(self):
+            return True
+
+        def pause(self, reason):
+            self.paused = True
+            self.state.status = "paused"
+
+        def evaluate_after_turn(self, *_args, **_kwargs):
+            return {"should_continue": True, "verdict": "continue", "message": "ok"}
+
+    managers = []
+    def factory(*args, **kwargs):
+        manager = Manager(*args, **kwargs)
+        managers.append(manager)
+        return manager
+
+    monkeypatch.setattr(webui_goals, "GoalManager", factory)
+    monkeypatch.setattr(webui_goals, "_default_max_turns", lambda: 10)
+
+    prose = "The documentation says timed out after 30 seconds, but the task is healthy."
+    decision = webui_goals.evaluate_goal_after_turn("prose-sid", prose)
+    assert decision["should_continue"] is True
+    assert managers[-1].paused is False
+
+    decision = webui_goals.evaluate_goal_after_turn(
+        "halt-sid", "partial result", halt_code="tool_budget_exhausted"
+    )
+    assert decision["should_continue"] is False
+    assert managers[-1].paused is True

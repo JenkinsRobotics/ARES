@@ -9,7 +9,7 @@ Defines the three cognitive states of ARES:
 from __future__ import annotations
 
 from .operating_modes import CognitiveMode, ModeState, DreamReport, FocusExecutionResult
-from .mode_manager import ModeManager, get_mode_manager
+from .mode_manager import ModeManager, get_mode_manager, note_user_activity, user_is_idle
 
 __all__ = [
     "CognitiveMode",
@@ -18,4 +18,6 @@ __all__ = [
     "FocusExecutionResult",
     "ModeManager",
     "get_mode_manager",
+    "note_user_activity",
+    "user_is_idle",
 ]

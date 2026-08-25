@@ -81,7 +81,13 @@ def local_jaeger_root() -> Path | None:
     on a normal user machine, and what ``ARES_JAEGER_HOME`` / ``JAEGER_HOME``
     override for nonstandard installs.
     """
-    from api.providers.jaeger.paths import is_jaeger_ai_root
+    from api.providers.jaeger.paths import is_jaeger_ai_root, jaeger_integration_disabled
+
+    # This is the canonical test/CI and operator kill-switch.  Discovery
+    # helpers already honor it; execution must do the same or a supposedly
+    # isolated process can still attach to (and even kill) the live instance.
+    if jaeger_integration_disabled():
+        return None
 
     raw = str(os.environ.get(_JAEGER_SOURCE_DIR_ENV) or "").strip()
     if raw:
@@ -579,7 +585,10 @@ def _run_local_jaeger_turn(
             if stream_id:
                 telemetry = {
                     key: payload[key]
-                    for key in ("elapsed_s", "ctx_used", "ctx_max")
+                    for key in (
+                        "elapsed_s", "ctx_used", "ctx_max",
+                        "halt_reason", "halt_code",
+                    )
                     if payload.get(key) is not None
                 }
                 if telemetry:
@@ -1001,6 +1010,9 @@ def _run_jaeger_goal_hook(*, session_id: str, stream_id: str, goal_related: bool
             decision = evaluate_goal_after_turn(
                 session_id,
                 assistant_text,
+                halt_code=str(
+                    (STREAM_TURN_TELEMETRY.get(stream_id) or {}).get("halt_code") or ""
+                ) or None,
                 user_initiated=True,
                 profile_home=profile_home,
             ) or {}

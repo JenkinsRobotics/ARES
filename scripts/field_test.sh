@@ -26,6 +26,10 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JAEGER_REPO="${JAEGER_REPO:-$HOME/GitHub/JaegerAI}"
 STAGE_RUNNER="$REPO_ROOT/scripts/lib/field_stage.py"
+# Committed, not local state: budgets move through review, and a stage that
+# starts needing twice as long shows up as a diff.
+BASELINE="$REPO_ROOT/scripts/field_baseline.json"
+GROW=""
 
 c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'
 c_dim=$'\033[2m';  c_bold=$'\033[1m'; c_off=$'\033[0m'
@@ -78,41 +82,57 @@ trap cleanup EXIT
 # ── stage table ─────────────────────────────────────────────────────────
 # name|timeout|implemented|description
 STAGES=(
-  "01-static|300|yes|static checks (ruff/compile)"
-  "02-unit|900|yes|controller unit tests"
-  "03-protocol|180|yes|cross-language protocol fixtures"
-  "04-bridge-lifecycle|180|yes|clean bridge boot/query/quit under a deadline"
-  "05-ares-http|300|yes|controller boot + /health + shutdown on an isolated port"
-  "06-model-turn|900|no|real local model turn"
-  "07-tool-exec|300|no|native tool execution"
-  "08-cancel|180|no|cancellation and timeout"
-  "09-crash-recovery|300|no|stale pid/lock/socket recovery"
-  "10-restart|300|no|restart and persistence"
-  "11-privacy|180|no|permissions and privacy"
-  "12-clean-install|900|no|clean-install qualification"
+  "01-static|60|300|yes|static checks (compileall)"
+  "02-unit|300|3600|yes|controller unit tests"
+  "03-protocol|60|300|yes|cross-language protocol fixtures"
+  "04-bridge-lifecycle|60|180|yes|clean bridge boot/query/quit under a deadline"
+  "05-ares-http|120|300|yes|controller boot + /health + shutdown on an isolated port"
+  "06-model-turn|300|1800|no|real local model turn"
+  "07-tool-exec|120|300|no|native tool execution"
+  "08-cancel|60|180|no|cancellation and timeout"
+  "09-crash-recovery|120|300|no|stale pid/lock/socket recovery"
+  "10-restart|120|300|no|restart and persistence"
+  "11-privacy|60|180|no|permissions and privacy"
+  "12-clean-install|300|900|no|clean-install qualification"
 )
 
 if [ "${1:-}" = "--list" ]; then
   printf '%sfield-test stages%s\n' "$c_bold" "$c_off"
   for row in "${STAGES[@]}"; do
-    IFS='|' read -r n t impl desc <<<"$row"
+    IFS='|' read -r n fl ce impl desc <<<"$row"
     if [ "$impl" = yes ]; then mark="${c_grn}impl${c_off}"; else mark="${c_yel}TODO${c_off}"; fi
-    printf '  %-22s %-6s %s  %s\n' "$n" "${t}s" "$mark" "$desc"
+    earned="$(python3 - "$BASELINE" "$n" <<'PY'
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+v=d.get(sys.argv[2],{}).get("seconds")
+print(f"{v:.1f}s observed" if isinstance(v,(int,float)) else "never passed")
+PY
+)"
+    printf '  %-22s %-14s %s  %-52s %s\n' "$n" "${fl}-${ce}s" "$mark" "$desc" "$c_dim$earned$c_off"
   done
   exit 0
 fi
 
-WANTED=("$@")
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --grow) GROW=1 ;;          # let a timed-out stage earn one longer retry
+    *) ARGS+=("$a") ;;
+  esac
+done
+WANTED=("${ARGS[@]}")
 want() {
   [ ${#WANTED[@]} -eq 0 ] && return 0
   for w in "${WANTED[@]}"; do case "$1" in "$w"*) return 0 ;; esac; done
   return 1
 }
 
-stage() {  # stage <name> <timeout> <cwd> -- cmd...
-  local name="$1" tmo="$2" cwd="$3"; shift 4
-  printf '\n%s▸ %s%s %s(deadline %ss)%s\n' "$c_bold" "$name" "$c_off" "$c_dim" "$tmo" "$c_off"
-  python3 "$STAGE_RUNNER" --name "$name" --timeout "$tmo" \
+stage() {  # stage <name> <floor> <ceiling> <cwd> -- cmd...
+  local name="$1" floor="$2" ceil="$3" cwd="$4"; shift 5
+  printf '\n%s▸ %s%s\n' "$c_bold" "$name" "$c_off"
+  python3 "$STAGE_RUNNER" --name "$name" --floor "$floor" --ceiling "$ceil" \
+      --baseline "$BASELINE" ${GROW:+--grow} \
       --cwd "$cwd" --log "$RUN_DIR/logs/$name.log" --report "$REPORT" -- "$@"
 }
 
@@ -124,19 +144,19 @@ CTL="$REPO_ROOT/services/controller"
 PY="$CTL/.venv/bin/python"
 [ -x "$PY" ] || die "controller venv missing: $PY"
 
-want 01 && stage "01-static" 300 "$CTL" -- \
+want 01 && stage "01-static" 60 300 "$CTL" -- \
   "$PY" -m compileall -q cli fastapi_app api
 
-want 02 && stage "02-unit" 900 "$CTL" -- \
+want 02 && stage "02-unit" 300 3600 "$CTL" -- \
   "$PY" -m pytest tests -q -x --no-header
 
-want 03 && stage "03-protocol" 180 "$JAEGER_REPO" -- \
+want 03 && stage "03-protocol" 60 300 "$JAEGER_REPO" -- \
   "$JAEGER_REPO/.venv/bin/python" -m pytest dev/tests/jaeger_ai/interfaces -q --no-header
 
-want 04 && stage "04-bridge-lifecycle" 180 "$JAEGER_REPO" -- \
+want 04 && stage "04-bridge-lifecycle" 60 180 "$JAEGER_REPO" -- \
   "$JAEGER_REPO/.venv/bin/python" "$REPO_ROOT/scripts/lib/field_bridge_probe.py"
 
-want 05 && stage "05-ares-http" 300 "$CTL" -- \
+want 05 && stage "05-ares-http" 120 300 "$CTL" -- \
   "$PY" "$REPO_ROOT/scripts/lib/field_http_probe.py"
 
 # ── report ──────────────────────────────────────────────────────────────

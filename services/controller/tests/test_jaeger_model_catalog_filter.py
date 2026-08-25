@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 def _catalog():
     return {
         "active_provider": "xai-oauth",
@@ -17,6 +19,31 @@ def _catalog():
             {"provider": "Codex", "provider_id": "openai-codex", "models": [{"id": "gpt-5.5", "label": "GPT"}]},
         ],
     }
+
+
+@pytest.fixture(autouse=True)
+def _no_live_jaeger_config(monkeypatch):
+    """Cut these tests off from the OPERATOR'S live Jaeger configuration.
+
+    filter_catalog_for_active_backend calls discover_jaeger_models()
+    directly, and derives `hide_local` from whatever provider that reports
+    as the configured default. A cloud default (ollama-cloud, openai,
+    anthropic, gemini, xai) strips the local and ollama groups entirely.
+
+    So a test that mocked its model sources but not discovery still read
+    ~/.ares, and its result depended on how the machine happened to be
+    configured. On a box defaulted to ollama-cloud,
+    test_jaeger_local_group_drops_models_the_ollama_group_already_lists
+    failed with KeyError: 'ollama' — zero groups survived — while passing
+    everywhere else. That is an environment leak, not a flake.
+
+    Default to an empty discovery; tests that care set their own after
+    this fixture and win, since monkeypatch applies in order.
+    """
+    monkeypatch.setattr(
+        "api.backends.model_discovery.discover_jaeger_models",
+        lambda: {}, raising=False,
+    )
 
 
 def test_non_jaeger_backend_keeps_full_model_catalog(monkeypatch):

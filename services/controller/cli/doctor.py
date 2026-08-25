@@ -152,6 +152,85 @@ def probe_jaeger(jaeger_home: Path) -> None:
         )
 
 
+# The canonical ARES controller port. ctl.sh, start.sh, install.sh,
+# http_security, streaming, native_system and the `ares` launcher all use
+# 8788, and the launcher exports ARES_WEBUI_PORT. doctor alone hardcoded
+# 8787, so it reported "WebUI server is not responding" against a healthy
+# server and printed a Tailscale URL nobody could reach.
+DEFAULT_WEBUI_PORT = 8788
+
+
+def webui_port() -> int:
+    """The port the controller is actually expected on.
+
+    Honours ARES_WEBUI_PORT (what `ares` exports) and falls back to the
+    canonical default. A malformed value falls back rather than raising —
+    doctor's job is to report health, not to die parsing its own config.
+    """
+    raw = os.environ.get("ARES_WEBUI_PORT", "")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_WEBUI_PORT
+
+
+def frontend_ownership_report(
+    repo_root: Path,
+) -> list[tuple[str, str, str | None]]:
+    """Which frontend actually ships, stated out loud.
+
+    The repo carries two. ``apps/web/static`` is the vanilla-JS SPA that
+    ``fastapi_app.frontend.DEFAULT_FRONTEND_ROOT`` points at and the only
+    tree FastAPI ever mounts. ``apps/web-react`` is installed, typechecked
+    and unit-tested by the frontend-and-ownership CI job, and referenced by
+    no Python under services/ — CI therefore reports it healthy while the
+    server serves none of it.
+
+    That gap is silent in both directions: an operator editing web-react
+    gets a green pipeline and an unchanged UI, and nothing told them why.
+    Ownership is reported, never guessed at: web-react is called out as
+    present-but-not-served rather than promoted on a heuristic.
+
+    Returns ``(status, message, fix)`` triples — ``pass`` | ``warn`` |
+    ``fail`` — so the caller owns rendering and tests can read the result.
+    """
+    findings: list[tuple[str, str, str | None]] = []
+
+    production = repo_root / "apps" / "web" / "static"
+    if (production / "index.html").is_file():
+        findings.append(
+            ("pass", f"Production UI: apps/web/static ({production})", None))
+    elif production.is_dir():
+        findings.append((
+            "fail",
+            f"Production UI apps/web/static exists but has no index.html "
+            f"({production}) — the server will 404 on /.",
+            "Restore apps/web/static/index.html from git.",
+        ))
+    else:
+        findings.append((
+            "fail",
+            f"Production UI apps/web/static is missing ({production}).",
+            "Check out the full repo; the FastAPI app mounts this path.",
+        ))
+
+    react = repo_root / "apps" / "web-react"
+    if react.is_dir():
+        built = (react / "dist" / "index.html").is_file()
+        detail = "built (dist/ present)" if built else "not built"
+        findings.append((
+            "warn",
+            f"apps/web-react is present and {detail}, but is NOT served — "
+            "no code under services/ references it. CI typechecks and "
+            "tests it, so a green pipeline does not mean it ships.",
+            "Edit apps/web/static to change the running UI. To promote "
+            "web-react deliberately, pass frontend_root=apps/web-react/dist "
+            "to fastapi_app.main and update this check.",
+        ))
+
+    return findings
+
+
 def run_diagnostics() -> None:
     print(f"{Colors.BOLD}ARES Diagnostic Tool (Doctor){Colors.RESET}")
     print("Checking system health and peer runtimes...\n")
@@ -168,6 +247,23 @@ def run_diagnostics() -> None:
 
     os_name = platform.system()
     check_pass(f"Operating System: {os_name} {platform.release()}")
+
+    print_header("Frontend Ownership")
+    try:
+        from fastapi_app import frontend as _frontend
+
+        _repo_root = Path(_frontend.__file__).resolve().parents[3]
+    except Exception:
+        # doctor may run from an installed copy without the app importable;
+        # fall back to walking up from this file.
+        _repo_root = Path(__file__).resolve().parents[3]
+    for _status, _msg, _fix in frontend_ownership_report(_repo_root):
+        if _status == "pass":
+            check_pass(_msg)
+        elif _status == "warn":
+            check_warn(_msg, _fix)
+        else:
+            check_fail(_msg, _fix)
 
     print_header("ARES Core Components")
     ares_home = Path(os.path.expanduser("~/.ares")).resolve()
@@ -211,14 +307,15 @@ def run_diagnostics() -> None:
             "Re-run: bash install.sh --role primary",
         )
 
-    ok, status = _http_ok("http://127.0.0.1:8787/health")
+    _port = webui_port()
+    ok, status = _http_ok(f"http://127.0.0.1:{_port}/health")
     if not ok:
-        ok, status = _http_ok("http://127.0.0.1:8787/api/onboarding/status")
+        ok, status = _http_ok(f"http://127.0.0.1:{_port}/api/onboarding/status")
     if ok:
-        check_pass(f"ARES WebUI responding on port 8787 (HTTP {status})")
+        check_pass(f"ARES WebUI responding on port {_port} (HTTP {status})")
     else:
         check_fail(
-            "ARES WebUI server is not responding on 8787.",
+            f"ARES WebUI server is not responding on {_port}.",
             "Start with: ares start   or open ARES.app",
         )
 
@@ -236,7 +333,8 @@ def run_diagnostics() -> None:
                 if line.strip() and not line.startswith("Warning:")
             ]
             if lines:
-                check_pass(f"Tailscale connected. Remote URL: http://{lines[-1]}:8787")
+                check_pass("Tailscale connected. Remote URL: "
+                           f"http://{lines[-1]}:{webui_port()}")
             else:
                 check_warn(
                     "Tailscale installed but no IP",

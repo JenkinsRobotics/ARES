@@ -49,6 +49,37 @@ REPO_ROOT = Path(__file__).parent.parent.resolve()
 HOST = os.getenv("ARES_WEBUI_HOST", "127.0.0.1")
 PORT = int(os.getenv("ARES_WEBUI_PORT", "8788"))
 
+# Local runtimes that may legitimately resolve to a private address.
+_SSRF_LOCAL_NAMES = frozenset({
+    "ollama", "localhost", "127.0.0.1", "lmstudio", "lm-studio",
+})
+
+
+def _ssrf_host_is_known_local(hostname, trusted_hosts) -> bool:
+    """Whether a private-resolving hostname is an allowed local runtime.
+
+    Matching is EXACT (plus the mDNS ``.local`` namespace a LAN runtime
+    actually advertises on), never substring. The previous
+    ``any(k in host_l for k in ...)`` handed the exemption to any domain an
+    attacker could register that merely CONTAINED one of these tokens, so
+    ``ollama.attacker.com`` resolving to 169.254.169.254 passed the guard
+    outright. ``trusted_hosts`` is compared exactly for the same reason —
+    substring trust leaks to neighbours of a trusted name.
+
+    The operator's own custom_providers already populate ``trusted_hosts``
+    by exact hostname, so a genuine ``ollama.mylan.internal`` stays
+    reachable without loosening anything here.
+    """
+    host_l = (hostname or "").lower().rstrip(".")
+    if not host_l:
+        return False
+    if host_l in _SSRF_LOCAL_NAMES:
+        return True
+    if any(host_l == f"{k}.local" for k in _SSRF_LOCAL_NAMES):
+        return True
+    return host_l in {str(h).lower() for h in trusted_hosts}
+
+
 
 def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
     """Read a positive int from the environment, falling back on bad input.
@@ -6963,12 +6994,8 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                         for _, _, _, _, addr in resolved_ips:
                             addr_obj = ipaddress.ip_address(addr[0])
                             if addr_obj.is_private or addr_obj.is_loopback or addr_obj.is_link_local:
-                                host_l = (parsed_url.hostname or "").lower()
-                                is_known_local = any(
-                                    k in host_l
-                                    for k in ("ollama", "localhost", "127.0.0.1", "lmstudio", "lm-studio")
-                                ) or host_l in _ssrf_trusted_hosts
-                                if not is_known_local:
+                                if not _ssrf_host_is_known_local(
+                                        parsed_url.hostname, _ssrf_trusted_hosts):
                                     raise ValueError(f"SSRF: resolved hostname to private IP {addr[0]}")
                     except socket.gaierror:
                         pass

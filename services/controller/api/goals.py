@@ -554,6 +554,7 @@ def evaluate_goal_after_turn(
     session_id: str,
     last_response: str,
     *,
+    halt_code: str | None = None,
     user_initiated: bool = True,
     profile_home: str | Path | None = None,
 ) -> Dict[str, Any]:
@@ -587,6 +588,27 @@ def evaluate_goal_after_turn(
                 "verdict": "inactive",
                 "reason": "no active goal",
                 "message": "",
+            }
+        if halt_code in {
+            "tool_budget_exhausted",
+            "repeated_tool_failure",
+            "iteration_budget_exhausted",
+            "timeout",
+        }:
+            try:
+                mgr.pause(reason="tool loop / timeout — not continuing")
+            except Exception:
+                pass
+            return {
+                "status": getattr(getattr(mgr, "state", None), "status", "paused"),
+                "should_continue": False,
+                "continuation_prompt": None,
+                "verdict": "blocked",
+                "reason": f"Jaeger halted the turn ({halt_code})",
+                "message": (
+                    "Goal paused — the last tool call timed out or repeated "
+                    "a failure. Narrow the query before continuing."
+                ),
             }
         decision = mgr.evaluate_after_turn(str(last_response or ""), user_initiated=user_initiated)
     except Exception as exc:

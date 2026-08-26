@@ -1,0 +1,421 @@
+{
+  "schema": "ares-jaeger-five-promises/v1",
+  "started_at": "2026-08-26T07:25:32.040303+00:00",
+  "finished_at": "2026-08-26T07:26:34.767661+00:00",
+  "command": [
+    "/Users/matthewjenkins/GitHub/ARES/services/controller/.venv/bin/python",
+    "/Users/matthewjenkins/GitHub/ARES/services/controller/scripts/verify_jaeger_promises.py"
+  ],
+  "configuration": {
+    "instance": "ares",
+    "model": "qwen3.5:397b",
+    "provider": "ollama-cloud",
+    "workspace": "/Users/matthewjenkins/GitHub/ARES"
+  },
+  "commits": {
+    "ares": "0f5411e4053bbb99ec1db621309fa29646ff657e",
+    "jaeger": "87ed89a4ea6fe9a9952623d497c68e7d6fb21599"
+  },
+  "dirty_worktrees": {
+    "ares": true,
+    "jaeger": true
+  },
+  "promises": {
+    "multi_turn_memory": {
+      "expected": {
+        "turn2": "PROMISE-3866695d",
+        "turn3": "SECOND-423ff1a3"
+      },
+      "actual": {
+        "turn2": "PROMISE-3866695d",
+        "turn3": "SECOND-423ff1a3"
+      },
+      "result": "pass",
+      "boundary": "real JaegerBackend \u2192 start_session_turn \u2192 streaming worker \u2192 bridge \u2192 model"
+    },
+    "session_survives_worker_restart": {
+      "expected": {
+        "different_pid": true,
+        "recall": "PROMISE-3866695d"
+      },
+      "actual": {
+        "before": {
+          "pid": 256,
+          "verified": true,
+          "command": "253 /opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/MacOS/Python -m jaeger_ai.interfaces.bridge ares"
+        },
+        "after": {
+          "pid": 373,
+          "verified": true,
+          "command": "253 /opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/MacOS/Python -m jaeger_ai.interfaces.bridge ares"
+        },
+        "reply": "PROMISE-3866695d",
+        "preflight_error": ""
+      },
+      "result": "pass",
+      "boundary": "physical verified bridge termination + ARES cache eviction + next production turn"
+    },
+    "tools_remain_available": {
+      "expected": "get_time running/completed events before and after restart",
+      "actual": {
+        "inventory_before": [],
+        "inventory_after": [
+          "mcp__ares-native__user_collaboration",
+          "mcp__ares-native__memory_operations",
+          "mcp__ares-native__todo_operations",
+          "mcp__ares-native__file_operations",
+          "mcp__ares-native__math_operations",
+          "mcp__ares-native__calendar_operations",
+          "mcp__ares-native__contacts_operations",
+          "mcp__ares-native__notes_operations",
+          "mcp__ares-native__spotlight_search",
+          "mcp__ares-native__weather_operations",
+          "mcp__ares-native__screen_read"
+        ],
+        "tool_events_before": [
+          {
+            "event": "tool",
+            "name": "get_time",
+            "event_type": "tool.running",
+            "is_error": false
+          },
+          {
+            "event": "tool",
+            "name": "get_time",
+            "event_type": "tool.completed",
+            "is_error": false
+          }
+        ],
+        "tool_events_after": [
+          {
+            "event": "tool",
+            "name": "get_time",
+            "event_type": "tool.running",
+            "is_error": false
+          },
+          {
+            "event": "tool",
+            "name": "get_time",
+            "event_type": "tool.completed",
+            "is_error": false
+          }
+        ]
+      },
+      "result": "pass",
+      "boundary": "harmless live tool calls; inventory is recorded separately because a pre-boot empty inventory is not proof of refusal"
+    },
+    "successful_requests_have_no_hidden_exceptions": {
+      "expected": "terminal stream_end for successful turns and no ERROR log records",
+      "actual": {
+        "terminals": [
+          "stream_end",
+          "stream_end",
+          "stream_end",
+          "stream_end",
+          "stream_end",
+          "stream_end"
+        ],
+        "error_logs": []
+      },
+      "result": "pass",
+      "boundary": "in-process ARES service logs; installed-app logs not captured"
+    },
+    "production_uses_gateway_path": {
+      "expected": "run_jaeger_streaming, is_gateway=True, is_jaeger=True",
+      "actual": {
+        "worker": "api.providers.jaeger.streaming.run_jaeger_streaming",
+        "is_gateway": true,
+        "is_jaeger": true
+      },
+      "result": "pass",
+      "boundary": "real JaegerBackend object used for every turn above"
+    }
+  },
+  "turns": {
+    "turn1": {
+      "terminal": "stream_end",
+      "assistant_text": "ACK",
+      "events": [
+        {
+          "event": "context_status"
+        },
+        {
+          "event": "tool",
+          "name": "memory",
+          "event_type": "tool.running",
+          "is_error": false
+        },
+        {
+          "event": "tool",
+          "name": "memory",
+          "event_type": "tool.completed",
+          "is_error": false
+        },
+        {
+          "event": "tool",
+          "name": "memory",
+          "event_type": "tool.running",
+          "is_error": false
+        },
+        {
+          "event": "tool",
+          "name": "memory",
+          "event_type": "tool.completed",
+          "is_error": false
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "done",
+          "assistant_text": "ACK"
+        },
+        {
+          "event": "stream_end"
+        }
+      ],
+      "subscription_snapshot": {
+        "offline_buffered_events": 0,
+        "offline_dropped_events": 0,
+        "offline_first_event_id": null,
+        "last_event_id": null
+      },
+      "start": {
+        "stream_id": "eee6152e341e4d2c8ced979c9d6c46de",
+        "session_id": "03b59f2e7b8b",
+        "pending_started_at": 1787729135.620672,
+        "turn_id": "20260826T072535Z-d77b8b8590d9",
+        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "effective_model": "qwen3.5:397b",
+        "effective_model_provider": "ollama-cloud"
+      },
+      "elapsed_s": 17.167
+    },
+    "turn2": {
+      "terminal": "stream_end",
+      "assistant_text": "PROMISE-3866695d",
+      "events": [
+        {
+          "event": "context_status"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "done",
+          "assistant_text": "PROMISE-3866695d"
+        },
+        {
+          "event": "stream_end"
+        }
+      ],
+      "subscription_snapshot": {
+        "offline_buffered_events": 0,
+        "offline_dropped_events": 0,
+        "offline_first_event_id": null,
+        "last_event_id": null
+      },
+      "start": {
+        "stream_id": "7de004b5c58c4d01bbb2b9fbf3723c9a",
+        "session_id": "03b59f2e7b8b",
+        "pending_started_at": 1787729149.93061,
+        "turn_id": "20260826T072549Z-003498e7857d",
+        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "effective_model": "qwen3.5:397b",
+        "effective_model_provider": "ollama-cloud"
+      },
+      "elapsed_s": 5.101
+    },
+    "turn3": {
+      "terminal": "stream_end",
+      "assistant_text": "SECOND-423ff1a3",
+      "events": [
+        {
+          "event": "context_status"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "done",
+          "assistant_text": "SECOND-423ff1a3"
+        },
+        {
+          "event": "stream_end"
+        }
+      ],
+      "subscription_snapshot": {
+        "offline_buffered_events": 0,
+        "offline_dropped_events": 0,
+        "offline_first_event_id": null,
+        "last_event_id": null
+      },
+      "start": {
+        "stream_id": "e592ad6c3e7a447abf2be3c0a5e8b0d1",
+        "session_id": "03b59f2e7b8b",
+        "pending_started_at": 1787729155.040069,
+        "turn_id": "20260826T072555Z-33a6b67f8710",
+        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "effective_model": "qwen3.5:397b",
+        "effective_model_provider": "ollama-cloud"
+      },
+      "elapsed_s": 8.912
+    },
+    "tool": {
+      "terminal": "stream_end",
+      "assistant_text": "2026-08-26 07:26:06 AM UTC",
+      "events": [
+        {
+          "event": "context_status"
+        },
+        {
+          "event": "tool",
+          "name": "get_time",
+          "event_type": "tool.running",
+          "is_error": false
+        },
+        {
+          "event": "tool",
+          "name": "get_time",
+          "event_type": "tool.completed",
+          "is_error": false
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "done",
+          "assistant_text": "2026-08-26 07:26:06 AM UTC"
+        },
+        {
+          "event": "stream_end"
+        }
+      ],
+      "subscription_snapshot": {
+        "offline_buffered_events": 0,
+        "offline_dropped_events": 0,
+        "offline_first_event_id": null,
+        "last_event_id": null
+      },
+      "start": {
+        "stream_id": "c8ffb755b3624a0ead2313c6c3913364",
+        "session_id": "03b59f2e7b8b",
+        "pending_started_at": 1787729163.95729,
+        "turn_id": "20260826T072603Z-cfd7c4bb3844",
+        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "effective_model": "qwen3.5:397b",
+        "effective_model_provider": "ollama-cloud"
+      },
+      "elapsed_s": 7.18
+    },
+    "after_restart": {
+      "terminal": "stream_end",
+      "assistant_text": "PROMISE-3866695d",
+      "events": [
+        {
+          "event": "context_status"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "done",
+          "assistant_text": "PROMISE-3866695d"
+        },
+        {
+          "event": "stream_end"
+        }
+      ],
+      "subscription_snapshot": {
+        "offline_buffered_events": 0,
+        "offline_dropped_events": 0,
+        "offline_first_event_id": null,
+        "last_event_id": null
+      },
+      "start": {
+        "stream_id": "ac20c4449e6747aa8ae8dd6eb5f862f8",
+        "session_id": "03b59f2e7b8b",
+        "pending_started_at": 1787729175.34583,
+        "turn_id": "20260826T072615Z-0a1e35073d84",
+        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "effective_model": "qwen3.5:397b",
+        "effective_model_provider": "ollama-cloud"
+      },
+      "elapsed_s": 13.523
+    },
+    "tool_after_restart": {
+      "terminal": "stream_end",
+      "assistant_text": "2026-08-26T21:26:27+14:00",
+      "events": [
+        {
+          "event": "context_status"
+        },
+        {
+          "event": "tool",
+          "name": "get_time",
+          "event_type": "tool.running",
+          "is_error": false
+        },
+        {
+          "event": "tool",
+          "name": "get_time",
+          "event_type": "tool.completed",
+          "is_error": false
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "token"
+        },
+        {
+          "event": "done",
+          "assistant_text": "2026-08-26T21:26:27+14:00"
+        },
+        {
+          "event": "stream_end"
+        }
+      ],
+      "subscription_snapshot": {
+        "offline_buffered_events": 0,
+        "offline_dropped_events": 0,
+        "offline_first_event_id": null,
+        "last_event_id": null
+      },
+      "start": {
+        "stream_id": "c26f3ac4538143e18c4fd47f456e8bee",
+        "session_id": "03b59f2e7b8b",
+        "pending_started_at": 1787729185.237656,
+        "turn_id": "20260826T072625Z-7f874a66c74b",
+        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "effective_model": "qwen3.5:397b",
+        "effective_model_provider": "ollama-cloud"
+      },
+      "elapsed_s": 9.25
+    }
+  },
+  "mocked_boundaries": [],
+  "untested_or_injected": [
+    "Browser DOM and HTTP/SSE route were not automated; start_session_turn is the UI-facing service seam.",
+    "Provider timeout, malformed provider payload, and post-side-effect transport loss remain production-object injected tests, not destructive live provider faults.",
+    "Installed ARES.app logs were not captured; error-log evidence covers this verifier process."
+  ]
+}

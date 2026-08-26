@@ -12,6 +12,7 @@ def _read(name: str) -> str:
 def test_overview_and_workbench_are_additive_tabs() -> None:
     index = _read("index.html")
     panels = _read("panels.js")
+    styles = _read("style.css")
 
     assert index.count('data-panel="overview"') == 2
     assert index.count('data-panel="workbench"') == 2
@@ -30,6 +31,15 @@ def test_overview_and_workbench_are_additive_tabs() -> None:
     assert "loadOverview" in panels
     assert "loadWorkbench" in panels
     assert "leaveOverview" in panels
+    assert ":not(.showing-overview):not(.showing-workbench)" in styles
+    assert "main.main.showing-overview > #mainOverview{display:flex;}" in styles
+    assert "main.main.showing-workbench > #mainWorkbench{display:flex;}" in styles
+
+
+def test_dispatcher_replaces_chat_instead_of_stacking_below_it() -> None:
+    styles = _read("style.css")
+    assert ":not(.showing-dispatcher)" in styles
+    assert "main.main.showing-dispatcher > #mainDispatcher{display:flex;}" in styles
 
 
 def test_overview_projects_only_existing_public_contracts() -> None:

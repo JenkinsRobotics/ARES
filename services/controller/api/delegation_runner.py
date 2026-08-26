@@ -59,12 +59,18 @@ def run_task_sync(task_id: str) -> dict[str, Any] | None:
     return delegation_tasks.update_status(task_id, delegation_tasks.STATUS_COMPLETED, result=text)
 
 
-def delegate(*, prompt: str, backend: str, model: str | None = None, provider: str | None = None) -> dict[str, Any]:
+def delegate(*, prompt: str, backend: str, model: str | None = None, provider: str | None = None,
+             parent_task_id: str | None = None, parent_session_id: str | None = None,
+             relation: str = "delegated") -> dict[str, Any]:
     """Create a delegated task and start running it on a background thread.
 
     Returns the task record immediately (Queued); the caller polls status.
     """
-    task = delegation_tasks.create_task(prompt=prompt, backend=backend, model=model, provider=provider)
+    task = delegation_tasks.create_task(
+        prompt=prompt, backend=backend, model=model, provider=provider,
+        parent_task_id=parent_task_id, parent_session_id=parent_session_id,
+        relation=relation,
+    )
     thread = threading.Thread(target=run_task_sync, args=(task["id"],), daemon=True)
     thread.start()
     return task

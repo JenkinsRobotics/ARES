@@ -53,6 +53,8 @@ async def _new_child_run(
         profile=getattr(parent, "profile", None),
     )
     child.title = f"{title_prefix}: {message[:60]}"
+    child.parent_session_id = parent.session_id
+    child.source_tag = "background" if title_prefix == "bg" else "btw"
     if copy_messages:
         child.messages = list(parent.messages or [])
     child.save()
@@ -167,7 +169,7 @@ async def background_task(
             identity.profile,
         )
     )
-    return {"task_id": task_id, "stream_id": result["stream_id"], "session_id": child.session_id}
+    return {"task_id": task_id, "stream_id": result["stream_id"], "session_id": child.session_id, "parent_session_id": parent.session_id}
 
 
 @router.post("/api/goal")

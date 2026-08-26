@@ -42,6 +42,31 @@ def test_terminal_status_is_immutable(tasks_mod):
     assert final["error"] is None
 
 
+def test_delegated_task_lineage_is_durable_and_queryable(tasks_mod):
+    root = tasks_mod.create_task(
+        prompt="root", backend="b", parent_session_id="session-parent",
+    )
+    child = tasks_mod.create_task(
+        prompt="child", backend="b", parent_task_id=root["id"],
+        relation="background",
+    )
+    grandchild = tasks_mod.create_task(
+        prompt="grandchild", backend="b", parent_task_id=child["id"],
+        relation="delegated",
+    )
+    assert child["root_task_id"] == root["id"]
+    assert grandchild["root_task_id"] == root["id"]
+    assert grandchild["parent_session_id"] == "session-parent"
+    assert [row["id"] for row in tasks_mod.task_lineage(grandchild["id"])] == [
+        root["id"], child["id"], grandchild["id"],
+    ]
+
+
+def test_delegated_task_rejects_unknown_parent(tasks_mod):
+    with pytest.raises(ValueError, match="parent task not found"):
+        tasks_mod.create_task(prompt="child", backend="b", parent_task_id="missing")
+
+
 def test_cancel_is_idempotent_and_blocks_late_completion(tasks_mod):
     task = tasks_mod.create_task(prompt="p", backend="b")
     first = tasks_mod.cancel_task(task["id"])

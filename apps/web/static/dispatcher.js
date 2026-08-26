@@ -144,6 +144,24 @@ async function refreshDispatcherEvidence(){
   }catch(error){root.textContent=(error&&error.message)||'Verification evidence is unavailable.';}
 }
 
+async function refreshDispatcherLineage(){
+  const root=$('dispatcherLineage');const count=$('dispatcherLineageCount');const sid=S&&S.session&&S.session.session_id;if(!root||!sid)return;
+  try{
+    const results=await Promise.allSettled([
+      api('/api/session/lineage/report?session_id='+encodeURIComponent(sid),{timeoutToast:false}),
+      api('/api/delegation/tasks',{timeoutToast:false}),
+    ]);
+    const report=results[0].status==='fulfilled'?results[0].value:{};const delegated=results[1].status==='fulfilled'&&Array.isArray(results[1].value.tasks)?results[1].value.tasks:[];
+    const sessions=[...(report.segments||[]),...(report.children||[])];const tasks=delegated.filter(task=>task&&task.parent_session_id===sid);
+    const rows=[
+      ...sessions.map(item=>({label:item.title||item.session_id,meta:`${item.role||'session'} · ${item.active?'active':item.end_reason||'closed'}`,kind:'session'})),
+      ...tasks.map(item=>({label:item.prompt||item.id,meta:`${item.relation||'delegated'} · ${item.status||'unknown'}`,kind:'task'})),
+    ];
+    if(count)count.textContent=String(rows.length);
+    root.innerHTML=rows.length?rows.map(item=>`<div class="hub-list-item"><div class="hub-list-main"><div class="hub-list-title">${esc(item.label)}</div><div class="hub-list-sub">${esc(item.meta)}</div></div><span class="hub-badge">${esc(item.kind)}</span></div>`).join(''):'<div class="dispatcher-empty">This mission has no child or continuation runs yet.</div>';
+  }catch(error){if(count)count.textContent='—';root.innerHTML=`<div class="dispatcher-empty">${esc(error&&error.message||'Mission lineage is unavailable.')}</div>`;}
+}
+
 function _dispatcherRenderOperations(){
   const jobs=Array.isArray(_cronList)?_cronList.length:'—';
   const tasks=_kanbanBoard&&Array.isArray(_kanbanBoard.columns)?_kanbanBoard.columns.reduce((sum,column)=>sum+(Array.isArray(column.tasks)?column.tasks.length:0),0):'—';
@@ -154,7 +172,7 @@ async function refreshDispatcher(force=false){
   if(typeof _currentPanel!=='undefined'&&_currentPanel!=='dispatcher'&&!force)return;
   const title=$('dispatcherSessionTitle');if(title)title.textContent=(S&&S.session&&S.session.title)||'Dispatcher';
   _dispatcherRenderRuntime();_dispatcherRenderRecovery();_dispatcherRenderContext();_dispatcherCloneTimeline();_dispatcherRenderOutputs();_dispatcherRenderOperations();
-  await Promise.allSettled([_dispatcherRenderApproval(),refreshDispatcherGit(),refreshDispatcherEvidence()]);
+  await Promise.allSettled([_dispatcherRenderApproval(),refreshDispatcherGit(),refreshDispatcherEvidence(),refreshDispatcherLineage()]);
 }
 
 async function loadDispatcher(){
@@ -187,4 +205,4 @@ async function dispatcherContinueHaltedTurn(){
 function dispatcherOpenInChat(){if(typeof switchPanel==='function')switchPanel('chat');}
 function dispatcherOpenPanel(name){if(typeof switchPanel==='function')switchPanel(name);}
 
-window.loadDispatcher=loadDispatcher;window.leaveDispatcher=leaveDispatcher;window.refreshDispatcher=refreshDispatcher;window.refreshDispatcherGit=refreshDispatcherGit;window.refreshDispatcherEvidence=refreshDispatcherEvidence;window.sendDispatcherMission=sendDispatcherMission;window.dispatcherRetryLastTurn=dispatcherRetryLastTurn;window.dispatcherUndoLastTurn=dispatcherUndoLastTurn;window.dispatcherContinueHaltedTurn=dispatcherContinueHaltedTurn;window.dispatcherPinWorkspace=dispatcherPinWorkspace;window.dispatcherUnpinContext=dispatcherUnpinContext;window.dispatcherOpenInChat=dispatcherOpenInChat;window.dispatcherOpenPanel=dispatcherOpenPanel;
+window.loadDispatcher=loadDispatcher;window.leaveDispatcher=leaveDispatcher;window.refreshDispatcher=refreshDispatcher;window.refreshDispatcherGit=refreshDispatcherGit;window.refreshDispatcherEvidence=refreshDispatcherEvidence;window.refreshDispatcherLineage=refreshDispatcherLineage;window.sendDispatcherMission=sendDispatcherMission;window.dispatcherRetryLastTurn=dispatcherRetryLastTurn;window.dispatcherUndoLastTurn=dispatcherUndoLastTurn;window.dispatcherContinueHaltedTurn=dispatcherContinueHaltedTurn;window.dispatcherPinWorkspace=dispatcherPinWorkspace;window.dispatcherUnpinContext=dispatcherUnpinContext;window.dispatcherOpenInChat=dispatcherOpenInChat;window.dispatcherOpenPanel=dispatcherOpenPanel;

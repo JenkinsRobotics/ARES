@@ -595,8 +595,28 @@ def evaluate_goal_after_turn(
             "iteration_budget_exhausted",
             "timeout",
         }:
+            halt_messages = {
+                "tool_budget_exhausted": (
+                    "Goal paused — Jaeger reached this turn's tool-call safety "
+                    "budget after returning its best available summary. Resume "
+                    "the goal to continue from the saved session."
+                ),
+                "iteration_budget_exhausted": (
+                    "Goal paused — Jaeger reached this turn's reasoning-loop "
+                    "budget after returning its best available summary. Resume "
+                    "the goal to continue from the saved session."
+                ),
+                "repeated_tool_failure": (
+                    "Goal paused — the same tool failure repeated. Review the "
+                    "failed operation or narrow the request before resuming."
+                ),
+                "timeout": (
+                    "Goal paused — the last operation timed out. Check the "
+                    "runtime or narrow the request before resuming."
+                ),
+            }
             try:
-                mgr.pause(reason="tool loop / timeout — not continuing")
+                mgr.pause(reason=f"Jaeger turn halted: {halt_code}")
             except Exception:
                 pass
             return {
@@ -605,10 +625,7 @@ def evaluate_goal_after_turn(
                 "continuation_prompt": None,
                 "verdict": "blocked",
                 "reason": f"Jaeger halted the turn ({halt_code})",
-                "message": (
-                    "Goal paused — the last tool call timed out or repeated "
-                    "a failure. Narrow the query before continuing."
-                ),
+                "message": halt_messages[halt_code],
             }
         decision = mgr.evaluate_after_turn(str(last_response or ""), user_initiated=user_initiated)
     except Exception as exc:

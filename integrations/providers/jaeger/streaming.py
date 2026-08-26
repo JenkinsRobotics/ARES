@@ -383,6 +383,16 @@ def _translate_bridge_frame(frame: dict[str, Any], put_jaeger_event, stream_id: 
             STREAM_DELTA_TEXT[stream_id] = STREAM_DELTA_TEXT.get(stream_id, "") + piece
             put_jaeger_event("token", {"text": piece})
         return
+    if kind == "reasoning":
+        # Model deliberation is a first-class bridge frame. Keep it separate
+        # from visible answer tokens while preserving it for the UI/audit
+        # surface exactly like direct gateway reasoning deltas.
+        piece = str(frame.get("text") or "")
+        if piece:
+            if stream_id in STREAM_REASONING_TEXT:
+                STREAM_REASONING_TEXT[stream_id] += piece
+            put_jaeger_event("reasoning", {"text": piece})
+        return
     if kind == "state":
         # Busy/idle/thinking are transport lifecycle, not model reasoning.
         # Mapping them onto runtime `reasoning` events made the original
@@ -726,6 +736,8 @@ def _merge_and_save_jaeger_turn(
                         msg["halt_code"] = halt_code
                     if halt_reason:
                         msg["halt_reason"] = halt_reason
+                    if saved_reasoning:
+                        msg["reasoning"] = saved_reasoning
                     break
         except Exception:
             logger.debug("Failed to merge JaegerAI display transcript", exc_info=True)

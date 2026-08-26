@@ -198,6 +198,12 @@ def _safari_running() -> bool:
     return subprocess.run(["pgrep", "-x", "Safari"], capture_output=True).returncode == 0
 
 
+def _requires_safari_quit(source: Path) -> bool:
+    """Safari can race only its real bookmark database, not test fixtures."""
+    real_bookmarks = (Path.home() / "Library/Safari/Bookmarks.plist").resolve()
+    return source.resolve() == real_bookmarks and _safari_running()
+
+
 def _node_at(data: dict[str, Any], parent_path: list[int]) -> dict[str, Any]:
     node = data
     for index in parent_path:
@@ -220,7 +226,7 @@ def apply_proposal(proposal_id: str, approval_token: str) -> dict[str, Any]:
     source = Path(str(proposal["source_path"])).resolve()
     if _sha256(source) != proposal.get("source_sha256"):
         raise SafariBookmarkError("Safari bookmarks changed after the audit; create a new proposal")
-    if _safari_running():
+    if _requires_safari_quit(source):
         raise SafariBookmarkError("Quit Safari before applying bookmark changes")
     data = _load(source)
     removals = proposal.get("removals") if isinstance(proposal.get("removals"), list) else []
@@ -282,9 +288,9 @@ def rollback_proposal(proposal_id: str, approval_token: str) -> dict[str, Any]:
         raise SafariBookmarkError("Only an applied proposal can be rolled back")
     if not secrets.compare_digest(str(proposal.get("approval_token") or ""), str(approval_token or "")):
         raise SafariBookmarkError("Explicit approval token did not match")
-    if _safari_running():
-        raise SafariBookmarkError("Quit Safari before rolling back bookmark changes")
     source = Path(str(proposal["source_path"])).resolve()
+    if _requires_safari_quit(source):
+        raise SafariBookmarkError("Quit Safari before rolling back bookmark changes")
     backup = Path(str(proposal.get("backup_path") or "")).resolve()
     if not backup.is_file() or _sha256(backup) != proposal.get("source_sha256"):
         raise SafariBookmarkError("Verified backup is unavailable")
@@ -293,6 +299,46 @@ def rollback_proposal(proposal_id: str, approval_token: str) -> dict[str, Any]:
     proposal.update({"status": "rolled_back", "rolled_back_at": datetime.now(timezone.utc).isoformat()})
     _save_proposal(proposal)
     return public_summary(proposal)
+
+
+def verify_proposal(proposal_id: str) -> dict[str, Any]:
+    """Return aggregate post-operation evidence without private bookmark data."""
+    proposal = load_proposal(proposal_id)
+    source = Path(str(proposal["source_path"])).resolve()
+    data = _load(source)
+    bookmarks, _empty_folders, folders = _inventory(data)
+    current_hash = _sha256(source)
+    status = str(proposal.get("status") or "")
+    expected_count = int(proposal.get("bookmark_count") or 0)
+    if status == "applied":
+        expected_count -= len(proposal.get("removals") or [])
+    elif status == "rolled_back":
+        expected_count = int(proposal.get("bookmark_count") or 0)
+    backup_value = str(proposal.get("backup_path") or "")
+    backup = Path(backup_value).resolve() if backup_value else None
+    backup_valid = bool(
+        backup is not None
+        and backup.is_file()
+        and _sha256(backup) == str(proposal.get("source_sha256") or "")
+    )
+    result_hash_matches = (
+        current_hash == str(proposal.get("result_sha256") or "")
+        if status == "applied" else None
+    )
+    return {
+        "proposal": public_summary(proposal),
+        "verification": {
+            "plist_valid": True,
+            "bookmark_count": len(bookmarks),
+            "expected_bookmark_count": expected_count,
+            "bookmark_count_matches": len(bookmarks) == expected_count,
+            "folder_count": folders,
+            "current_sha256": current_hash,
+            "result_sha256_matches": result_hash_matches,
+            "backup_valid": backup_valid,
+        },
+        "privacy": "aggregate only; no bookmark titles, URLs, or approval token",
+    }
 
 
 def _atomic_restore(backup: Path, source: Path) -> None:
@@ -322,4 +368,5 @@ def _save_proposal(proposal: dict[str, Any]) -> None:
 __all__ = [
     "SafariBookmarkError", "apply_proposal", "bookmark_path", "create_proposal",
     "load_proposal", "public_summary", "rollback_proposal", "state_root",
+    "verify_proposal",
 ]

@@ -77,6 +77,13 @@ def test_apply_creates_verified_backup_and_rollback_restores_source(bookmark_env
     assert result["status"] == "applied"
     assert result["duplicate_removal_count"] == 1
     assert Path(result["backup_path"]).read_bytes() == before
+    evidence = sb.verify_proposal(proposal["proposal_id"])
+    assert evidence["verification"]["plist_valid"] is True
+    assert evidence["verification"]["bookmark_count"] == 5
+    assert evidence["verification"]["bookmark_count_matches"] is True
+    assert evidence["verification"]["result_sha256_matches"] is True
+    assert evidence["verification"]["backup_valid"] is True
+    assert "https://" not in str(evidence)
     with bookmark_env.open("rb") as handle:
         after = plistlib.load(handle)
     assert len(after["Children"][0]["Children"]) == 3
@@ -87,11 +94,12 @@ def test_apply_creates_verified_backup_and_rollback_restores_source(bookmark_env
     assert bookmark_env.read_bytes() == before
 
 
-def test_apply_refuses_while_safari_is_running(bookmark_env, monkeypatch):
-    proposal = sb.create_proposal()
+def test_safari_quit_check_applies_only_to_real_database(bookmark_env, monkeypatch):
     monkeypatch.setattr(sb, "_safari_running", lambda: True)
-    with pytest.raises(sb.SafariBookmarkError, match="Quit Safari"):
-        sb.apply_proposal(proposal["proposal_id"], proposal["approval_token"])
+    assert sb._requires_safari_quit(bookmark_env) is False
+    assert sb._requires_safari_quit(
+        Path.home() / "Library/Safari/Bookmarks.plist",
+    ) is True
 
 
 def test_api_audit_omits_private_details(bookmark_env):

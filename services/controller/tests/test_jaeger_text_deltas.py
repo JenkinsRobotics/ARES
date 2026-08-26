@@ -18,8 +18,10 @@ from api.providers.jaeger import streaming
 @pytest.fixture(autouse=True)
 def _clean_ledger():
     streaming.STREAM_DELTA_TEXT.clear()
+    streaming.STREAM_REASONING_TEXT.clear()
     yield
     streaming.STREAM_DELTA_TEXT.clear()
+    streaming.STREAM_REASONING_TEXT.clear()
 
 
 def _events():
@@ -62,6 +64,19 @@ def test_lifecycle_state_frames_are_not_reasoning():
     streaming._translate_bridge_frame(
         {"type": "state", "busy": True}, put, "s1")
     assert seen == []
+
+
+def test_model_reasoning_frame_is_preserved_separately_from_answer():
+    seen, put = _events()
+    streaming.STREAM_REASONING_TEXT["s1"] = ""
+
+    streaming._translate_bridge_frame(
+        {"type": "reasoning", "text": "inspect then verify"}, put, "s1",
+    )
+
+    assert seen == [("reasoning", {"text": "inspect then verify"})]
+    assert streaming.STREAM_REASONING_TEXT["s1"] == "inspect then verify"
+    assert "s1" not in streaming.STREAM_DELTA_TEXT
 
 
 def test_tool_frames_still_translate_alongside_deltas():

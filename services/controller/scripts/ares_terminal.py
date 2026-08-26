@@ -10,6 +10,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 CONTROLLER = Path(__file__).resolve().parents[1]
@@ -57,6 +58,18 @@ def _chat(args) -> int:
     })
     stream_id = str(started["stream_id"])
     print(f"ARES session {session_id} · stream {stream_id}", file=sys.stderr)
+    trace_handle = None
+    if args.trace_file:
+        trace_path = Path(args.trace_file).expanduser().resolve()
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        trace_handle = trace_path.open("a", encoding="utf-8")
+        trace_path.chmod(0o600)
+        trace_handle.write(json.dumps({
+            "event": "trace_start", "session_id": session_id,
+            "stream_id": stream_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }) + "\n")
+        trace_handle.flush()
     url = _base() + "/api/chat/stream?" + urllib.parse.urlencode({"stream_id": stream_id})
     request = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
     event = "message"
@@ -77,19 +90,34 @@ def _chat(args) -> int:
                         payload = json.loads("\n".join(data_lines))
                     except json.JSONDecodeError:
                         payload = {"text": "\n".join(data_lines)}
+                    if trace_handle is not None:
+                        trace_handle.write(json.dumps({
+                            "event": event, "payload": payload,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }, ensure_ascii=False) + "\n")
+                        trace_handle.flush()
                     if event == "token":
                         print(str(payload.get("text") or payload.get("delta") or ""), end="", flush=True)
                     elif event == "tool":
                         state = str(payload.get("event_type") or "tool")
                         print(f"\n[{state}: {payload.get('name') or 'unknown'}]", file=sys.stderr)
+                    elif event == "reasoning":
+                        # The full provider trace is available only in the
+                        # explicitly requested mode-0600 audit file.
+                        pass
                     elif event in {"apperror", "error", "cancel"}:
                         print(f"\nARES error: {payload.get('message') or payload}", file=sys.stderr)
                     elif event == "stream_end":
                         print()
+                        if trace_handle is not None:
+                            trace_handle.close()
                         return 0
                     event, data_lines = "message", []
     except (TimeoutError, urllib.error.URLError) as exc:
         raise SystemExit(f"ARES stream failed: {exc}") from exc
+    finally:
+        if trace_handle is not None and not trace_handle.closed:
+            trace_handle.close()
     return 0
 
 
@@ -111,7 +139,7 @@ def _print_review(proposal: dict) -> None:
 def _bookmarks(args) -> int:
     from api.safari_bookmarks import (
         SafariBookmarkError, apply_proposal, create_proposal, load_proposal,
-        public_summary, rollback_proposal,
+        public_summary, rollback_proposal, verify_proposal,
     )
     try:
         if args.bookmark_command == "audit":
@@ -136,6 +164,8 @@ def _bookmarks(args) -> int:
             print(json.dumps(apply_proposal(args.proposal_id, args.approve_token), indent=2))
         elif args.bookmark_command == "rollback":
             print(json.dumps(rollback_proposal(args.proposal_id, args.approve_token), indent=2))
+        elif args.bookmark_command == "verify":
+            print(json.dumps(verify_proposal(args.proposal_id), indent=2))
     except SafariBookmarkError as exc:
         raise SystemExit(f"Safari bookmarks: {exc}") from exc
     return 0
@@ -150,6 +180,7 @@ def main() -> int:
     chat.add_argument("--workspace")
     chat.add_argument("--profile", default="default")
     chat.add_argument("--timeout", type=int, default=180)
+    chat.add_argument("--trace-file", help="append complete SSE events to a mode-0600 NDJSON audit file")
     chat.set_defaults(handler=_chat)
     bookmarks = sub.add_parser("bookmarks", help="local privacy-preserving Safari bookmark operations")
     bookmark_sub = bookmarks.add_subparsers(dest="bookmark_command", required=True)
@@ -167,6 +198,9 @@ def main() -> int:
     rollback.add_argument("proposal_id")
     rollback.add_argument("--approve-token", required=True)
     rollback.set_defaults(handler=_bookmarks)
+    verify = bookmark_sub.add_parser("verify")
+    verify.add_argument("proposal_id")
+    verify.set_defaults(handler=_bookmarks)
     args = parser.parse_args()
     return args.handler(args)
 

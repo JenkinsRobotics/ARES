@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "hermes-webui",
+  "url": "https://github.com/nesquena/hermes-webui.git",
+  "tracked_branch": "master",
+  "remote_name": "hermes-upstream",
+  "last_merged_upstream_commit": "f8546915ab67a6e04010934c383531b00c5439da",
+  "ares_merge_commit": "fad5f48bf1e5ad338e230c8924122161444da002",
+  "license": "MIT",
+  "integration_model": "managed-fork-overlay",
+  "notes": "The original webui subtree was later reorganized into ARES product directories. Rehearse merges in a temporary branch; do not run a blind subtree pull into the current layout."
+}

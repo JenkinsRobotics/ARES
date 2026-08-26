@@ -25,7 +25,7 @@ from typing import Any
 CONTROLLER = Path(__file__).resolve().parents[1]
 ROOT = CONTROLLER.parents[1]
 JAEGER_ROOT = Path(os.environ.get("ARES_JAEGER_SOURCE_DIR") or ROOT.parent / "JaegerAI").resolve()
-EVIDENCE = ROOT / "docs" / "verification" / "jaeger-five-promises-evidence.json"
+EVIDENCE = Path(os.environ.get("ARES_VERIFICATION_EVIDENCE") or Path.home() / ".ares" / "verification" / "jaeger-five-promises-evidence.json")
 sys.path[:0] = [str(CONTROLLER), str(ROOT)]
 os.chdir(CONTROLLER)
 
@@ -270,9 +270,9 @@ def main() -> int:
         "turns": {"turn1": turn1, "turn2": turn2, "turn3": turn3, "tool": tool_turn, "after_restart": after_restart, "tool_after_restart": tool_after_restart},
         "mocked_boundaries": [],
         "untested_or_injected": [
-            "Browser DOM and HTTP/SSE route were not automated; start_session_turn is the UI-facing service seam.",
-            "Provider timeout, malformed provider payload, and post-side-effect transport loss remain production-object injected tests, not destructive live provider faults.",
-            "Installed ARES.app logs were not captured; error-log evidence covers this verifier process.",
+            "Browser EventSource → HTTP/SSE controller is covered by tests/browser_smoke.py; browser chat submission still stops at the start_session_turn UI-facing service seam in this verifier.",
+            "Malformed payload and timeout/reconnection use a live loopback provider in Jaeger test_external_model_live_faults.py; post-side-effect transport loss remains a production-object injected test.",
+            "Installed ARES.app provenance, controller health, and bounded logs are recorded separately by verify_installed_app.py.",
         ],
     }
     EVIDENCE.parent.mkdir(parents=True, exist_ok=True)

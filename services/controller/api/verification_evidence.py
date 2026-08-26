@@ -11,7 +11,8 @@ from typing import Any
 from api.config import REPO_ROOT
 
 
-DEFAULT_EVIDENCE_PATH = REPO_ROOT.parent.parent / "docs" / "verification" / "jaeger-five-promises-evidence.json"
+RUNTIME_EVIDENCE_PATH = Path.home() / ".ares" / "verification" / "jaeger-five-promises-evidence.json"
+DOCUMENTED_EVIDENCE_PATH = REPO_ROOT.parent.parent / "docs" / "verification" / "jaeger-five-promises-evidence.json"
 
 
 def _git_head(path: Path) -> str | None:
@@ -27,7 +28,8 @@ def _git_head(path: Path) -> str | None:
 
 
 def verification_evidence(path: Path | None = None) -> dict[str, Any]:
-    source = path or Path(os.environ.get("ARES_VERIFICATION_EVIDENCE") or DEFAULT_EVIDENCE_PATH)
+    configured = os.environ.get("ARES_VERIFICATION_EVIDENCE")
+    source = path or Path(configured or (RUNTIME_EVIDENCE_PATH if RUNTIME_EVIDENCE_PATH.exists() else DOCUMENTED_EVIDENCE_PATH))
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
     except FileNotFoundError:

@@ -134,6 +134,29 @@ def test_exact_recovery_is_approval_gated_verified_and_rollbackable(bookmark_env
     assert bookmark_env.read_bytes() == damaged
 
 
+def test_organization_moves_loose_favourites_without_deleting(bookmark_env):
+    proposal = sb.create_organization_proposal()
+    assert proposal["bookmark_count"] == 6
+    assert proposal["move_count"] == 3
+    assert proposal["create_unsorted_folder"] is True
+    with pytest.raises(sb.SafariBookmarkError, match="token"):
+        sb.apply_organization_proposal(proposal["proposal_id"], "wrong-token-value")
+    result = sb.apply_organization_proposal(proposal["proposal_id"], proposal["approval_token"])
+    assert result["status"] == "applied"
+    evidence = sb.verify_proposal(proposal["proposal_id"])
+    assert evidence["verification"]["bookmark_count"] == 6
+    assert evidence["verification"]["bookmark_count_matches"] is True
+    assert evidence["verification"]["structural_sha256_matches"] is True
+    with bookmark_env.open("rb") as handle:
+        organized = plistlib.load(handle)
+    bar = organized["Children"][0]
+    menu = organized["Children"][1]
+    assert sum(1 for child in bar["Children"] if child.get("URLString")) == 0
+    unsorted = next(child for child in menu["Children"] if child.get("Title") == "Unsorted (ARES)")
+    assert len(unsorted["Children"]) == 1
+    assert sum(1 for child in menu["Children"] if child.get("URLString")) == 3
+
+
 def test_api_audit_omits_private_details(bookmark_env):
     from fastapi_app.routers.safari_bookmarks import audit_bookmarks
 

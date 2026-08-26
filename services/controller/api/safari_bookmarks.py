@@ -14,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -233,6 +234,100 @@ def create_recovery_proposal(restore_from: Path, path: Path | None = None) -> di
     return proposal
 
 
+def create_organization_proposal(path: Path | None = None) -> dict[str, Any]:
+    """Plan moves for loose root/Favourites leaves into populated existing folders."""
+    source = (path or bookmark_path()).expanduser().resolve()
+    data = _load(source)
+    bookmarks, empty_folders, folder_count = _inventory(data)
+    folders: list[dict[str, Any]] = []
+    loose: list[dict[str, Any]] = []
+
+    def words(value: str) -> set[str]:
+        return {word for word in re.findall(r"[a-z0-9]+", value.lower()) if len(word) > 2}
+
+    def walk(node: dict[str, Any], node_path: list[int], labels: list[str]) -> None:
+        children = node.get("Children")
+        if not isinstance(children, list):
+            return
+        label = str(node.get("Title") or node.get("WebBookmarkIdentifier") or "Bookmarks")
+        next_labels = labels + [label]
+        is_system = label in {"com.apple.ReadingList", "History"}
+        if labels and not is_system and label != "BookmarksBar":
+            folders.append({"path": node_path, "labels": next_labels, "node": node, "items": []})
+        for index, child in enumerate(children):
+            if not isinstance(child, dict):
+                continue
+            child_path = node_path + [index]
+            if child.get("URLString"):
+                item = {
+                    "path": child_path, "node": child, "url": str(child.get("URLString") or ""),
+                    "canonical": _canonical_url(str(child.get("URLString") or "")),
+                    "domain": str(urlsplit(str(child.get("URLString") or "")).hostname or "").lower(),
+                    "text": f"{_title(child)} {child.get('URLString') or ''}",
+                }
+                if not is_system and (not labels or label == "BookmarksBar"):
+                    loose.append(item)
+            elif isinstance(child.get("Children"), list):
+                walk(child, child_path, next_labels)
+
+    walk(data, [], [])
+    loose_paths = {tuple(item["path"]) for item in loose}
+    for item in bookmarks:
+        item_path = tuple(int(v) for v in item["path"])
+        if item_path in loose_paths:
+            continue
+        for folder in folders:
+            folder_path = tuple(folder["path"])
+            if item_path[:-1] == folder_path:
+                folder["items"].append(item)
+                break
+
+    menu = next((child for child in data.get("Children", []) if isinstance(child, dict) and child.get("Title") == "BookmarksMenu"), None)
+    menu_path = next(([index] for index, child in enumerate(data.get("Children", [])) if child is menu), None)
+    if menu is None or menu_path is None:
+        raise SafariBookmarkError("Safari BookmarksMenu folder was not found")
+    moves = []
+    reason_counts: dict[str, int] = {"exact_url": 0, "domain": 0, "label": 0, "unsorted": 0}
+    needs_unsorted = False
+    for item in loose:
+        best = None
+        for folder in folders:
+            exact = sum(1 for existing in folder["items"] if existing["canonical_url"] == item["canonical"])
+            domain = sum(1 for existing in folder["items"] if existing["domain"] and existing["domain"] == item["domain"])
+            overlap = len(words(item["text"]) & words(" ".join(folder["labels"])))
+            score = exact * 10000 + domain * 100 + overlap
+            candidate = (score, len(folder["path"]), folder)
+            if best is None or candidate[:2] > best[:2]:
+                best = candidate
+        score, _depth, destination = best if best is not None else (0, 0, None)
+        if destination is None or score <= 0:
+            destination_path = None
+            reason = "unsorted"
+            needs_unsorted = True
+        else:
+            destination_path = destination["path"]
+            reason = "exact_url" if score >= 10000 else "domain" if score >= 100 else "label"
+        reason_counts[reason] += 1
+        moves.append({"source_path": item["path"], "destination_path": destination_path, "reason": reason})
+    proposal_id = secrets.token_hex(8)
+    proposal = {
+        "schema": "ares-safari-bookmark-organization/v1", "operation": "organize_loose_bookmarks",
+        "proposal_id": proposal_id, "approval_token": secrets.token_urlsafe(12),
+        "created_at": datetime.now(timezone.utc).isoformat(), "source_path": str(source),
+        "source_sha256": _sha256(source), "source_structural_sha256": _structural_sha256(source),
+        "bookmark_count": len(bookmarks), "folder_count": folder_count,
+        "empty_folder_count": len(empty_folders), "move_count": len(moves),
+        "reason_counts": reason_counts, "create_unsorted_folder": needs_unsorted,
+        "bookmarks_menu_path": menu_path, "moves": moves, "status": "awaiting_approval",
+    }
+    directory = state_root() / "proposals"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target = directory / f"{proposal_id}.json"
+    target.write_text(json.dumps(proposal, indent=2) + "\n", encoding="utf-8")
+    target.chmod(0o600)
+    return proposal
+
+
 def load_proposal(proposal_id: str) -> dict[str, Any]:
     if not proposal_id or any(ch not in "0123456789abcdef" for ch in proposal_id):
         raise SafariBookmarkError("Invalid proposal id")
@@ -252,6 +347,7 @@ def public_summary(proposal: dict[str, Any]) -> dict[str, Any]:
         "duplicate_group_count", "duplicate_removal_count", "malformed_count",
         "empty_folder_count", "status", "backup_path", "applied_at", "rolled_back_at",
         "restore_bookmark_count", "restore_folder_count", "restore_empty_folder_count",
+        "move_count", "reason_counts", "create_unsorted_folder",
     )}
 
 
@@ -293,6 +389,70 @@ def apply_recovery_proposal(proposal_id: str, approval_token: str) -> dict[str, 
         "backup_path": str(damaged_backup),
         "applied_at": datetime.now(timezone.utc).isoformat(),
         "result_sha256": _sha256(source),
+    })
+    _save_proposal(proposal)
+    return public_summary(proposal)
+
+
+def apply_organization_proposal(proposal_id: str, approval_token: str) -> dict[str, Any]:
+    proposal = load_proposal(proposal_id)
+    if proposal.get("operation") != "organize_loose_bookmarks":
+        raise SafariBookmarkError("Proposal is not a bookmark organization")
+    if proposal.get("status") != "awaiting_approval":
+        raise SafariBookmarkError(f"Proposal is not pending (status={proposal.get('status')})")
+    if not secrets.compare_digest(str(proposal.get("approval_token") or ""), str(approval_token or "")):
+        raise SafariBookmarkError("Explicit approval token did not match")
+    source = Path(str(proposal["source_path"])).resolve()
+    if _sha256(source) != proposal.get("source_sha256"):
+        raise SafariBookmarkError("Safari bookmarks changed after the organization audit; create a new proposal")
+    if _requires_safari_quit(source):
+        raise SafariBookmarkError("Quit Safari before applying bookmark organization")
+    data = _load(source)
+    resolved = []
+    for move in proposal.get("moves") or []:
+        parent = _node_at(data, list(move["source_path"][:-1]))
+        child = parent["Children"][int(move["source_path"][-1])]
+        destination = _node_at(data, list(move["destination_path"])) if move.get("destination_path") is not None else None
+        resolved.append((parent, int(move["source_path"][-1]), child, destination))
+    unsorted = None
+    if proposal.get("create_unsorted_folder"):
+        menu = _node_at(data, list(proposal["bookmarks_menu_path"]))
+        unsorted = {"Title": "Unsorted (ARES)", "WebBookmarkType": "WebBookmarkTypeList", "Children": []}
+        menu["Children"].append(unsorted)
+    by_parent: dict[int, tuple[dict[str, Any], list[int]]] = {}
+    for parent, index, _child, _destination in resolved:
+        entry = by_parent.setdefault(id(parent), (parent, []))
+        entry[1].append(index)
+    for parent, indexes in by_parent.values():
+        for index in sorted(indexes, reverse=True):
+            parent["Children"].pop(index)
+    for _parent, _index, child, destination in resolved:
+        (destination or unsorted)["Children"].append(child)
+    backups = state_root() / "backups"
+    backups.mkdir(parents=True, exist_ok=True, mode=0o700)
+    backup = backups / f"Bookmarks-before-organization-{proposal_id}.plist"
+    shutil.copy2(source, backup)
+    if _sha256(backup) != proposal["source_sha256"]:
+        raise SafariBookmarkError("Pre-organization backup checksum verification failed")
+    mode = source.stat().st_mode & 0o777
+    fd, temporary_name = tempfile.mkstemp(prefix=".Bookmarks.ares-organize-", suffix=".plist", dir=source.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            plistlib.dump(data, handle, fmt=plistlib.FMT_BINARY, sort_keys=False)
+            handle.flush(); os.fsync(handle.fileno())
+        temporary = Path(temporary_name); temporary.chmod(mode); _load(temporary)
+        os.replace(temporary, source)
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
+    verified, verified_empty, verified_folders = _inventory(_load(source))
+    if len(verified) != int(proposal["bookmark_count"]):
+        _atomic_restore(backup, source)
+        raise SafariBookmarkError("Post-organization bookmark count failed; backup was restored")
+    proposal.update({
+        "status": "applied", "backup_path": str(backup),
+        "applied_at": datetime.now(timezone.utc).isoformat(), "result_sha256": _sha256(source),
+        "result_structural_sha256": _structural_sha256(source),
+        "result_folder_count": verified_folders, "result_empty_folder_count": len(verified_empty),
     })
     _save_proposal(proposal)
     return public_summary(proposal)
@@ -431,7 +591,7 @@ def verify_proposal(proposal_id: str) -> dict[str, Any]:
         current_hash == str(proposal.get("result_sha256") or "")
         if status == "applied" else None
     )
-    expected_structure = str(proposal.get("restore_structural_sha256") or "")
+    expected_structure = str(proposal.get("restore_structural_sha256") or proposal.get("result_structural_sha256") or "")
     if not expected_structure and proposal.get("operation") == "exact_recovery":
         restore_value = str(proposal.get("restore_from_path") or "")
         restore_source = Path(restore_value).resolve() if restore_value else None
@@ -483,8 +643,8 @@ def _save_proposal(proposal: dict[str, Any]) -> None:
 
 
 __all__ = [
-    "SafariBookmarkError", "apply_proposal", "apply_recovery_proposal", "bookmark_path",
-    "create_proposal", "create_recovery_proposal",
+    "SafariBookmarkError", "apply_organization_proposal", "apply_proposal", "apply_recovery_proposal",
+    "bookmark_path", "create_organization_proposal", "create_proposal", "create_recovery_proposal",
     "load_proposal", "public_summary", "rollback_proposal", "state_root",
     "verify_proposal",
 ]

@@ -11,6 +11,11 @@ CONFIGURATION="${CONFIGURATION:-release}"
 APP_NAME="ARES"
 APP_BUNDLE="$PROJECT_DIR/$APP_NAME.app"
 VERSION="$(tr -d '[:space:]' < "$REPO_DIR/VERSION")"
+SOURCE_COMMIT="$(git -C "$REPO_DIR" rev-parse HEAD)"
+SOURCE_DIRTY=false
+if [ -n "$(git -C "$REPO_DIR" status --porcelain --untracked-files=no)" ]; then
+    SOURCE_DIRTY=true
+fi
 
 BUILD_DIR="$(cd "$REPO_DIR" && swift build -c "$CONFIGURATION" --show-bin-path)"
 case "$BUILD_DIR" in
@@ -112,6 +117,14 @@ cat >> "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>CFBundleVersion</key>
 PLIST
 echo "    <string>${VERSION}</string>" >> "$APP_BUNDLE/Contents/Info.plist"
+cat >> "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
+    <key>ARESSourceCommit</key>
+PLIST
+echo "    <string>${SOURCE_COMMIT}</string>" >> "$APP_BUNDLE/Contents/Info.plist"
+cat >> "$APP_BUNDLE/Contents/Info.plist" << PLIST
+    <key>ARESSourceDirty</key>
+    <${SOURCE_DIRTY}/>
+PLIST
 cat >> "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>LSUIElement</key>
     <true/>

@@ -22,6 +22,7 @@ def test_dispatcher_is_a_first_class_current_ui_panel() -> None:
     assert 'id="dispatcherApprovalState"' in index
     assert 'id="dispatcherOutputs"' in index
     assert 'id="dispatcherGitState"' in index
+    assert 'id="dispatcherRecoveryCard"' in index
     assert 'static/dispatcher.js' in index
     assert 'static/dispatcher.css' in index
     assert "'dispatcher'" in panels
@@ -48,6 +49,17 @@ def test_dispatcher_does_not_claim_runtime_ownership() -> None:
     assert "keepAlive" not in script
     assert "mobileNotifs" not in script
     assert "SpeechRecognition" not in script
+
+
+def test_dispatcher_reuses_canonical_recovery_paths() -> None:
+    script = _read("dispatcher.js")
+
+    assert "cmdRetry()" in script
+    assert "cmdUndo()" in script
+    assert "typeof send!=='function'" in script
+    assert "/api/session/retry" not in script
+    assert "/api/session/undo" not in script
+    assert "[halted:" in script
 
 
 def test_dispatcher_assets_are_available_offline() -> None:

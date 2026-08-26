@@ -72,6 +72,36 @@ function _dispatcherRenderRuntime(){
   if(side)side.textContent=label;
 }
 
+function _dispatcherMessageText(message){
+  const content=message&&message.content;
+  if(typeof content==='string')return content;
+  if(Array.isArray(content))return content.map(item=>typeof item==='string'?item:String(item&&item.text||'')).join('\n');
+  return '';
+}
+
+function _dispatcherHaltReason(){
+  const messages=S&&Array.isArray(S.messages)?S.messages:[];
+  for(let index=messages.length-1;index>=0;index--){
+    const message=messages[index];
+    if(!message||message.role!=='assistant')continue;
+    const match=_dispatcherMessageText(message).trim().match(/\[halted:\s*([^\]]+)\]/i);
+    return match?match[1].trim():'';
+  }
+  return '';
+}
+
+function _dispatcherRenderRecovery(){
+  const card=$('dispatcherRecoveryCard');const state=$('dispatcherHaltState');const summary=$('dispatcherRecoverySummary');
+  const retry=$('dispatcherRetry');const undo=$('dispatcherUndo');const resume=$('dispatcherContinue');
+  if(!card||!state||!summary)return;
+  const busy=!!(S&&S.busy);const hasMessages=!!(S&&Array.isArray(S.messages)&&S.messages.some(message=>message&&message.role==='user'));
+  const reason=_dispatcherHaltReason();
+  card.classList.toggle('is-halted',!!reason);card.classList.toggle('is-busy',busy);
+  state.textContent=busy?'Running':reason?'Halted':'Ready';
+  summary.textContent=reason?`The runtime stopped safely: ${reason}. Continue starts a new turn with the existing session context.`:'Retry reruns the latest user turn. Undo removes the latest exchange. Continue is available after a structured halt.';
+  if(retry)retry.disabled=busy||!hasMessages;if(undo)undo.disabled=busy||!hasMessages;if(resume)resume.disabled=busy||!reason;
+}
+
 async function _dispatcherRenderApproval(){
   const sid=S&&S.session&&S.session.session_id;
   const body=$('dispatcherApprovalState');const count=$('dispatcherApprovalCount');
@@ -110,7 +140,7 @@ function _dispatcherRenderOperations(){
 async function refreshDispatcher(force=false){
   if(typeof _currentPanel!=='undefined'&&_currentPanel!=='dispatcher'&&!force)return;
   const title=$('dispatcherSessionTitle');if(title)title.textContent=(S&&S.session&&S.session.title)||'Dispatcher';
-  _dispatcherRenderRuntime();_dispatcherRenderContext();_dispatcherCloneTimeline();_dispatcherRenderOutputs();_dispatcherRenderOperations();
+  _dispatcherRenderRuntime();_dispatcherRenderRecovery();_dispatcherRenderContext();_dispatcherCloneTimeline();_dispatcherRenderOutputs();_dispatcherRenderOperations();
   await Promise.allSettled([_dispatcherRenderApproval(),refreshDispatcherGit()]);
 }
 
@@ -134,7 +164,14 @@ async function sendDispatcherMission(){
   const context=_dispatcherContext();const prompt=context.length?`Pinned workspace context:\n${context.map(path=>'- '+path).join('\n')}\n\n${text}`:text;
   input.value='';if(typeof send==='function')await send(prompt,{fromDispatcher:true});
 }
+async function dispatcherRetryLastTurn(){if(!S||S.busy||typeof cmdRetry!=='function')return;await cmdRetry();await refreshDispatcher(true);}
+async function dispatcherUndoLastTurn(){if(!S||S.busy||typeof cmdUndo!=='function')return;await cmdUndo();await refreshDispatcher(true);}
+async function dispatcherContinueHaltedTurn(){
+  const reason=_dispatcherHaltReason();if(!reason||!S||S.busy||typeof send!=='function')return;
+  await send(`Continue the halted mission from the current session state. The prior runtime stop was: ${reason}. Review completed work first, avoid repeating successful tool calls, and finish the remaining work.`,{fromDispatcher:true});
+  await refreshDispatcher(true);
+}
 function dispatcherOpenInChat(){if(typeof switchPanel==='function')switchPanel('chat');}
 function dispatcherOpenPanel(name){if(typeof switchPanel==='function')switchPanel(name);}
 
-window.loadDispatcher=loadDispatcher;window.leaveDispatcher=leaveDispatcher;window.refreshDispatcher=refreshDispatcher;window.refreshDispatcherGit=refreshDispatcherGit;window.sendDispatcherMission=sendDispatcherMission;window.dispatcherPinWorkspace=dispatcherPinWorkspace;window.dispatcherUnpinContext=dispatcherUnpinContext;window.dispatcherOpenInChat=dispatcherOpenInChat;window.dispatcherOpenPanel=dispatcherOpenPanel;
+window.loadDispatcher=loadDispatcher;window.leaveDispatcher=leaveDispatcher;window.refreshDispatcher=refreshDispatcher;window.refreshDispatcherGit=refreshDispatcherGit;window.sendDispatcherMission=sendDispatcherMission;window.dispatcherRetryLastTurn=dispatcherRetryLastTurn;window.dispatcherUndoLastTurn=dispatcherUndoLastTurn;window.dispatcherContinueHaltedTurn=dispatcherContinueHaltedTurn;window.dispatcherPinWorkspace=dispatcherPinWorkspace;window.dispatcherUnpinContext=dispatcherUnpinContext;window.dispatcherOpenInChat=dispatcherOpenInChat;window.dispatcherOpenPanel=dispatcherOpenPanel;

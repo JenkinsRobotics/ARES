@@ -165,6 +165,38 @@ def main():
                 (kind, txt) for (kind, txt) in onboarding_errors
                 if not _is_benign(txt)
             ]
+            # Dispatcher is a mutually exclusive main view, not a second row or
+            # retained Chat column. Verify the production DOM and computed CSS;
+            # static selector tests alone cannot catch a stale/overridden bundle.
+            try:
+                dispatcher_tab = page.locator('.rail [data-panel="dispatcher"]').first
+                if dispatcher_tab.count():
+                    # The isolated first-run server intentionally shows the
+                    # onboarding modal, which intercepts pointer input. Invoke
+                    # the same public tab controller the button calls; this
+                    # still exercises the production switch and computed DOM.
+                    page.evaluate("() => switchPanel('dispatcher')")
+                    page.wait_for_function(
+                        """() => {
+                          const main=document.querySelector('main.main');
+                          const chat=document.getElementById('mainChat');
+                          const dispatcher=document.getElementById('mainDispatcher');
+                          return main?.classList.contains('showing-dispatcher')
+                            && getComputedStyle(chat).display === 'none'
+                            && getComputedStyle(dispatcher).display !== 'none';
+                        }""",
+                        timeout=10000,
+                    )
+                    chat_box = page.locator('#mainChat').bounding_box()
+                    dispatcher_box = page.locator('#mainDispatcher').bounding_box()
+                    if chat_box is not None or dispatcher_box is None:
+                        failures.append(
+                            "  [dispatcher-layout] Chat remained in layout or Dispatcher was hidden"
+                        )
+                    else:
+                        print("OK  /#dispatcher — Dispatcher replaces Chat in computed layout")
+            except Exception as exc:
+                failures.append(f"  [dispatcher-layout] {exc}")
             if meaningful:
                 failures.extend(
                     f"  [onboarding] {kind}: {txt}" for kind, txt in meaningful

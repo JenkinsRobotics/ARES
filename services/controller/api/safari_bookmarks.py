@@ -40,6 +40,28 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _structural_sha256(path: Path) -> str:
+    """Hash user-visible hierarchy while ignoring Safari-owned container UUID churn."""
+    def project(node: dict[str, Any]) -> dict[str, Any]:
+        children = node.get("Children")
+        value = {key: node.get(key) for key in (
+            "WebBookmarkType", "WebBookmarkIdentifier", "Title", "URLString",
+        ) if node.get(key) is not None}
+        if node.get("URLString") is not None and node.get("WebBookmarkUUID") is not None:
+            value["WebBookmarkUUID"] = node["WebBookmarkUUID"]
+        uri = node.get("URIDictionary")
+        if isinstance(uri, dict) and uri.get("title") is not None:
+            value["uri_title"] = uri["title"]
+        if isinstance(children, list):
+            value["Children"] = [project(child) for child in children if isinstance(child, dict)]
+        return value
+
+    encoded = json.dumps(
+        project(_load(path)), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _load(path: Path) -> dict[str, Any]:
     try:
         with path.open("rb") as handle:
@@ -173,6 +195,44 @@ def create_proposal(path: Path | None = None) -> dict[str, Any]:
     return proposal
 
 
+def create_recovery_proposal(restore_from: Path, path: Path | None = None) -> dict[str, Any]:
+    """Prepare an approval-gated exact restore without changing either file."""
+    source = (path or bookmark_path()).expanduser().resolve()
+    backup = restore_from.expanduser().resolve()
+    if source == backup:
+        raise SafariBookmarkError("Recovery source must differ from the live bookmark file")
+    current_data = _load(source)
+    restore_data = _load(backup)
+    current_bookmarks, current_empty, current_folders = _inventory(current_data)
+    restore_bookmarks, restore_empty, restore_folders = _inventory(restore_data)
+    proposal_id = secrets.token_hex(8)
+    proposal = {
+        "schema": "ares-safari-bookmark-recovery/v1",
+        "operation": "exact_recovery",
+        "proposal_id": proposal_id,
+        "approval_token": secrets.token_urlsafe(12),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_path": str(source),
+        "source_sha256": _sha256(source),
+        "bookmark_count": len(current_bookmarks),
+        "folder_count": current_folders,
+        "empty_folder_count": len(current_empty),
+        "restore_from_path": str(backup),
+        "restore_from_sha256": _sha256(backup),
+        "restore_structural_sha256": _structural_sha256(backup),
+        "restore_bookmark_count": len(restore_bookmarks),
+        "restore_folder_count": restore_folders,
+        "restore_empty_folder_count": len(restore_empty),
+        "status": "awaiting_approval",
+    }
+    directory = state_root() / "proposals"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target = directory / f"{proposal_id}.json"
+    target.write_text(json.dumps(proposal, indent=2) + "\n", encoding="utf-8")
+    target.chmod(0o600)
+    return proposal
+
+
 def load_proposal(proposal_id: str) -> dict[str, Any]:
     if not proposal_id or any(ch not in "0123456789abcdef" for ch in proposal_id):
         raise SafariBookmarkError("Invalid proposal id")
@@ -188,10 +248,54 @@ def load_proposal(proposal_id: str) -> dict[str, Any]:
 
 def public_summary(proposal: dict[str, Any]) -> dict[str, Any]:
     return {key: proposal.get(key) for key in (
-        "schema", "proposal_id", "created_at", "bookmark_count", "folder_count",
+        "schema", "operation", "proposal_id", "created_at", "bookmark_count", "folder_count",
         "duplicate_group_count", "duplicate_removal_count", "malformed_count",
         "empty_folder_count", "status", "backup_path", "applied_at", "rolled_back_at",
+        "restore_bookmark_count", "restore_folder_count", "restore_empty_folder_count",
     )}
+
+
+def apply_recovery_proposal(proposal_id: str, approval_token: str) -> dict[str, Any]:
+    """Restore an audited plist exactly, while preserving the damaged state for rollback."""
+    proposal = load_proposal(proposal_id)
+    if proposal.get("operation") != "exact_recovery":
+        raise SafariBookmarkError("Proposal is not a bookmark recovery")
+    if proposal.get("status") != "awaiting_approval":
+        raise SafariBookmarkError(f"Proposal is not pending (status={proposal.get('status')})")
+    if not secrets.compare_digest(str(proposal.get("approval_token") or ""), str(approval_token or "")):
+        raise SafariBookmarkError("Explicit approval token did not match")
+    source = Path(str(proposal["source_path"])).resolve()
+    restore_from = Path(str(proposal["restore_from_path"])).resolve()
+    if _sha256(source) != proposal.get("source_sha256"):
+        raise SafariBookmarkError("Safari bookmarks changed after the recovery audit; create a new proposal")
+    if not restore_from.is_file() or _sha256(restore_from) != proposal.get("restore_from_sha256"):
+        raise SafariBookmarkError("The audited recovery source changed or is unavailable")
+    if _requires_safari_quit(source):
+        raise SafariBookmarkError("Quit Safari before applying bookmark recovery")
+    backups = state_root() / "backups"
+    backups.mkdir(parents=True, exist_ok=True, mode=0o700)
+    damaged_backup = backups / f"Bookmarks-before-recovery-{proposal_id}.plist"
+    shutil.copy2(source, damaged_backup)
+    if _sha256(damaged_backup) != proposal["source_sha256"]:
+        raise SafariBookmarkError("Pre-recovery backup checksum verification failed")
+    _atomic_restore(restore_from, source)
+    restored, restored_empty, restored_folders = _inventory(_load(source))
+    if (
+        _sha256(source) != proposal["restore_from_sha256"]
+        or len(restored) != int(proposal["restore_bookmark_count"])
+        or restored_folders != int(proposal["restore_folder_count"])
+        or len(restored_empty) != int(proposal["restore_empty_folder_count"])
+    ):
+        _atomic_restore(damaged_backup, source)
+        raise SafariBookmarkError("Post-recovery verification failed; damaged-state backup was restored")
+    proposal.update({
+        "status": "applied",
+        "backup_path": str(damaged_backup),
+        "applied_at": datetime.now(timezone.utc).isoformat(),
+        "result_sha256": _sha256(source),
+    })
+    _save_proposal(proposal)
+    return public_summary(proposal)
 
 
 def _safari_running() -> bool:
@@ -310,7 +414,9 @@ def verify_proposal(proposal_id: str) -> dict[str, Any]:
     current_hash = _sha256(source)
     status = str(proposal.get("status") or "")
     expected_count = int(proposal.get("bookmark_count") or 0)
-    if status == "applied":
+    if proposal.get("operation") == "exact_recovery" and status == "applied":
+        expected_count = int(proposal.get("restore_bookmark_count") or 0)
+    elif status == "applied":
         expected_count -= len(proposal.get("removals") or [])
     elif status == "rolled_back":
         expected_count = int(proposal.get("bookmark_count") or 0)
@@ -325,6 +431,13 @@ def verify_proposal(proposal_id: str) -> dict[str, Any]:
         current_hash == str(proposal.get("result_sha256") or "")
         if status == "applied" else None
     )
+    expected_structure = str(proposal.get("restore_structural_sha256") or "")
+    if not expected_structure and proposal.get("operation") == "exact_recovery":
+        restore_value = str(proposal.get("restore_from_path") or "")
+        restore_source = Path(restore_value).resolve() if restore_value else None
+        if restore_source is not None and restore_source.is_file():
+            expected_structure = _structural_sha256(restore_source)
+    structural_hash = _structural_sha256(source)
     return {
         "proposal": public_summary(proposal),
         "verification": {
@@ -335,6 +448,10 @@ def verify_proposal(proposal_id: str) -> dict[str, Any]:
             "folder_count": folders,
             "current_sha256": current_hash,
             "result_sha256_matches": result_hash_matches,
+            "structural_sha256": structural_hash,
+            "structural_sha256_matches": (
+                structural_hash == expected_structure if expected_structure else None
+            ),
             "backup_valid": backup_valid,
         },
         "privacy": "aggregate only; no bookmark titles, URLs, or approval token",
@@ -366,7 +483,8 @@ def _save_proposal(proposal: dict[str, Any]) -> None:
 
 
 __all__ = [
-    "SafariBookmarkError", "apply_proposal", "bookmark_path", "create_proposal",
+    "SafariBookmarkError", "apply_proposal", "apply_recovery_proposal", "bookmark_path",
+    "create_proposal", "create_recovery_proposal",
     "load_proposal", "public_summary", "rollback_proposal", "state_root",
     "verify_proposal",
 ]

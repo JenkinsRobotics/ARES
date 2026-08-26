@@ -102,6 +102,38 @@ def test_safari_quit_check_applies_only_to_real_database(bookmark_env, monkeypat
     ) is True
 
 
+def test_exact_recovery_is_approval_gated_verified_and_rollbackable(bookmark_env, tmp_path):
+    damaged = bookmark_env.read_bytes()
+    restore_from = tmp_path / "original.plist"
+    _write(restore_from)
+    with restore_from.open("rb") as handle:
+        original = plistlib.load(handle)
+    original["Children"][0]["Children"].append(_leaf("Recovered", "https://recovered.example/"))
+    with restore_from.open("wb") as handle:
+        plistlib.dump(original, handle, fmt=plistlib.FMT_BINARY)
+
+    proposal = sb.create_recovery_proposal(restore_from)
+    assert bookmark_env.read_bytes() == damaged
+    assert proposal["bookmark_count"] == 6
+    assert proposal["restore_bookmark_count"] == 7
+    with pytest.raises(sb.SafariBookmarkError, match="token"):
+        sb.apply_recovery_proposal(proposal["proposal_id"], "wrong-token-value")
+
+    result = sb.apply_recovery_proposal(proposal["proposal_id"], proposal["approval_token"])
+    assert result["status"] == "applied"
+    assert bookmark_env.read_bytes() == restore_from.read_bytes()
+    assert Path(result["backup_path"]).read_bytes() == damaged
+    evidence = sb.verify_proposal(proposal["proposal_id"])
+    assert evidence["verification"]["bookmark_count"] == 7
+    assert evidence["verification"]["bookmark_count_matches"] is True
+    assert evidence["verification"]["result_sha256_matches"] is True
+    assert evidence["verification"]["structural_sha256_matches"] is True
+
+    rolled_back = sb.rollback_proposal(proposal["proposal_id"], proposal["approval_token"])
+    assert rolled_back["status"] == "rolled_back"
+    assert bookmark_env.read_bytes() == damaged
+
+
 def test_api_audit_omits_private_details(bookmark_env):
     from fastapi_app.routers.safari_bookmarks import audit_bookmarks
 

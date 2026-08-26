@@ -138,7 +138,8 @@ def _print_review(proposal: dict) -> None:
 
 def _bookmarks(args) -> int:
     from api.safari_bookmarks import (
-        SafariBookmarkError, apply_proposal, create_proposal, load_proposal,
+        SafariBookmarkError, apply_proposal, apply_recovery_proposal, create_proposal,
+        create_recovery_proposal, load_proposal,
         public_summary, rollback_proposal, verify_proposal,
     )
     try:
@@ -166,6 +167,15 @@ def _bookmarks(args) -> int:
             print(json.dumps(rollback_proposal(args.proposal_id, args.approve_token), indent=2))
         elif args.bookmark_command == "verify":
             print(json.dumps(verify_proposal(args.proposal_id), indent=2))
+        elif args.bookmark_command == "recovery-plan":
+            proposal = create_recovery_proposal(Path(args.restore_from))
+            print(json.dumps({
+                "proposal": public_summary(proposal),
+                "approval_token": proposal["approval_token"],
+                "warning": "Exact restore only; no bookmarks changed. Quit Safari before recover.",
+            }, indent=2))
+        elif args.bookmark_command == "recover":
+            print(json.dumps(apply_recovery_proposal(args.proposal_id, args.approve_token), indent=2))
     except SafariBookmarkError as exc:
         raise SystemExit(f"Safari bookmarks: {exc}") from exc
     return 0
@@ -201,6 +211,13 @@ def main() -> int:
     verify = bookmark_sub.add_parser("verify")
     verify.add_argument("proposal_id")
     verify.set_defaults(handler=_bookmarks)
+    recovery = bookmark_sub.add_parser("recovery-plan")
+    recovery.add_argument("restore_from")
+    recovery.set_defaults(handler=_bookmarks)
+    recover = bookmark_sub.add_parser("recover")
+    recover.add_argument("proposal_id")
+    recover.add_argument("--approve-token", required=True)
+    recover.set_defaults(handler=_bookmarks)
     args = parser.parse_args()
     return args.handler(args)
 

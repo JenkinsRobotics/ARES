@@ -131,6 +131,19 @@ async function refreshDispatcherGit(){
   }catch(error){root.textContent=(error&&error.message)||'Git status is unavailable for this workspace.';}
 }
 
+async function refreshDispatcherEvidence(){
+  const root=$('dispatcherEvidence');if(!root)return;
+  try{
+    const data=await api('/api/ares/verification-evidence',{timeoutToast:false});
+    if(!data||data.available!==true){root.textContent=data&&data.reason||'No runtime evidence has been recorded.';return;}
+    const promises=Array.isArray(data.promises)?data.promises:[];const passed=promises.filter(item=>item&&item.result==='pass').length;
+    const recorded=data.commits&&data.commits.recorded||{};const current=data.commits&&data.commits.current||{};
+    const rows=promises.map(item=>`<div class="dispatcher-evidence-row" title="${esc(item.boundary||'')}"><span>${esc(String(item.id||'').replaceAll('_',' '))}</span><span class="dispatcher-evidence-result ${esc(item.result||'')}">${esc(item.result||'unknown')}</span></div>`).join('');
+    const stale=data.stale===true?`<span class="dispatcher-evidence-stale">Stale for ${esc((data.stale_components||[]).join(', '))}</span>`:`<span class="dispatcher-evidence-result pass">Commit matched</span>`;
+    root.innerHTML=`<div class="dispatcher-evidence-summary"><strong>${passed}/${promises.length} passed</strong>${stale}</div><div class="dispatcher-evidence-list">${rows}</div><div class="dispatcher-evidence-meta">Recorded ${esc(data.finished_at||'unknown time')} · ARES ${esc(String(recorded.ares||'unknown').slice(0,9))} → ${esc(String(current.ares||'unknown').slice(0,9))}</div>`;
+  }catch(error){root.textContent=(error&&error.message)||'Verification evidence is unavailable.';}
+}
+
 function _dispatcherRenderOperations(){
   const jobs=Array.isArray(_cronList)?_cronList.length:'—';
   const tasks=_kanbanBoard&&Array.isArray(_kanbanBoard.columns)?_kanbanBoard.columns.reduce((sum,column)=>sum+(Array.isArray(column.tasks)?column.tasks.length:0),0):'—';
@@ -141,7 +154,7 @@ async function refreshDispatcher(force=false){
   if(typeof _currentPanel!=='undefined'&&_currentPanel!=='dispatcher'&&!force)return;
   const title=$('dispatcherSessionTitle');if(title)title.textContent=(S&&S.session&&S.session.title)||'Dispatcher';
   _dispatcherRenderRuntime();_dispatcherRenderRecovery();_dispatcherRenderContext();_dispatcherCloneTimeline();_dispatcherRenderOutputs();_dispatcherRenderOperations();
-  await Promise.allSettled([_dispatcherRenderApproval(),refreshDispatcherGit()]);
+  await Promise.allSettled([_dispatcherRenderApproval(),refreshDispatcherGit(),refreshDispatcherEvidence()]);
 }
 
 async function loadDispatcher(){
@@ -174,4 +187,4 @@ async function dispatcherContinueHaltedTurn(){
 function dispatcherOpenInChat(){if(typeof switchPanel==='function')switchPanel('chat');}
 function dispatcherOpenPanel(name){if(typeof switchPanel==='function')switchPanel(name);}
 
-window.loadDispatcher=loadDispatcher;window.leaveDispatcher=leaveDispatcher;window.refreshDispatcher=refreshDispatcher;window.refreshDispatcherGit=refreshDispatcherGit;window.sendDispatcherMission=sendDispatcherMission;window.dispatcherRetryLastTurn=dispatcherRetryLastTurn;window.dispatcherUndoLastTurn=dispatcherUndoLastTurn;window.dispatcherContinueHaltedTurn=dispatcherContinueHaltedTurn;window.dispatcherPinWorkspace=dispatcherPinWorkspace;window.dispatcherUnpinContext=dispatcherUnpinContext;window.dispatcherOpenInChat=dispatcherOpenInChat;window.dispatcherOpenPanel=dispatcherOpenPanel;
+window.loadDispatcher=loadDispatcher;window.leaveDispatcher=leaveDispatcher;window.refreshDispatcher=refreshDispatcher;window.refreshDispatcherGit=refreshDispatcherGit;window.refreshDispatcherEvidence=refreshDispatcherEvidence;window.sendDispatcherMission=sendDispatcherMission;window.dispatcherRetryLastTurn=dispatcherRetryLastTurn;window.dispatcherUndoLastTurn=dispatcherUndoLastTurn;window.dispatcherContinueHaltedTurn=dispatcherContinueHaltedTurn;window.dispatcherPinWorkspace=dispatcherPinWorkspace;window.dispatcherUnpinContext=dispatcherUnpinContext;window.dispatcherOpenInChat=dispatcherOpenInChat;window.dispatcherOpenPanel=dispatcherOpenPanel;

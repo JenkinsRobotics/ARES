@@ -23,6 +23,7 @@ def test_dispatcher_is_a_first_class_current_ui_panel() -> None:
     assert 'id="dispatcherOutputs"' in index
     assert 'id="dispatcherGitState"' in index
     assert 'id="dispatcherRecoveryCard"' in index
+    assert 'id="dispatcherEvidence"' in index
     assert 'static/dispatcher.js' in index
     assert 'static/dispatcher.css' in index
     assert "'dispatcher'" in panels
@@ -36,6 +37,7 @@ def test_dispatcher_projects_current_ares_contracts() -> None:
     assert "/api/approval/pending" in script
     assert "collectSessionArtifacts" in script
     assert "/api/git/status?session_id=" in script
+    assert "/api/ares/verification-evidence" in script
     assert "_aresCapabilityPayload" in script
     assert "switchPanel(name)" in script
     assert "/api/session/pin" in script

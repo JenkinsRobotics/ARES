@@ -217,6 +217,15 @@ def set_directives(
     }
 
 
+@router.get("/api/ares/verification-evidence")
+def runtime_verification_evidence(
+    _identity: Annotated[RequestIdentity, Depends(require_identity)],
+):
+    from api.verification_evidence import verification_evidence
+
+    return verification_evidence()
+
+
 @router.get("/api/ares/backend")
 def backend(
     identity: Annotated[RequestIdentity, Depends(require_identity)],

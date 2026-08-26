@@ -71,6 +71,7 @@
   }
 })()</script>
 <link rel="stylesheet" href="static/style.css?v=__WEBUI_VERSION__">
+  <link rel="stylesheet" href="static/dispatcher.css?v=__WEBUI_VERSION__">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" integrity="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh" crossorigin="anonymous">
   <!-- KaTeX math rendering CSS (loaded eagerly from vendored assets to prevent font CSP noise) -->
   <link rel="stylesheet" href="static/vendor/katex/0.16.22/katex.min.css">
@@ -154,6 +155,7 @@
 <div class="layout">
   <nav class="rail" aria-label="Primary navigation">
     <button class="rail-btn nav-tab active has-tooltip" data-panel="chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat" aria-label="Chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="dispatcher" onclick="switchPanel('dispatcher',{fromRailClick:true})" data-tooltip="Dispatcher" aria-label="Dispatcher"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 12-14h-8V2Z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="avatar" onclick="switchPanel('avatar',{fromRailClick:true})" data-tooltip="Avatar" data-i18n-title="tab_avatar" aria-label="Avatar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="12" cy="12" r="10"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="kanban" data-requires-capability="kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban" aria-label="Kanban"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
@@ -176,6 +178,7 @@
     </button>
     <div class="sidebar-nav">
       <button class="nav-tab active has-tooltip has-tooltip--bottom" data-panel="chat" data-label="Chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="dispatcher" data-label="Dispatcher" onclick="switchPanel('dispatcher',{fromRailClick:true})" data-tooltip="Dispatcher"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 12-14h-8V2Z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="avatar" data-label="Avatar" onclick="switchPanel('avatar',{fromRailClick:true})" data-tooltip="Avatar" data-i18n-title="tab_avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="12" cy="12" r="10"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="kanban" data-requires-capability="kanban" data-label="Kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
@@ -220,6 +223,23 @@
         </div>
       </div>
       <div class="avatar-roster" id="avatarRoster"><div class="avatar-roster-empty" data-i18n="loading">Loading...</div></div>
+    </div>
+    <div class="panel-view" id="panelDispatcher">
+      <div class="panel-head">
+        <span>Dispatcher</span>
+        <div class="panel-head-actions">
+          <button class="panel-head-btn has-tooltip has-tooltip--bottom" type="button" onclick="refreshDispatcher(true)" data-tooltip="Refresh mission status" aria-label="Refresh mission status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+        </div>
+      </div>
+      <div class="dispatcher-sidebar" id="dispatcherSidebar">
+        <div class="dispatcher-side-card"><span class="dispatcher-side-label">Mission session</span><strong id="dispatcherSessionTitle">Preparing…</strong></div>
+        <div class="dispatcher-side-card"><span class="dispatcher-side-label">Runtime</span><span id="dispatcherRuntimeSummary">Checking…</span></div>
+        <div class="dispatcher-side-card"><span class="dispatcher-side-label">Workspace context</span><div id="dispatcherPinnedContext" class="dispatcher-pinned-context"></div></div>
+        <div class="dispatcher-side-actions">
+          <button class="btn secondary" type="button" onclick="dispatcherOpenPanel('tasks')">Scheduled jobs</button>
+          <button class="btn secondary" type="button" onclick="dispatcherOpenPanel('kanban')">Kanban queue</button>
+        </div>
+      </div>
     </div>
     <div class="panel-view" id="panelTasks">
       <div class="panel-head">
@@ -811,6 +831,38 @@
       </div>
     </div>
     </div><!-- /#mainChat -->
+    <div id="mainDispatcher" class="main-view">
+      <header class="dispatcher-header">
+        <div>
+          <div class="dispatcher-eyebrow">Persistent mission control</div>
+          <h1>Dispatcher</h1>
+        </div>
+        <div class="dispatcher-header-actions">
+          <span class="dispatcher-status" id="dispatcherRuntimeStatus"><span></span>Checking runtime</span>
+          <button class="btn secondary" type="button" onclick="dispatcherOpenInChat()">Open in Chat</button>
+        </div>
+      </header>
+      <div class="dispatcher-layout">
+        <section class="dispatcher-center" aria-label="Mission activity">
+          <div class="dispatcher-section-head"><div><strong>Mission timeline</strong><span>Live Worklog and conversation activity</span></div></div>
+          <div class="dispatcher-timeline" id="dispatcherTimeline" role="log" aria-live="polite"><div class="dispatcher-empty">Preparing the persistent mission session…</div></div>
+          <form class="dispatcher-composer" onsubmit="sendDispatcherMission();return false;">
+            <div class="dispatcher-context-row" id="dispatcherContextRow"></div>
+            <textarea id="dispatcherInput" rows="2" placeholder="Dispatch a mission or continue the current one…" aria-label="Mission instruction"></textarea>
+            <div class="dispatcher-composer-actions">
+              <button class="btn secondary" type="button" onclick="dispatcherPinWorkspace()">Pin workspace</button>
+              <button class="btn primary" id="dispatcherSend" type="submit">Dispatch</button>
+            </div>
+          </form>
+        </section>
+        <aside class="dispatcher-hud" aria-label="Mission status">
+          <section class="dispatcher-card"><div class="dispatcher-card-head"><strong>Attention</strong><span id="dispatcherApprovalCount">0</span></div><div id="dispatcherApprovalState" class="dispatcher-card-body">No approval is waiting.</div></section>
+          <section class="dispatcher-card"><div class="dispatcher-card-head"><strong>Outputs</strong><span id="dispatcherOutputCount">0</span></div><div id="dispatcherOutputs" class="dispatcher-list"><div class="dispatcher-empty">No outputs yet.</div></div></section>
+          <section class="dispatcher-card"><div class="dispatcher-card-head"><strong>Git</strong><button type="button" class="dispatcher-link" onclick="refreshDispatcherGit()">Refresh</button></div><div id="dispatcherGitState" class="dispatcher-card-body">No workspace repository detected.</div></section>
+          <section class="dispatcher-card"><div class="dispatcher-card-head"><strong>Operations</strong></div><div class="dispatcher-operation-grid"><button type="button" onclick="dispatcherOpenPanel('tasks')"><strong id="dispatcherTaskCount">—</strong><span>Scheduled jobs</span></button><button type="button" onclick="dispatcherOpenPanel('kanban')"><strong id="dispatcherKanbanCount">—</strong><span>Kanban tasks</span></button></div></section>
+        </aside>
+      </div>
+    </div>
     <div id="mainSkills" class="main-view">
       <div class="main-view-header">
         <div class="main-view-title" id="skillDetailTitle"></div>
@@ -1821,6 +1873,7 @@
 <script src="static/knowledge_graph.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/panels.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/avatar.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/dispatcher.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/onboarding.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/boot.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/outline.js?v=__WEBUI_VERSION__" defer></script>

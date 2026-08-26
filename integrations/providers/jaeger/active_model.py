@@ -121,32 +121,32 @@ def active_model(config_path: Path | None = None) -> dict[str, Any]:
     and tests. Normal operation asks the running Jaeger bridge.
     """
     if config_path is None:
-        try:
-            from api.providers.jaeger.streaming import query_local_companion
+        from api.providers.jaeger.streaming import query_local_companion
 
-            payload = query_local_companion("serving_model", {})
-            if isinstance(payload, dict):
-                row = payload.get("serving") or payload.get("configured")
-                if isinstance(row, dict):
-                    provider = str(row.get("provider") or "").strip()
-                    location = str(row.get("location") or "").strip().lower()
-                    if location not in {"local", "cloud", "remote"}:
-                        location = (
-                            "local"
-                            if provider in {"local", "in-process", "mlx", "ollama", "lmstudio"}
-                            else "cloud"
-                        )
-                    return {
-                        "model": row.get("model") or row.get("name"),
-                        "provider": provider or None,
-                        "location": location,
-                        "base_url": row.get("base_url"),
-                        "source": "jaeger_bridge",
-                        "ctx": row.get("context_length"),
-                        "config_path": None,
-                    }
-        except Exception:
-            logger.debug("JaegerAI serving-model query failed", exc_info=True)
+        # Transport failures must reach the status layer. Returning the same
+        # all-None shape for "bridge refused" and "bridge answered without a
+        # model" made the UI blame model configuration for connectivity faults.
+        payload = query_local_companion("serving_model", {})
+        if isinstance(payload, dict):
+            row = payload.get("serving") or payload.get("configured")
+            if isinstance(row, dict):
+                provider = str(row.get("provider") or "").strip()
+                location = str(row.get("location") or "").strip().lower()
+                if location not in {"local", "cloud", "remote"}:
+                    location = (
+                        "local"
+                        if provider in {"local", "in-process", "mlx", "ollama", "lmstudio"}
+                        else "cloud"
+                    )
+                return {
+                    "model": row.get("model") or row.get("name"),
+                    "provider": provider or None,
+                    "location": location,
+                    "base_url": row.get("base_url"),
+                    "source": "jaeger_bridge",
+                    "ctx": row.get("context_length"),
+                    "config_path": None,
+                }
         return {
             "model": None, "provider": None, "location": None,
             "base_url": None, "source": None, "ctx": None, "config_path": None,

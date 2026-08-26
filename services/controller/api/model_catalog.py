@@ -400,9 +400,7 @@ def filter_catalog_for_active_backend(catalog: dict, *, enrich: bool = True) -> 
     # same picker. Duplicate model ids (qwen3.5:397b) were starting the
     # local daemon while the UI still said Ollama Cloud.
     _local_picker = {"local", "ollama", "ollama-local", "ollama-launch", "lmstudio"}
-    hide_local = configured_default_provider in {
-        "ollama-cloud", "openai", "anthropic", "gemini", "xai",
-    }
+    hide_local = False
     if hide_local:
         groups = [
             group

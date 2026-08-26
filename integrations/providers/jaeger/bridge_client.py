@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import socket
 import subprocess
 import threading
 from collections.abc import Callable
@@ -310,6 +311,19 @@ class JaegerClient:
                 self._write(quit_op())  # detach — owner ignores this as shutdown
             except Exception:  # noqa: BLE001
                 pass
+            # Closing the makefile while the reader thread is blocked inside
+            # ``for line in self._rx`` can deadlock and can also surface an
+            # unhandled ValueError in that thread. Shut down the socket first:
+            # this wakes the reader with EOF, then join it before closing the
+            # file object it owns.
+            try:
+                if self._sock is not None:
+                    self._sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            reader = self._reader_thread
+            if reader is not None and reader is not threading.current_thread():
+                reader.join(timeout=2.0)
             try:
                 if self._rx is not None:
                     self._rx.close()
@@ -323,6 +337,7 @@ class JaegerClient:
             self._sock = None
             self._rx = None
             self._attached = False
+            self._reader_thread = None
             return
         proc = self._proc
         if proc is not None and proc.poll() is None:

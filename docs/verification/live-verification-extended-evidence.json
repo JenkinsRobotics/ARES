@@ -1,0 +1,108 @@
+{
+  "recorded_at": "2026-08-26T01:54:00Z",
+  "scope": "extended controls, slash commands, concurrency, prolonged session, installed restart",
+  "installed_runtime": {
+    "app_pid": 38557,
+    "controller_pid": 38563,
+    "started_after_edits": true,
+    "controller_cwd": "/Users/matthewjenkins/GitHub/ARES/services/controller",
+    "health": "ready",
+    "model": "qwen3.5:397b",
+    "result": "pass"
+  },
+  "controls": {
+    "cancel": {
+      "protocol_event": {"op": "cancel"},
+      "halt_reason": "interrupted",
+      "halt_code": "interrupted",
+      "elapsed_s": 1.88,
+      "result": "pass"
+    },
+    "steer": {
+      "protocol_event": {"op": "steer", "text": "Stop the explanation now and reply exactly STEERED-LIVE-OK."},
+      "response_ended_with": "STEERED-LIVE-OK",
+      "buffered_text_preceded_response": true,
+      "result": "pass_with_buffering_caveat"
+    },
+    "approval_deny": {
+      "protocol_event": {"type": "request", "kind": "approval", "prompt": "Allow scheduling.schedule_prompt?"},
+      "mutation_present": false,
+      "result": "pass"
+    },
+    "approval_allow": {
+      "protocol_event": {"type": "request", "kind": "approval", "prompt": "Allow scheduling.schedule_prompt?"},
+      "answer": "once",
+      "harmless_schedule": "verify-approval-once-60d508",
+      "cleanup": "cancelled through separately approved cancel_schedule",
+      "result": "pass"
+    },
+    "clarification": {
+      "protocol_event": {"type": "request", "id": "perm3", "kind": "clarify", "prompt": "Which ARES verification item?"},
+      "ares_session": "ares-clarify-5dd1e5",
+      "pending_resolved": true,
+      "response": "UI-CLARIFIED:controller-answer",
+      "result": "pass"
+    },
+    "secret": {
+      "protocol_event": {"type": "request", "id": "perm4", "kind": "secret", "prompt": "Enter UI canary"},
+      "ares_session": "ares-secret-02be3f",
+      "pending_resolved": true,
+      "response": "UI-SECRET-RECEIVED",
+      "canary_in_frames_events_or_reply": false,
+      "result": "pass"
+    }
+  },
+  "concurrency": {
+    "separate_sessions": {
+      "session_a_response": "ALPHA-30f15c",
+      "session_b_response": "BRAVO-29f6a7",
+      "cross_contamination": false,
+      "result": "pass"
+    },
+    "same_session": {
+      "expected": "LEFT=LEFT-0ef8e1;RIGHT=RIGHT-0acdec",
+      "actual": "LEFT=LEFT-0ef8e1;RIGHT=RIGHT-0acdec",
+      "serialized": true,
+      "result": "pass"
+    }
+  },
+  "prolonged_session": {
+    "turns": 12,
+    "turn_replies": ["ACK-1", "ACK-2", "ACK-3", "ACK-4", "ACK-5", "ACK-6", "ACK-7", "ACK-8", "ACK-9", "ACK-10", "ACK-11"],
+    "expected_final": "ANCHOR-d2375d17",
+    "actual_final": "ANCHOR-d2375d17",
+    "ctx_used": 46734,
+    "ctx_max": 262144,
+    "result": "pass"
+  },
+  "lifecycle": {
+    "attach_close_cycles": 5,
+    "reader_threads_left": 0,
+    "unhandled_thread_exceptions": 0,
+    "jaeger_bridge_zombies": 0,
+    "disconnect_result": "JaegerError: bridge exited mid-turn",
+    "new_client_healthy_after_disconnect": true,
+    "result": "pass"
+  },
+  "slash_commands": {
+    "supported_passed": ["/help", "/tools", "/skills", "/facts", "/plugins", "/instance", "/instances", "/board", "/config", "/auto", "/mode", "/model", "/models", "/goal", "/steer"],
+    "safely_refused": ["/status", "/history", "/factoryreset", "/shutdown", "/reboot", "/download test-never-run"],
+    "unknown_command_returned_help_hint": true,
+    "result": "pass"
+  },
+  "test_runs": {
+    "jaeger": "96 passed in 3.53s",
+    "ares": "31 passed in 12.99s",
+    "diff_check": "pass"
+  },
+  "findings_fixed": [
+    "attached-client close deadlock",
+    "approval requests routed to owner stdio instead of originating attached client",
+    "no runtime producer for structured clarify requests",
+    "no runtime producer for structured secret requests"
+  ],
+  "remaining_caveats": [
+    "steering does not retract model text already buffered before the steer is consumed",
+    "the earlier strict-validator JSON predates this extended run and was not regenerated"
+  ]
+}

@@ -5719,12 +5719,11 @@ function _renderKnowledgeFoldersSection() {
         <div class="add-folder-card">
           <label for="newKnowledgeFolderPath">Add Folder to Knowledge Base</label>
           <div class="add-folder-input-row">
-            <input type="text" id="newKnowledgeFolderPath" placeholder="/Volumes/Jenkins_Robotics/03_Knowledge or local path..." autocomplete="off">
+            <input type="text" id="newKnowledgeFolderPath" placeholder="~/Documents/knowledge or another folder..." autocomplete="off">
             <button type="button" class="panel-head-btn primary" onclick="submitAddKnowledgeFolder()">Add Folder</button>
           </div>
           <div class="quick-presets-row">
             <span>Quick Presets:</span>
-            <button type="button" class="preset-chip" onclick="applyFolderPreset('/Volumes/Jenkins_Robotics/03_Knowledge')">NAS 03_Knowledge</button>
             <button type="button" class="preset-chip" onclick="applyFolderPreset('~/.ares/knowledge')">Local ~/.ares/knowledge</button>
           </div>
         </div>

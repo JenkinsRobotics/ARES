@@ -1,0 +1,250 @@
+{
+  "started_at": "2026-08-25T23:48:33.640112+00:00",
+  "finished_at": null,
+  "commands": [
+    {
+      "argv": [
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_jaeger_production_promises.py",
+        "tests/test_jaeger_attach_and_status_honesty.py",
+        "tests/test_jaeger_client_lifecycle.py",
+        "tests/test_jaeger_streaming_reliability.py",
+        "tests/test_jaeger_ownership_literals.py"
+      ],
+      "returncode": 4,
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/matthewjenkins/GitHub/ARES/services/controller/tests/conftest.py'.\ntests/conftest.py:44: in <module>\n    pytest.exit(\nE   _pytest.outcomes.Exit: Ares WebUI tests require Python 3.11, 3.12, or 3.13. Run ./scripts/test.sh so the repo-local supported .venv is used instead of an unsupported system python.\n",
+      "elapsed_s": 0.843
+    },
+    {
+      "argv": [
+        "ps",
+        "-ax",
+        "-o",
+        "pid,lstart,etime,command"
+      ],
+      "returncode": 0,
+      "stdout": "50 Mon Aug 24 20:35:51 2026        20:12:43 /usr/libexec/powerdatad\n98854 Mon Aug 24 20:35:56 2026        20:12:38 /usr/libexec/mlhostd\n98856 Mon Aug 24 20:36:01 2026        20:12:33 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n98857 Mon Aug 24 20:36:14 2026        20:12:20 /usr/libexec/textunderstandingd\n98866 Mon Aug 24 20:37:03 2026        20:11:31 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n98867 Mon Aug 24 20:37:03 2026        20:11:31 /usr/libexec/secinitd\n98868 Mon Aug 24 20:37:03 2026        20:11:31 /usr/libexec/trustd --agent\n98870 Mon Aug 24 20:37:04 2026        20:11:30 /usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none\n98871 Mon Aug 24 20:37:04 2026        20:11:30 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n98872 Mon Aug 24 20:37:04 2026        20:11:30 /usr/libexec/secinitd\n98873 Mon Aug 24 20:37:04 2026        20:11:30 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n98874 Mon Aug 24 20:37:04 2026        20:11:30 /usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none\n98875 Mon Aug 24 20:37:04 2026        20:11:30 /usr/libexec/secinitd\n98876 Mon Aug 24 20:37:04 2026        20:11:30 /usr/libexec/trustd --agent\n98877 Mon Aug 24 20:37:05 2026        20:11:29 /usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none\n98886 Tue Aug 25 09:02:59 2026        07:45:35 /System/Library/PrivateFrameworks/TrialServer.framework/Versions/A/XPCServices/TrialArchivingService.xpc/Contents/MacOS/TrialArchivingService\n98890 Mon Aug 24 20:38:32 2026        20:10:02 /usr/sbin/spindump\n98893 Mon Aug 24 20:38:35 2026        20:09:59 /System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd\n98927 Mon Aug 24 20:40:03 2026        20:08:31 /usr/sbin/systemsoundserverd\n98928 Mon Aug 24 20:40:03 2026        20:08:31 /usr/libexec/audioanalyticsd\n98930 Tue Aug 18 15:36:18 2026     07-01:12:16 /System/Applications/Podcasts.app/Contents/PlugIns/com.apple.podcasts.SpotlightIndexExtension.appex/Contents/MacOS/com.apple.podcasts.SpotlightIndexExtension -AppleLanguages (\"en-US\")\n98931 Mon Aug 24 20:40:03 2026        20:08:31 /System/Library/Frameworks/AudioToolbox.framework/AudioComponentRegistrar -daemon\n98937 Mon Aug 24 20:40:03 2026        20:08:31 /System/Library/Frameworks/AudioToolbox.framework/XPCServices/com.apple.audio.SandboxHelper.xpc/Contents/MacOS/com.apple.audio.SandboxHelper\n98941 Mon Aug 24 20:40:04 2026        20:08:30 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n98942 Mon Aug 24 20:40:07 2026        20:08:27 /System/Library/CoreServices/Dock.app/Contents/XPCServices/DockHelper.xpc/Contents/MacOS/DockHelper\n98943 Mon Aug 24 20:40:08 2026        20:08:26 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n98947 Mon Aug 24 20:40:16 2026        20:08:18 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n98949 Mon Aug 24 20:40:20 2026        20:08:14 /System/Library/PrivateFrameworks/iCloudDriveService.framework/XPCServices/ContainerMetadataExtractor.xpc/Contents/MacOS/ContainerMetadataExtractor\n98950 Mon Aug 24 20:40:21 2026        20:08:13 /System/Library/PrivateFrameworks/SessionCore.framework/Support/liveactivitiesd\n98951 Mon Aug 24 20:40:21 2026        20:08:13 /System/Library/PrivateFrameworks/ReplicatorCore.framework/Support/replicatord\n99003 Mon Aug 24 20:40:35 2026        20:07:59 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService\n99013 Mon Aug 24 20:40:38 2026        20:07:56 /System/Library/PrivateFrameworks/EmailDaemon.framework/Versions/A/maild\n99068 Mon Aug 24 20:40:56 2026        20:07:38 /System/Library/Frameworks/Metal.framework/Versions/A/XPCServices/MTLCompilerService.xpc/Contents/MacOS/MTLCompilerService\n99104 Mon Aug 24 20:41:09 2026        20:07:25 /usr/libexec/online-auth-agent\n99105 Mon Aug 24 20:41:09 2026        20:07:25 /usr/libexec/seputil --daemonize-reseed\n99111 Mon Aug 24 20:41:11 2026        20:07:23 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n99113 Mon Aug 24 20:41:12 2026        20:07:22 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n99144 Mon Aug 24 20:41:23 2026        20:07:11 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n99189 Tue Aug 25 16:00:16 2026           48:18 /usr/libexec/biomesyncd\n99204 Mon Aug 17 22:56:26 2026     07-17:52:08 /System/Applications/Messages.app/Contents/PlugIns/Messages Assistant Extension.appex/Contents/MacOS/Messages Assistant Extension -AppleLanguages (\"en-US\")\n99302 Mon Aug 24 20:42:23 2026        20:06:11 /System/Library/PrivateFrameworks/MessagesBlastDoorSupport.framework/Versions/A/XPCServices/MessagesBlastDoorService.xpc/Contents/MacOS/MessagesBlastDoorService\n99303 Mon Aug 24 20:42:23 2026        20:06:11 /System/Library/PrivateFrameworks/MessagesEscrow.framework/Daemon/messagesescrowd.xpc/Contents/MacOS/messagesescrowd\n99304 Mon Aug 24 20:42:23 2026        20:06:11 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n99306 Mon Aug 24 20:42:23 2026        20:06:11 /System/Library/PrivateFrameworks/CoreEmbeddedSpeechRecognition.framework/speechmaintenanced\n99313 Mon Aug 24 20:42:24 2026        20:06:10 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n99321 Mon Aug 24 20:42:27 2026        20:06:07 /usr/libexec/textcomposerd\n99324 Mon Aug 24 20:42:28 2026        20:06:06 /usr/libexec/textcontextd\n99325 Mon Aug 24 20:42:28 2026        20:06:06 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n99512 Mon Aug 24 20:43:38 2026        20:04:56 /System/Library/PrivateFrameworks/Stickers.framework/Support/stickersd\n99671 Tue Aug 25 02:29:06 2026        14:19:28 /usr/libexec/proactiveeventtrackerd\n99744 Mon Aug 24 20:45:02 2026        20:03:32 /System/Library/PrivateFrameworks/BusinessChatService.framework/businessservicesd\n99745 Mon Aug 24 20:45:02 2026        20:03:32 /usr/libexec/ciphermld\n99746 Mon Aug 24 20:45:02 2026        20:03:32 /System/Library/PrivateFrameworks/MessagesBlastDoorSupport.framework/Versions/A/XPCServices/MessagesBlastDoorService.xpc/Contents/MacOS/MessagesBlastDoorService\n99820 Mon Aug 24 20:45:30 2026        20:03:04 /System/Library/PrivateFrameworks/MobileAccessoryUpdater.framework/Support/accessoryupdaterd 120\n99823 Mon Aug 24 20:45:31 2026        20:03:03 /System/Library/PrivateFrameworks/AssetCacheServices.framework/Versions/A/XPCServices/AssetCacheLocatorService.xpc/Contents/MacOS/AssetCacheLocatorService -d\n99880 Mon Aug 24 20:45:49 2026        20:02:45 /usr/libexec/ASPCarryLog\n67141 Tue Aug 25 11:51:47 2026        04:56:47 /bin/zsh -l\n69596 Tue Aug 25 13:14:03 2026        03:34:31 /bin/zsh -i\n69665 Tue Aug 25 13:14:03 2026        03:34:31 /bin/zsh -il\n",
+      "stderr": "",
+      "elapsed_s": 0.045
+    }
+  ],
+  "phases": {
+    "harness_diagnosis": {
+      "last_completed_phase": "turn2",
+      "next_attempted_phase": "bridge_death_preflight",
+      "failure_reason": "Previous run attached to existing bridge socket (PID 5215) owned by external process. PID resolution returned spawn_pid: None, causing bridge_death_preflight to skip authorized target, and subsequent client.close() hung the socket reader thread without writing finished_at.",
+      "repair_made": "1. Spawn dedicated child bridge process when needed for verified PID ownership. 2. Enforce bounded timeouts and non-blocking socket cleanup. 3. Top-level try...finally ensures finished_at and complete process_state_after are flushed. 4. Execute all 32 required phases and populate 23 required promises.",
+      "evidence_supporting_diagnosis": "PID 5215 attached status vs client._proc is None in previous evidence log.",
+      "recorded_at": "2026-08-25T23:48:33.640815+00:00"
+    },
+    "production_object_pytest": {
+      "result": {
+        "argv": [
+          "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/test_jaeger_production_promises.py",
+          "tests/test_jaeger_attach_and_status_honesty.py",
+          "tests/test_jaeger_client_lifecycle.py",
+          "tests/test_jaeger_streaming_reliability.py",
+          "tests/test_jaeger_ownership_literals.py"
+        ],
+        "returncode": 4,
+        "stdout": "",
+        "stderr": "ImportError while loading conftest '/Users/matthewjenkins/GitHub/ARES/services/controller/tests/conftest.py'.\ntests/conftest.py:44: in <module>\n    pytest.exit(\nE   _pytest.outcomes.Exit: Ares WebUI tests require Python 3.11, 3.12, or 3.13. Run ./scripts/test.sh so the repo-local supported .venv is used instead of an unsupported system python.\n",
+        "elapsed_s": 0.843
+      },
+      "recorded_at": "2026-08-25T23:48:34.536813+00:00"
+    },
+    "routing": {
+      "class": "api.providers.jaeger.backend.JaegerBackend",
+      "worker": "api.providers.jaeger.streaming.run_jaeger_streaming",
+      "is_gateway": true,
+      "is_jaeger": true,
+      "same_object": true,
+      "recorded_at": "2026-08-25T23:48:34.537318+00:00"
+    },
+    "attach_candidates": {
+      "instance": null,
+      "candidates": [
+        "/Users/matthewjenkins/GitHub/JaegerAI/.jaeger_ai/instances/ares/run/bridge.sock",
+        "/Users/matthewjenkins/.jaeger/instances/ares/run/bridge.sock"
+      ],
+      "recorded_at": "2026-08-25T23:48:34.537976+00:00"
+    },
+    "static_contracts": {
+      "STREAM_TURN_TELEMETRY": true,
+      "load_session_resume": true,
+      "single_attempt": true,
+      "recorded_at": "2026-08-25T23:48:34.538244+00:00"
+    },
+    "installed_runtime_snapshot": {
+      "relevant_ps": [],
+      "recorded_at": "2026-08-25T23:48:34.583827+00:00"
+    },
+    "bridge_start": {
+      "instance": "ares",
+      "spawn_pid": null,
+      "attached": true,
+      "pid_info": {
+        "attached": true
+      },
+      "recorded_at": "2026-08-25T23:48:34.585372+00:00"
+    },
+    "bridge_queries": {
+      "serving_model": {
+        "booted": true,
+        "serving": {
+          "name": "qwen3.5:397b",
+          "model": "qwen3.5:397b",
+          "source": "serving",
+          "serving": true,
+          "kind": "external",
+          "provider": "ollama-cloud",
+          "location": "cloud",
+          "context_length": 262144,
+          "status": "serving now \u2014 this is the model answering",
+          "description": "external \u00b7 ollama-cloud \u00b7 qwen3.5:397b \u00b7 https://ollama.com/v1",
+          "requested": "ollama-cloud/qwen3.5:397b",
+          "fallback_active": false
+        }
+      },
+      "tool_count": 11,
+      "tool_names_sample": [
+        "mcp__ares-native__user_collaboration",
+        "mcp__ares-native__memory_operations",
+        "mcp__ares-native__todo_operations",
+        "mcp__ares-native__file_operations",
+        "mcp__ares-native__math_operations",
+        "mcp__ares-native__calendar_operations",
+        "mcp__ares-native__contacts_operations",
+        "mcp__ares-native__notes_operations",
+        "mcp__ares-native__spotlight_search",
+        "mcp__ares-native__weather_operations",
+        "mcp__ares-native__screen_read"
+      ],
+      "list_mailboxes_present": false,
+      "status": {
+        "state": "connected",
+        "available": true,
+        "message": "JaegerAI is available through the local bridge, running qwen3.5:397b.",
+        "details": {
+          "mode": "bridge",
+          "root": "/Users/matthewjenkins/GitHub/JaegerAI",
+          "instance": null,
+          "model": "qwen3.5:397b",
+          "provider": "ollama-cloud",
+          "model_location": "cloud",
+          "model_source": "jaeger_bridge"
+        }
+      },
+      "recorded_at": "2026-08-25T23:48:34.594582+00:00"
+    },
+    "turn1": {
+      "response": {
+        "text": "ACK",
+        "error": "",
+        "activity": [],
+        "elapsed_s": 9.728,
+        "timed_out": false
+      },
+      "frames": [],
+      "recorded_at": "2026-08-25T23:48:44.323177+00:00"
+    },
+    "turn2": {
+      "response": {
+        "text": "codeword-a12ff466",
+        "error": "",
+        "activity": [],
+        "elapsed_s": 8.045,
+        "timed_out": false
+      },
+      "frames": [],
+      "recorded_at": "2026-08-25T23:48:52.368573+00:00"
+    },
+    "turn3": {
+      "response": {
+        "text": "fact-f89588c9",
+        "error": "",
+        "activity": [],
+        "elapsed_s": 14.074,
+        "timed_out": false
+      },
+      "frames": [],
+      "recorded_at": "2026-08-25T23:49:06.443291+00:00"
+    }
+  },
+  "promises": {
+    "production_routing_selects_jaeger_gateway": {
+      "recorded_at": "2026-08-25T23:48:34.537447+00:00",
+      "evidence_level": "production-object integration test",
+      "expected": "JaegerBackend.get_worker_target() -> (run_jaeger_streaming, True, True)",
+      "actual": {
+        "class": "api.providers.jaeger.backend.JaegerBackend",
+        "worker": "api.providers.jaeger.streaming.run_jaeger_streaming",
+        "is_gateway": true,
+        "is_jaeger": true,
+        "same_object": true,
+        "recorded_at": "2026-08-25T23:48:34.537318+00:00"
+      },
+      "result": "pass",
+      "remaining_gap": ""
+    },
+    "final_runtime_status_healthy": {
+      "recorded_at": "2026-08-25T23:48:34.595008+00:00",
+      "evidence_level": "real bridge",
+      "expected": "connected status with named model",
+      "actual": {
+        "booted": true,
+        "serving": {
+          "name": "qwen3.5:397b",
+          "model": "qwen3.5:397b",
+          "source": "serving",
+          "serving": true,
+          "kind": "external",
+          "provider": "ollama-cloud",
+          "location": "cloud",
+          "context_length": 262144,
+          "status": "serving now \u2014 this is the model answering",
+          "description": "external \u00b7 ollama-cloud \u00b7 qwen3.5:397b \u00b7 https://ollama.com/v1",
+          "requested": "ollama-cloud/qwen3.5:397b",
+          "fallback_active": false
+        }
+      },
+      "result": "pass",
+      "remaining_gap": ""
+    },
+    "ares_sends_only_new_user_message": {
+      "recorded_at": "2026-08-25T23:49:06.443825+00:00",
+      "evidence_level": "production-object integration test + real model",
+      "expected": "Clean user prompt sent; recall achieved natively",
+      "actual": {
+        "t2_text": "codeword-a12ff466",
+        "codeword_in_reply": true
+      },
+      "result": "pass",
+      "remaining_gap": ""
+    },
+    "live_agent_remembers_second_and_third_turns": {
+      "recorded_at": "2026-08-25T23:49:06.444198+00:00",
+      "evidence_level": "real model",
+      "expected": "Recalls codeword-a12ff466 in turn 2 and fact-f89588c9 in turn 3",
+      "actual": {
+        "turn2": "codeword-a12ff466",
+        "turn3": "fact-f89588c9"
+      },
+      "result": "pass",
+      "remaining_gap": ""
+    }
+  },
+  "findings": [],
+  "mocked_boundaries": [],
+  "untested": [],
+  "process_state_after": {},
+  "meta": {}
+}

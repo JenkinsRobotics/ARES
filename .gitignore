@@ -147,3 +147,8 @@ drafts/
 
 # Generated local evaluation output; canonical results live under ARES_HOME.
 model_eval_results.json
+
+# Maintainer-local model recipes and raced verification snapshots. Canonical
+# verification evidence has a stable named artifact under docs/verification/.
+Modelfile-*
+docs/verification/*.harness-snapshot.json

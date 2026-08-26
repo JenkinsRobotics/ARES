@@ -702,7 +702,8 @@ def start_session_turn(
     worker_target, is_gateway, _is_jaeger = selected_backend.get_worker_target()
 
     # Stateless workers need ARES to serialize prior turns. Gateway workers
-    # receive a clean user turn and maintain native structured continuity.
+    # (Jaeger: get_worker_target()[1] is True) receive a clean user turn and
+    # keep native structured continuity on the live agent.
     from api.conversation_history import build_context_prompt
 
     existing_messages = list(getattr(session, "messages", None) or [])

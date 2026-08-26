@@ -9,7 +9,6 @@ from __future__ import annotations
 import copy
 import logging
 import os
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -51,7 +50,7 @@ def reset_jaeger_runtime() -> None:
     _reset_local_bridge_clients()
 
 
-# ── bridge fallback (no gateway, JaegerAI on this machine) ──────────────────
+# ── local Jaeger stdio bridge (the production gateway path) ──────────────────
 
 _JAEGER_SOURCE_DIR_ENV = "ARES_JAEGER_SOURCE_DIR"
 _JAEGER_INSTANCE_ENV = "ARES_JAEGER_INSTANCE"
@@ -59,6 +58,11 @@ _JAEGER_INSTANCE_ENV = "ARES_JAEGER_INSTANCE"
 _BOOT_LOCK = threading.RLock()
 _BRIDGE_CLIENTS: dict[str, JaegerClient] = {}
 _BRIDGE_TURN_LOCKS: dict[str, threading.RLock] = {}
+# Per-stream halt/timing from the last successful turn. Defined here — a
+# missing name on the success path used to raise and evict the live agent.
+STREAM_TURN_TELEMETRY: dict[str, dict[str, Any]] = {}
+# session ids already replayed into the live agent for this bridge process.
+_HYDRATED_SESSIONS: dict[str, set[str]] = {}
 
 
 def local_jaeger_root() -> Path | None:
@@ -95,17 +99,10 @@ def _jaeger_instance_name() -> str | None:
     return str(os.environ.get(_JAEGER_INSTANCE_ENV) or "").strip() or jaeger_instance_name()
 
 
-def _bridge_error_message(exc: Exception, *, auto_recovery_attempted: bool = False) -> str:
+def _bridge_error_message(exc: Exception) -> str:
     message = _redact_text(str(exc).strip(), _enabled=True)
     lower = message.lower()
     if "lock" in lower:
-        if auto_recovery_attempted:
-            return (
-                "JaegerAI's instance lock is held by another process, and ARES's "
-                "automatic recovery (`jaeger kill`) could not clear it — a "
-                "JaegerAI app/TUI is likely genuinely running elsewhere. Close it, "
-                f"or use a different instance name. (Original error: {message})"
-            )
         return (
             "JaegerAI is already running on this machine, so ARES can't start a "
             "second copy (JaegerAI allows one process per instance). Close the "
@@ -122,55 +119,6 @@ def _bridge_error_message(exc: Exception, *, auto_recovery_attempted: bool = Fal
     if "no instance" in lower or "instance" in lower and ("not found" in lower or "does not exist" in lower):
         return f"{message} — run `jaeger setup` on the machine where JaegerAI is installed first."
     return message
-
-
-def _is_lock_error(exc: Exception) -> bool:
-    return "lock" in str(exc).lower()
-
-
-def _force_clear_stale_instance_lock(instance: str | None) -> bool:
-    """Best-effort ``jaeger kill --instance <name>`` to clear an orphaned lock.
-
-    JaegerAI's own stale-lock detection correctly refuses to break a lock
-    held by a genuinely-alive process — by design, since a live JaegerAI
-    process could be doing real work. But ARES can leave its *own* grandchild
-    bridge subprocess orphaned (e.g. a controller restart that outraced the
-    bridge's graceful shutdown), and then has no way back in except a human
-    running ``jaeger kill`` by hand. This scopes that exact recovery to the
-    one instance ARES is trying to reach — never the no-arg/all-instances
-    form, so it can't touch a JaegerAI the operator is genuinely running
-    under a different instance name.
-
-    Never raises: this is a best-effort recovery step, not the primary path.
-    A failure here just means the caller's retry will fail with the original
-    error, which is the same outcome as not attempting recovery at all.
-    """
-    if not instance:
-        return False
-    root = local_jaeger_root()
-    if root is None:
-        return False
-    launcher = root / "jaeger"
-    if not launcher.exists():
-        return False
-    try:
-        result = subprocess.run(
-            [str(launcher), "kill", "--instance", instance],
-            env=minimal_bridge_environment(),
-            capture_output=True,
-            timeout=15,
-            check=False,
-        )
-    except Exception:
-        logger.warning("jaeger kill --instance %s failed to run", instance, exc_info=True)
-        return False
-    if result.returncode != 0:
-        logger.warning(
-            "jaeger kill --instance %s exited %s: %s",
-            instance, result.returncode, result.stderr.decode("utf-8", "replace")[:500],
-        )
-        return False
-    return True
 
 
 def _is_dead_bridge_error(exc: Exception) -> bool:
@@ -196,6 +144,7 @@ def _evict_bridge_client(key: str, client: JaegerClient | None) -> None:
         if _BRIDGE_CLIENTS.get(key) is client:
             _BRIDGE_CLIENTS.pop(key, None)
             _BRIDGE_TURN_LOCKS.pop(key, None)
+        _HYDRATED_SESSIONS.pop(key, None)
     try:
         client.close()
     except Exception:
@@ -244,23 +193,10 @@ def _get_or_start_bridge_client(instance: str | None = None) -> JaegerClient:
             client.start()
         except Exception as exc:
             client.close()
-            if _is_lock_error(exc) and _force_clear_stale_instance_lock(resolved_instance):
-                # The lock was held by a dead/orphaned process (jaeger kill
-                # exited 0 — it either killed something or found nothing to
-                # kill, and either way swept the stale lock file). Retry once
-                # against a fresh client rather than surfacing an error a
-                # human would otherwise have to clear by hand.
-                retry_client = JaegerClient(jaeger_home=str(root), instance=resolved_instance)
-                try:
-                    retry_client.start()
-                except Exception as retry_exc:
-                    retry_client.close()
-                    raise JaegerError(
-                        _bridge_error_message(retry_exc, auto_recovery_attempted=True)
-                    ) from retry_exc
-                _BRIDGE_CLIENTS[key] = retry_client
-                _BRIDGE_TURN_LOCKS.setdefault(key, threading.RLock())
-                return retry_client
+            # A lock that names a live PID is ownership evidence, not proof of
+            # an orphan. Never run the destructive `jaeger kill` command from
+            # an automatic probe; attach discovery should find a live owner,
+            # and unresolved lock failures must be shown to the operator.
             raise JaegerError(_bridge_error_message(exc)) from exc
         _BRIDGE_CLIENTS[key] = client
         _BRIDGE_TURN_LOCKS.setdefault(key, threading.RLock())
@@ -273,6 +209,7 @@ def _reset_local_bridge_clients() -> None:
         clients = list(_BRIDGE_CLIENTS.values())
         _BRIDGE_CLIENTS.clear()
         _BRIDGE_TURN_LOCKS.clear()
+        _HYDRATED_SESSIONS.clear()
     for client in clients:
         try:
             client.close()
@@ -474,6 +411,54 @@ class _JaegerBridgeTurnControl:
         return True
 
 
+def _hydrate_live_session(client: JaegerClient, instance_key: str, session_id: str) -> None:
+    """Replay this session into the live Jaeger agent once per bridge process.
+
+    Display/search loads use resume=False. Interactive turns must resume so a
+    new bridge process still has the prior turns. Failures are logged and
+    retried on the next turn; they must not fail the send.
+    """
+    sid = str(session_id or "").strip()
+    if not sid:
+        return
+    hydrated = _HYDRATED_SESSIONS.setdefault(instance_key, set())
+    if sid in hydrated:
+        return
+    query = getattr(client, "query", None)
+    if not callable(query):
+        hydrated.add(sid)
+        return
+    from api.session_contract import shared_session_id
+
+    query("load_session", {"id": shared_session_id(sid), "resume": True})
+    hydrated.add(sid)
+
+
+def _record_turn_telemetry(stream_id: str, payload: dict[str, Any]) -> None:
+    if not stream_id:
+        return
+    telemetry = {
+        field: payload[field]
+        for field in (
+            "elapsed_s", "ctx_used", "ctx_max",
+            "halt_reason", "halt_code",
+        )
+        if payload.get(field) is not None
+    }
+    if telemetry:
+        STREAM_TURN_TELEMETRY[stream_id] = telemetry
+
+
+def _turn_halt_metadata(stream_id: str) -> dict[str, str]:
+    """Return only durable, structured halt fields for transcript projection."""
+    telemetry = STREAM_TURN_TELEMETRY.get(stream_id) or {}
+    return {
+        field: value
+        for field in ("halt_code", "halt_reason")
+        if (value := str(telemetry.get(field) or "").strip())
+    }
+
+
 def _run_local_jaeger_turn(
     msg_text: str,
     session_id: str,
@@ -487,7 +472,7 @@ def _run_local_jaeger_turn(
     instance = _jaeger_instance_name()
     key = instance or "__default__"
     last_exc: Exception | None = None
-    for attempt in (1, 2):
+    for attempt in (1,):
         client: JaegerClient | None = None
         try:
             client = _get_or_start_bridge_client(instance)
@@ -560,6 +545,14 @@ def _run_local_jaeger_turn(
             with lock:
                 from api.session_contract import shared_session_id
 
+                try:
+                    _hydrate_live_session(client, key, session_id)
+                except Exception:
+                    logger.warning(
+                        "Jaeger session hydrate failed for %s; sending the turn anyway",
+                        session_id,
+                        exc_info=True,
+                    )
                 turn_kwargs = {
                     "session": shared_session_id(session_id),
                     "workspace": str(workspace or ""),
@@ -572,27 +565,19 @@ def _run_local_jaeger_turn(
             payload = dict(result or {}) if isinstance(result, dict) else {}
             error = _redact_text(str(payload.get("error") or "").strip(), _enabled=True)
             text = str(payload.get("text") or "").strip()
-            if stream_id:
-                telemetry = {
-                    key: payload[key]
-                    for key in (
-                        "elapsed_s", "ctx_used", "ctx_max",
-                        "halt_reason", "halt_code",
-                    )
-                    if payload.get(key) is not None
-                }
-                if telemetry:
-                    STREAM_TURN_TELEMETRY[stream_id] = telemetry
+            try:
+                _record_turn_telemetry(stream_id, payload)
+            except Exception:
+                logger.debug("turn telemetry not recorded", exc_info=True)
             return text, error, [] if put_jaeger_event is not None else tool_activity
         except Exception as exc:
             last_exc = exc
-            _evict_bridge_client(key, client)
-            if attempt == 1 and _is_dead_bridge_error(exc):
-                logger.warning(
-                    "Local JaegerAI bridge died; retrying with a fresh process: %s",
-                    exc,
-                )
-                continue
+            dead = _is_dead_bridge_error(exc)
+            if dead:
+                _evict_bridge_client(key, client)
+            # The bridge may have died after Jaeger committed the transcript or
+            # executed a consequential tool. Without a wire-level idempotency
+            # key, replaying the whole turn can duplicate those effects.
             logger.warning("Local JaegerAI bridge turn failed: %s", _bridge_error_message(exc))
             return "", _bridge_error_message(exc), []
     return "", _bridge_error_message(last_exc or JaegerError("bridge failed")), []
@@ -683,6 +668,17 @@ def _merge_and_save_jaeger_turn(
             "timestamp": assistant_ts,
             "backend": "jaeger",
         }
+        halt_metadata = _turn_halt_metadata(stream_id)
+        halt_code = halt_metadata.get("halt_code", "")
+        halt_reason = halt_metadata.get("halt_reason", "")
+        if halt_code:
+            # The text can now be a useful tool-free wrap-up even when the
+            # runtime exhausted a safety budget. Preserve the machine outcome
+            # separately so goals and mission-control surfaces do not have to
+            # parse assistant prose or mislabel the turn as an ordinary success.
+            assistant_msg["halt_code"] = halt_code
+        if halt_reason:
+            assistant_msg["halt_reason"] = halt_reason
         live_tool_calls = list(STREAM_LIVE_TOOL_CALLS.get(stream_id, []) or [])
         if live_tool_calls:
             # Preserve Jaeger's structured, path-only mutation metadata so the
@@ -726,6 +722,10 @@ def _merge_and_save_jaeger_turn(
                     msg["backend"] = "jaeger"
                     if selected_model_provider:
                         msg["model_provider"] = selected_model_provider
+                    if halt_code:
+                        msg["halt_code"] = halt_code
+                    if halt_reason:
+                        msg["halt_reason"] = halt_reason
                     break
         except Exception:
             logger.debug("Failed to merge JaegerAI display transcript", exc_info=True)

@@ -147,15 +147,39 @@ def main():
             ctx = browser.new_context(base_url=BASE)
             page = ctx.new_page()
             onboarding_errors = []
+            browser_sse = []
             page.on("console", lambda m: onboarding_errors.append(("console", m.text))
                     if m.type == "error" else None)
             page.on("pageerror", lambda e: onboarding_errors.append(("pageerror", str(e))))
+            page.on("response", lambda response: browser_sse.append({
+                "url": response.url,
+                "status": response.status,
+                "content_type": response.headers.get("content-type", ""),
+            }) if "/api/sessions/events" in response.url else None)
             page.goto("/", wait_until="domcontentloaded")
             try:
                 page.wait_for_selector("#messages, #msg, .messages-shell, body", timeout=15000)
             except Exception:
                 pass
             time.sleep(1.5)
+
+            # This must originate in production browser JavaScript, cross a
+            # real HTTP connection, and reach the ASGI SSE controller. Direct
+            # API requests do not satisfy this browser-to-controller boundary.
+            try:
+                page.evaluate("() => { if(typeof ensureSessionEventsSSE==='function') ensureSessionEventsSSE(); }")
+                page.wait_for_timeout(750)
+                if not any(
+                    row["status"] == 200 and "text/event-stream" in row["content_type"]
+                    for row in browser_sse
+                ):
+                    failures.append(
+                        "  [browser-sse] production DOM did not establish /api/sessions/events"
+                    )
+                else:
+                    print("OK  / — Browser EventSource reached the HTTP/SSE controller")
+            except Exception as exc:
+                failures.append(f"  [browser-sse] {exc}")
 
             settings_response = page.request.get(BASE + "/api/settings")
             if not settings_response.ok:

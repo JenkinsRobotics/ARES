@@ -157,6 +157,21 @@ def test_organization_moves_loose_favourites_without_deleting(bookmark_env):
     assert sum(1 for child in menu["Children"] if child.get("URLString")) == 3
 
 
+def test_taxonomy_consolidation_removes_only_duplicate_placements(bookmark_env):
+    proposal = sb.create_taxonomy_consolidation_proposal()
+    assert proposal["bookmark_count"] == 6
+    assert proposal["expected_bookmark_count"] == 5
+    assert proposal["duplicate_removal_count"] == 1
+    with pytest.raises(sb.SafariBookmarkError, match="token"):
+        sb.apply_taxonomy_consolidation_proposal(proposal["proposal_id"], "wrong-token-value")
+    result = sb.apply_taxonomy_consolidation_proposal(proposal["proposal_id"], proposal["approval_token"])
+    assert result["status"] == "applied"
+    evidence = sb.verify_proposal(proposal["proposal_id"])
+    assert evidence["verification"]["bookmark_count"] == 5
+    assert evidence["verification"]["bookmark_count_matches"] is True
+    assert evidence["verification"]["structural_sha256_matches"] is True
+
+
 def test_api_audit_omits_private_details(bookmark_env):
     from fastapi_app.routers.safari_bookmarks import audit_bookmarks
 

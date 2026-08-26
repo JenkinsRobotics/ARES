@@ -139,7 +139,8 @@ def _print_review(proposal: dict) -> None:
 def _bookmarks(args) -> int:
     from api.safari_bookmarks import (
         SafariBookmarkError, apply_organization_proposal, apply_proposal, apply_recovery_proposal,
-        create_organization_proposal, create_proposal, create_recovery_proposal, load_proposal,
+        apply_taxonomy_consolidation_proposal, create_organization_proposal, create_proposal,
+        create_recovery_proposal, create_taxonomy_consolidation_proposal, load_proposal,
         public_summary, rollback_proposal, verify_proposal,
     )
     try:
@@ -181,6 +182,11 @@ def _bookmarks(args) -> int:
             print(json.dumps({"proposal": public_summary(proposal), "approval_token": proposal["approval_token"]}, indent=2))
         elif args.bookmark_command == "organize":
             print(json.dumps(apply_organization_proposal(args.proposal_id, args.approve_token), indent=2))
+        elif args.bookmark_command == "consolidation-plan":
+            proposal = create_taxonomy_consolidation_proposal()
+            print(json.dumps({"proposal": public_summary(proposal), "approval_token": proposal["approval_token"]}, indent=2))
+        elif args.bookmark_command == "consolidate":
+            print(json.dumps(apply_taxonomy_consolidation_proposal(args.proposal_id, args.approve_token), indent=2))
     except SafariBookmarkError as exc:
         raise SystemExit(f"Safari bookmarks: {exc}") from exc
     return 0
@@ -229,6 +235,12 @@ def main() -> int:
     organize.add_argument("proposal_id")
     organize.add_argument("--approve-token", required=True)
     organize.set_defaults(handler=_bookmarks)
+    consolidation_plan = bookmark_sub.add_parser("consolidation-plan")
+    consolidation_plan.set_defaults(handler=_bookmarks)
+    consolidate = bookmark_sub.add_parser("consolidate")
+    consolidate.add_argument("proposal_id")
+    consolidate.add_argument("--approve-token", required=True)
+    consolidate.set_defaults(handler=_bookmarks)
     args = parser.parse_args()
     return args.handler(args)
 

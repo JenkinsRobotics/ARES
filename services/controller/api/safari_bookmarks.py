@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import re
+import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 class SafariBookmarkError(RuntimeError):
     pass
+
+
+_TAXONOMY_FOLDERS = {
+    "🏡 Personal & Lifestyle", "🤖 AI, Tech & Engineering", "💼 Work & Career",
+    "📚 Learning & Knowledge", "💰 Finance & Banking",
+}
 
 
 def bookmark_path() -> Path:
@@ -328,6 +335,120 @@ def create_organization_proposal(path: Path | None = None) -> dict[str, Any]:
     return proposal
 
 
+def _consolidate_taxonomy(data: dict[str, Any]) -> dict[str, int]:
+    children = data.get("Children")
+    if not isinstance(children, list):
+        raise SafariBookmarkError("Safari bookmark root is invalid")
+    bar = next((n for n in children if isinstance(n, dict) and n.get("Title") == "BookmarksBar"), None)
+    menu = next((n for n in children if isinstance(n, dict) and n.get("Title") == "BookmarksMenu"), None)
+    if bar is None or menu is None:
+        raise SafariBookmarkError("Safari bookmark roots were not found")
+
+    removed_duplicates = 0
+    merged_folders = 0
+
+    def urls(folder: dict[str, Any]) -> set[str]:
+        found: set[str] = set()
+        for child in folder.get("Children", []):
+            if not isinstance(child, dict):
+                continue
+            if child.get("URLString"):
+                found.add(_canonical_url(str(child["URLString"])))
+            elif isinstance(child.get("Children"), list):
+                found.update(urls(child))
+        return found
+
+    def merge(source: dict[str, Any], destination: dict[str, Any]) -> None:
+        nonlocal removed_duplicates, merged_folders
+        known = urls(destination)
+        for child in list(source.get("Children", [])):
+            if not isinstance(child, dict):
+                continue
+            if isinstance(child.get("Children"), list):
+                title = str(child.get("Title") or "")
+                match = next((candidate for candidate in destination.get("Children", [])
+                              if isinstance(candidate, dict)
+                              and isinstance(candidate.get("Children"), list)
+                              and str(candidate.get("Title") or "") == title), None)
+                if match is None:
+                    destination["Children"].append(child)
+                else:
+                    merged_folders += 1
+                    merge(child, match)
+            elif child.get("URLString"):
+                canonical = _canonical_url(str(child["URLString"]))
+                if canonical in known:
+                    removed_duplicates += 1
+                else:
+                    destination["Children"].append(child)
+                    known.add(canonical)
+
+    bar_children = bar.get("Children")
+    menu_children = menu.get("Children")
+    for source in list(bar_children):
+        if not isinstance(source, dict) or source.get("Title") not in _TAXONOMY_FOLDERS:
+            continue
+        destination = next((candidate for candidate in menu_children
+                            if isinstance(candidate, dict) and candidate.get("Title") == source.get("Title")), None)
+        if destination is None:
+            menu_children.append(source)
+        else:
+            merged_folders += 1
+            merge(source, destination)
+        bar_children.remove(source)
+
+    def dedupe_same_folder(folder: dict[str, Any], mutable: bool = True) -> None:
+        nonlocal removed_duplicates
+        children_value = folder.get("Children")
+        if not isinstance(children_value, list):
+            return
+        seen: set[str] = set()
+        kept = []
+        for child in children_value:
+            if not isinstance(child, dict):
+                kept.append(child); continue
+            child_mutable = mutable and child.get("Title") != "com.apple.ReadingList"
+            if child.get("URLString") and child_mutable:
+                canonical = _canonical_url(str(child["URLString"]))
+                if canonical in seen:
+                    removed_duplicates += 1
+                    continue
+                seen.add(canonical)
+            elif isinstance(child.get("Children"), list):
+                dedupe_same_folder(child, child_mutable)
+            kept.append(child)
+        folder["Children"] = kept
+
+    dedupe_same_folder(data)
+    return {"duplicate_removal_count": removed_duplicates, "merged_folder_count": merged_folders}
+
+
+def create_taxonomy_consolidation_proposal(path: Path | None = None) -> dict[str, Any]:
+    source = (path or bookmark_path()).expanduser().resolve()
+    original = _load(source)
+    before, empty_before, folders_before = _inventory(original)
+    planned = copy.deepcopy(original)
+    changes = _consolidate_taxonomy(planned)
+    after, empty_after, folders_after = _inventory(planned)
+    proposal_id = secrets.token_hex(8)
+    proposal = {
+        "schema": "ares-safari-bookmark-taxonomy-consolidation/v1",
+        "operation": "consolidate_taxonomy", "proposal_id": proposal_id,
+        "approval_token": secrets.token_urlsafe(12), "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_path": str(source), "source_sha256": _sha256(source),
+        "bookmark_count": len(before), "folder_count": folders_before,
+        "empty_folder_count": len(empty_before), "expected_bookmark_count": len(after),
+        "expected_folder_count": folders_after, "expected_empty_folder_count": len(empty_after),
+        **changes, "status": "awaiting_approval",
+    }
+    directory = state_root() / "proposals"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target = directory / f"{proposal_id}.json"
+    target.write_text(json.dumps(proposal, indent=2) + "\n", encoding="utf-8")
+    target.chmod(0o600)
+    return proposal
+
+
 def load_proposal(proposal_id: str) -> dict[str, Any]:
     if not proposal_id or any(ch not in "0123456789abcdef" for ch in proposal_id):
         raise SafariBookmarkError("Invalid proposal id")
@@ -348,6 +469,8 @@ def public_summary(proposal: dict[str, Any]) -> dict[str, Any]:
         "empty_folder_count", "status", "backup_path", "applied_at", "rolled_back_at",
         "restore_bookmark_count", "restore_folder_count", "restore_empty_folder_count",
         "move_count", "reason_counts", "create_unsorted_folder",
+        "merged_folder_count", "expected_bookmark_count", "expected_folder_count",
+        "expected_empty_folder_count",
     )}
 
 
@@ -458,6 +581,50 @@ def apply_organization_proposal(proposal_id: str, approval_token: str) -> dict[s
     return public_summary(proposal)
 
 
+def apply_taxonomy_consolidation_proposal(proposal_id: str, approval_token: str) -> dict[str, Any]:
+    proposal = load_proposal(proposal_id)
+    if proposal.get("operation") != "consolidate_taxonomy":
+        raise SafariBookmarkError("Proposal is not a taxonomy consolidation")
+    if proposal.get("status") != "awaiting_approval":
+        raise SafariBookmarkError(f"Proposal is not pending (status={proposal.get('status')})")
+    if not secrets.compare_digest(str(proposal.get("approval_token") or ""), str(approval_token or "")):
+        raise SafariBookmarkError("Explicit approval token did not match")
+    source = Path(str(proposal["source_path"])).resolve()
+    if _sha256(source) != proposal.get("source_sha256"):
+        raise SafariBookmarkError("Safari bookmarks changed after consolidation audit; create a new proposal")
+    if _requires_safari_quit(source):
+        raise SafariBookmarkError("Quit Safari before applying bookmark consolidation")
+    data = _load(source)
+    changes = _consolidate_taxonomy(data)
+    if changes["duplicate_removal_count"] != int(proposal["duplicate_removal_count"]):
+        raise SafariBookmarkError("Consolidation plan is no longer deterministic")
+    backups = state_root() / "backups"
+    backups.mkdir(parents=True, exist_ok=True, mode=0o700)
+    backup = backups / f"Bookmarks-before-consolidation-{proposal_id}.plist"
+    shutil.copy2(source, backup)
+    if _sha256(backup) != proposal["source_sha256"]:
+        raise SafariBookmarkError("Pre-consolidation backup checksum verification failed")
+    mode = source.stat().st_mode & 0o777
+    fd, temporary_name = tempfile.mkstemp(prefix=".Bookmarks.ares-consolidate-", suffix=".plist", dir=source.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            plistlib.dump(data, handle, fmt=plistlib.FMT_BINARY, sort_keys=False); handle.flush(); os.fsync(handle.fileno())
+        temporary = Path(temporary_name); temporary.chmod(mode); _load(temporary); os.replace(temporary, source)
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
+    verified, verified_empty, verified_folders = _inventory(_load(source))
+    if (len(verified) != int(proposal["expected_bookmark_count"])
+            or verified_folders != int(proposal["expected_folder_count"])
+            or len(verified_empty) != int(proposal["expected_empty_folder_count"])):
+        _atomic_restore(backup, source)
+        raise SafariBookmarkError("Post-consolidation verification failed; backup was restored")
+    proposal.update({"status": "applied", "backup_path": str(backup),
+                     "applied_at": datetime.now(timezone.utc).isoformat(), "result_sha256": _sha256(source),
+                     "result_structural_sha256": _structural_sha256(source)})
+    _save_proposal(proposal)
+    return public_summary(proposal)
+
+
 def _safari_running() -> bool:
     return subprocess.run(["pgrep", "-x", "Safari"], capture_output=True).returncode == 0
 
@@ -502,8 +669,8 @@ def apply_proposal(proposal_id: str, approval_token: str) -> dict[str, Any]:
         if not isinstance(path, list) or not path:
             raise SafariBookmarkError("Proposal contains an invalid removal path")
         grouped.setdefault(tuple(int(v) for v in path[:-1]), []).append(int(path[-1]))
-    for parent_path, indexes in grouped.items():
-        parent = _node_at(data, list(parent_path))
+    resolved_parents = [(_node_at(data, list(parent_path)), indexes) for parent_path, indexes in grouped.items()]
+    for parent, indexes in resolved_parents:
         children = parent.get("Children")
         if not isinstance(children, list):
             raise SafariBookmarkError("Proposal removal parent is not a folder")
@@ -574,7 +741,9 @@ def verify_proposal(proposal_id: str) -> dict[str, Any]:
     current_hash = _sha256(source)
     status = str(proposal.get("status") or "")
     expected_count = int(proposal.get("bookmark_count") or 0)
-    if proposal.get("operation") == "exact_recovery" and status == "applied":
+    if proposal.get("operation") == "consolidate_taxonomy" and status == "applied":
+        expected_count = int(proposal.get("expected_bookmark_count") or 0)
+    elif proposal.get("operation") == "exact_recovery" and status == "applied":
         expected_count = int(proposal.get("restore_bookmark_count") or 0)
     elif status == "applied":
         expected_count -= len(proposal.get("removals") or [])
@@ -644,7 +813,8 @@ def _save_proposal(proposal: dict[str, Any]) -> None:
 
 __all__ = [
     "SafariBookmarkError", "apply_organization_proposal", "apply_proposal", "apply_recovery_proposal",
-    "bookmark_path", "create_organization_proposal", "create_proposal", "create_recovery_proposal",
+    "apply_taxonomy_consolidation_proposal", "bookmark_path", "create_organization_proposal",
+    "create_proposal", "create_recovery_proposal", "create_taxonomy_consolidation_proposal",
     "load_proposal", "public_summary", "rollback_proposal", "state_root",
     "verify_proposal",
 ]

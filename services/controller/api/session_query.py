@@ -53,6 +53,7 @@ def search_sessions(
     content_search: bool = True,
     depth: int = 5,
     all_profiles: bool = False,
+    lineage: bool = True,
 ) -> dict[str, Any]:
     from api.helpers import _redact_text
     from api.models import all_sessions, get_session
@@ -142,10 +143,69 @@ def search_sessions(
         if isinstance(item.get("title"), str):
             item["title"] = _redact_text(item["title"])
         results.append(item)
+    if lineage and results:
+        by_id = {str(row.get("session_id") or row.get("id") or ""): row for row in sessions}
+
+        def lineage_root(row: dict[str, Any]) -> str:
+            current = str(row.get("_lineage_root_id") or row.get("session_id") or row.get("id") or "")
+            if row.get("_lineage_root_id"):
+                return current
+            seen = {current}
+            parent = row.get("parent_session_id")
+            while parent and str(parent) not in seen:
+                current = str(parent)
+                seen.add(current)
+                parent = by_id.get(current, {}).get("parent_session_id")
+            return current
+
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for item in results:
+            grouped.setdefault(lineage_root(item), []).append(item)
+        collapsed = []
+        for root_id, matches in grouped.items():
+            tip_id = next((str(item.get("_lineage_tip_id")) for item in matches if item.get("_lineage_tip_id")), "")
+            match_ids = [str(item.get("session_id") or item.get("id")) for item in matches]
+            member_rows = [row for sid, row in by_id.items() if sid and lineage_root(row) == root_id]
+            member_ids = [str(row.get("session_id") or row.get("id")) for row in member_rows]
+            representative = by_id.get(tip_id) or max(
+                member_rows or matches,
+                key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""),
+            )
+            merged = dict(representative)
+            merged.update({
+                "match_type": matches[0].get("match_type"),
+                "match_preview": matches[0].get("match_preview"),
+                "lineage_root_id": root_id,
+                "lineage_tip_id": tip_id or str(representative.get("session_id") or representative.get("id") or ""),
+                "lineage_match_session_ids": match_ids,
+                "lineage_session_ids": member_ids,
+                "lineage_size": len(member_ids),
+            })
+            collapsed.append(merged)
+        results = collapsed
+
+    delegated_matches = []
+    if lineage:
+        try:
+            from api.delegation_tasks import list_tasks
+            for task in list_tasks():
+                haystack = " ".join(str(task.get(key) or "") for key in ("prompt", "result", "error"))
+                if term and term not in haystack.lower():
+                    continue
+                safe_task = {key: task.get(key) for key in (
+                    "id", "status", "backend", "parent_task_id", "root_task_id",
+                    "parent_session_id", "relation", "created_at", "updated_at",
+                )}
+                safe_task["match_preview"] = _redact_text(session_search_preview(haystack, term)) if term else ""
+                delegated_matches.append(safe_task)
+        except Exception:
+            delegated_matches = []
     return {
         "sessions": results,
         "query": term,
         "count": len(results),
+        "lineage_aware": lineage,
+        "delegated_tasks": delegated_matches,
         "all_profiles": all_profiles,
         "active_profile": active_profile,
     }

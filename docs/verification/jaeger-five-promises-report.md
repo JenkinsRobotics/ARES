@@ -16,19 +16,19 @@ Configuration and revisions:
 
 | Item | Value |
 |---|---|
-| ARES commit | `0f5411e4053bbb99ec1db621309fa29646ff657e` plus recorded dirty-tree changes |
+| ARES commit | `89b99cc1b972b89b51205c6dbcede36d5318c9a3` plus recorded dirty-tree changes |
 | Jaeger commit | `87ed89a4ea6fe9a9952623d497c68e7d6fb21599` plus recorded dirty-tree changes |
 | Instance | `ares` |
 | Provider/model | `ollama-cloud` / `qwen3.5:397b` |
-| Execution window | `2026-08-26T07:25:32Z`–`07:26:34Z` |
+| Execution window | `2026-08-26T07:29:15Z`–`07:31:05Z` |
 | Machine artifact | `docs/verification/jaeger-five-promises-evidence.json` |
 
 Observed results:
 
 | Promise | Expected | Actual | Result |
 |---|---|---|---|
-| Multi-turn memory | Turn 2 recalls `PROMISE-3866695d`; turn 3 recalls `SECOND-423ff1a3` | Exact values returned through the real production backend | Pass |
-| Session survives worker restart | Verified listener PID changes and the replacement recalls the pre-restart codeword | PID `256 → 373`; exact codeword returned | Pass |
+| Multi-turn memory | Turn 2 recalls `PROMISE-a78adfdf`; turn 3 recalls `SECOND-c9bb5043` | Exact values returned through the real production backend | Pass |
+| Session survives worker restart | Verified listener PID changes and the replacement recalls the pre-restart codeword | PID `1407 → 1584`; exact codeword returned | Pass |
 | Tools remain available | `get_time` emits running/completed events before and after restart | Both event pairs captured; no tool error | Pass |
 | Successful requests have no hidden exceptions | Six successful turns end with `stream_end`; no service-process ERROR records | Six `stream_end`; captured ERROR list empty | Pass within the verifier process |
 | Production uses the gateway path | Real backend selects `run_jaeger_streaming` with both routing flags true | Exact worker object; `is_gateway=true`, `is_jaeger=true` | Pass |

@@ -1,7 +1,7 @@
 {
   "schema": "ares-jaeger-five-promises/v1",
-  "started_at": "2026-08-26T07:25:32.040303+00:00",
-  "finished_at": "2026-08-26T07:26:34.767661+00:00",
+  "started_at": "2026-08-26T07:29:15.296850+00:00",
+  "finished_at": "2026-08-26T07:31:05.173207+00:00",
   "command": [
     "/Users/matthewjenkins/GitHub/ARES/services/controller/.venv/bin/python",
     "/Users/matthewjenkins/GitHub/ARES/services/controller/scripts/verify_jaeger_promises.py"
@@ -13,7 +13,7 @@
     "workspace": "/Users/matthewjenkins/GitHub/ARES"
   },
   "commits": {
-    "ares": "0f5411e4053bbb99ec1db621309fa29646ff657e",
+    "ares": "89b99cc1b972b89b51205c6dbcede36d5318c9a3",
     "jaeger": "87ed89a4ea6fe9a9952623d497c68e7d6fb21599"
   },
   "dirty_worktrees": {
@@ -23,12 +23,12 @@
   "promises": {
     "multi_turn_memory": {
       "expected": {
-        "turn2": "PROMISE-3866695d",
-        "turn3": "SECOND-423ff1a3"
+        "turn2": "PROMISE-a78adfdf",
+        "turn3": "SECOND-c9bb5043"
       },
       "actual": {
-        "turn2": "PROMISE-3866695d",
-        "turn3": "SECOND-423ff1a3"
+        "turn2": "PROMISE-a78adfdf",
+        "turn3": "SECOND-c9bb5043"
       },
       "result": "pass",
       "boundary": "real JaegerBackend \u2192 start_session_turn \u2192 streaming worker \u2192 bridge \u2192 model"
@@ -36,20 +36,20 @@
     "session_survives_worker_restart": {
       "expected": {
         "different_pid": true,
-        "recall": "PROMISE-3866695d"
+        "recall": "PROMISE-a78adfdf"
       },
       "actual": {
         "before": {
-          "pid": 256,
+          "pid": 1407,
           "verified": true,
-          "command": "253 /opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/MacOS/Python -m jaeger_ai.interfaces.bridge ares"
+          "command": "1405 /opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/MacOS/Python -m jaeger_ai.interfaces.bridge ares"
         },
         "after": {
-          "pid": 373,
+          "pid": 1584,
           "verified": true,
-          "command": "253 /opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/MacOS/Python -m jaeger_ai.interfaces.bridge ares"
+          "command": "1405 /opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/MacOS/Python -m jaeger_ai.interfaces.bridge ares"
         },
-        "reply": "PROMISE-3866695d",
+        "reply": "PROMISE-a78adfdf",
         "preflight_error": ""
       },
       "result": "pass",
@@ -181,19 +181,19 @@
         "last_event_id": null
       },
       "start": {
-        "stream_id": "eee6152e341e4d2c8ced979c9d6c46de",
-        "session_id": "03b59f2e7b8b",
-        "pending_started_at": 1787729135.620672,
-        "turn_id": "20260826T072535Z-d77b8b8590d9",
-        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "stream_id": "2af5a0bb38354f10b4e67e491a1aa523",
+        "session_id": "950a9501ca55",
+        "pending_started_at": 1787729359.346613,
+        "turn_id": "20260826T072919Z-11c01272fb0e",
+        "title": "Remember exactly codeword PROMISE-a78adfdf and second fact SECON",
         "effective_model": "qwen3.5:397b",
         "effective_model_provider": "ollama-cloud"
       },
-      "elapsed_s": 17.167
+      "elapsed_s": 17.654
     },
     "turn2": {
       "terminal": "stream_end",
-      "assistant_text": "PROMISE-3866695d",
+      "assistant_text": "PROMISE-a78adfdf",
       "events": [
         {
           "event": "context_status"
@@ -206,7 +206,7 @@
         },
         {
           "event": "done",
-          "assistant_text": "PROMISE-3866695d"
+          "assistant_text": "PROMISE-a78adfdf"
         },
         {
           "event": "stream_end"
@@ -219,19 +219,19 @@
         "last_event_id": null
       },
       "start": {
-        "stream_id": "7de004b5c58c4d01bbb2b9fbf3723c9a",
-        "session_id": "03b59f2e7b8b",
-        "pending_started_at": 1787729149.93061,
-        "turn_id": "20260826T072549Z-003498e7857d",
-        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "stream_id": "f89ac1f774b2449399f56509e86c59bb",
+        "session_id": "950a9501ca55",
+        "pending_started_at": 1787729373.824214,
+        "turn_id": "20260826T072933Z-3a62c4064576",
+        "title": "Remember exactly codeword PROMISE-a78adfdf and second fact SECON",
         "effective_model": "qwen3.5:397b",
         "effective_model_provider": "ollama-cloud"
       },
-      "elapsed_s": 5.101
+      "elapsed_s": 5.807
     },
     "turn3": {
       "terminal": "stream_end",
-      "assistant_text": "SECOND-423ff1a3",
+      "assistant_text": "SECOND-c9bb5043",
       "events": [
         {
           "event": "context_status"
@@ -243,8 +243,11 @@
           "event": "token"
         },
         {
+          "event": "token"
+        },
+        {
           "event": "done",
-          "assistant_text": "SECOND-423ff1a3"
+          "assistant_text": "SECOND-c9bb5043"
         },
         {
           "event": "stream_end"
@@ -257,19 +260,19 @@
         "last_event_id": null
       },
       "start": {
-        "stream_id": "e592ad6c3e7a447abf2be3c0a5e8b0d1",
-        "session_id": "03b59f2e7b8b",
-        "pending_started_at": 1787729155.040069,
-        "turn_id": "20260826T072555Z-33a6b67f8710",
-        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "stream_id": "365afe836d734e798c77e25ac7e97480",
+        "session_id": "950a9501ca55",
+        "pending_started_at": 1787729379.624901,
+        "turn_id": "20260826T072939Z-c68a73d04985",
+        "title": "Remember exactly codeword PROMISE-a78adfdf and second fact SECON",
         "effective_model": "qwen3.5:397b",
         "effective_model_provider": "ollama-cloud"
       },
-      "elapsed_s": 8.912
+      "elapsed_s": 4.853
     },
     "tool": {
       "terminal": "stream_end",
-      "assistant_text": "2026-08-26 07:26:06 AM UTC",
+      "assistant_text": "[halted: stalled]",
       "events": [
         {
           "event": "context_status"
@@ -290,14 +293,8 @@
           "event": "token"
         },
         {
-          "event": "token"
-        },
-        {
-          "event": "token"
-        },
-        {
           "event": "done",
-          "assistant_text": "2026-08-26 07:26:06 AM UTC"
+          "assistant_text": "[halted: stalled]"
         },
         {
           "event": "stream_end"
@@ -310,19 +307,19 @@
         "last_event_id": null
       },
       "start": {
-        "stream_id": "c8ffb755b3624a0ead2313c6c3913364",
-        "session_id": "03b59f2e7b8b",
-        "pending_started_at": 1787729163.95729,
-        "turn_id": "20260826T072603Z-cfd7c4bb3844",
-        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "stream_id": "587df46cd180484b9ad3f01a85828214",
+        "session_id": "950a9501ca55",
+        "pending_started_at": 1787729384.4860191,
+        "turn_id": "20260826T072944Z-0e2f80401d74",
+        "title": "Remember exactly codeword PROMISE-a78adfdf and second fact SECON",
         "effective_model": "qwen3.5:397b",
         "effective_model_provider": "ollama-cloud"
       },
-      "elapsed_s": 7.18
+      "elapsed_s": 33.348
     },
     "after_restart": {
       "terminal": "stream_end",
-      "assistant_text": "PROMISE-3866695d",
+      "assistant_text": "PROMISE-a78adfdf",
       "events": [
         {
           "event": "context_status"
@@ -335,7 +332,7 @@
         },
         {
           "event": "done",
-          "assistant_text": "PROMISE-3866695d"
+          "assistant_text": "PROMISE-a78adfdf"
         },
         {
           "event": "stream_end"
@@ -348,19 +345,19 @@
         "last_event_id": null
       },
       "start": {
-        "stream_id": "ac20c4449e6747aa8ae8dd6eb5f862f8",
-        "session_id": "03b59f2e7b8b",
-        "pending_started_at": 1787729175.34583,
-        "turn_id": "20260826T072615Z-0a1e35073d84",
-        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "stream_id": "e684449a05be46b1b3e37a00febfc395",
+        "session_id": "950a9501ca55",
+        "pending_started_at": 1787729421.866813,
+        "turn_id": "20260826T073021Z-8b438ac8eb09",
+        "title": "Remember exactly codeword PROMISE-a78adfdf and second fact SECON",
         "effective_model": "qwen3.5:397b",
         "effective_model_provider": "ollama-cloud"
       },
-      "elapsed_s": 13.523
+      "elapsed_s": 37.306
     },
     "tool_after_restart": {
       "terminal": "stream_end",
-      "assistant_text": "2026-08-26T21:26:27+14:00",
+      "assistant_text": "2026-08-26T21:30:59+14:00",
       "events": [
         {
           "event": "context_status"
@@ -387,8 +384,11 @@
           "event": "token"
         },
         {
+          "event": "token"
+        },
+        {
           "event": "done",
-          "assistant_text": "2026-08-26T21:26:27+14:00"
+          "assistant_text": "2026-08-26T21:30:59+14:00"
         },
         {
           "event": "stream_end"
@@ -401,15 +401,15 @@
         "last_event_id": null
       },
       "start": {
-        "stream_id": "c26f3ac4538143e18c4fd47f456e8bee",
-        "session_id": "03b59f2e7b8b",
-        "pending_started_at": 1787729185.237656,
-        "turn_id": "20260826T072625Z-7f874a66c74b",
-        "title": "Remember exactly codeword PROMISE-3866695d and second fact SECON",
+        "stream_id": "75f84ff86401442ab5dd2a4c5dcb2d76",
+        "session_id": "950a9501ca55",
+        "pending_started_at": 1787729455.868329,
+        "turn_id": "20260826T073055Z-3fbd1fcd1085",
+        "title": "Remember exactly codeword PROMISE-a78adfdf and second fact SECON",
         "effective_model": "qwen3.5:397b",
         "effective_model_provider": "ollama-cloud"
       },
-      "elapsed_s": 9.25
+      "elapsed_s": 9.204
     }
   },
   "mocked_boundaries": [],

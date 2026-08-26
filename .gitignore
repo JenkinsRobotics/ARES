@@ -152,3 +152,6 @@ model_eval_results.json
 # verification evidence has a stable named artifact under docs/verification/.
 Modelfile-*
 docs/verification/*.harness-snapshot.json
+# Installed-runtime evidence is timestamped and machine-specific. Generate it
+# after installing a saved commit; do not make the evidence mutate that commit.
+docs/verification/installed-app-evidence.json

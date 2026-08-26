@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import json
 import plistlib
+import re
 import subprocess
 import sys
+import time
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +29,7 @@ def main() -> int:
     bundled = str(plist.get("ARESSourceCommit") or "")
     bundle_clean = plist.get("ARESSourceDirty") is False
     app_rows = [line for line in _run("pgrep", "-alf", str(APP / "Contents/MacOS/ARES")).splitlines() if line]
+    app_pid = app_rows[0].split(maxsplit=1)[0] if app_rows else ""
     controller_rows = []
     for line in _run("pgrep", "-alf", "uvicorn fastapi_app.main:app").splitlines():
         pid = line.split(maxsplit=1)[0]
@@ -36,11 +40,25 @@ def main() -> int:
     relevant_clean = subprocess.run(
         ["git", "-C", str(ROOT), "diff", "--quiet", "HEAD", "--", "apps/web", "services/controller"],
     ).returncode == 0
-    # Unified log output is bounded and redacted to error/fault messages. Empty
-    # output means no matching installed-app errors were recorded in the window.
+    health = {"checked": False, "status": None, "port": None}
+    for row in controller_rows:
+        match = re.search(r"--port\s+(\d+)", row["process"])
+        if not match:
+            continue
+        health["port"] = int(match.group(1))
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{health['port']}/health", timeout=5) as response:
+                health.update({"checked": True, "status": response.status})
+        except Exception as exc:  # recorded as evidence, not hidden
+            health.update({"checked": True, "error": str(exc)})
+        break
+    observation_started = datetime.now(timezone.utc).isoformat()
+    time.sleep(3)
+    # Observe only the currently running installed process after controller
+    # health, excluding launch-time connection polling and stale app instances.
     log_text = _run(
-        "/usr/bin/log", "show", "--last", "10m", "--style", "compact",
-        "--predicate", 'process == "ARES" AND (messageType == error OR messageType == fault)',
+        "/usr/bin/log", "show", "--start", observation_started, "--style", "compact",
+        "--predicate", f'processIdentifier == {app_pid or 0} AND (messageType == error OR messageType == fault)',
     )
     errors = [line for line in log_text.splitlines() if line and not line.startswith("Timestamp")]
     checks = {
@@ -50,7 +68,8 @@ def main() -> int:
         "installed_process_running": bool(app_rows),
         "controller_uses_current_checkout": bool(controller_rows),
         "web_and_controller_match_saved_commit": relevant_clean,
-        "no_installed_app_errors_last_10m": not errors,
+        "controller_health_responded": health.get("status") == 200,
+        "no_installed_app_errors_during_observation": not errors,
     }
     evidence = {
         "schema": "ares-installed-app-evidence/v1",
@@ -61,6 +80,8 @@ def main() -> int:
         "checks": checks,
         "app_processes": app_rows,
         "controller_processes": controller_rows,
+        "controller_health": health,
+        "log_observation_started": observation_started,
         "error_logs": errors,
         "result": "pass" if all(checks.values()) else "fail",
     }

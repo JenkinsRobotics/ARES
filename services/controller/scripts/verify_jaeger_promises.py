@@ -207,9 +207,16 @@ def main() -> int:
         "After the runtime restart, reply only with the exact codeword I gave you.",
         backend, model=model, provider=provider,
     )
+    # Use a fresh session so the post-restart proof cannot be satisfied by
+    # converting or replaying the pre-restart tool result from transcript.
+    post_restart_tool_session = new_session(
+        workspace=str(ROOT), model=model, model_provider=provider, profile="default",
+    )
+    post_restart_tool_session.ares_backend = "jaeger_local"
+    post_restart_tool_session.transcript_owner = "jaeger"
     tool_after_restart = _send(
-        session.session_id,
-        "After the restart, call get_time for Pacific/Kiritimati now. A new tool call is required; do not reuse or convert any earlier timestamp.",
+        post_restart_tool_session.session_id,
+        "You must call get_time now for timezone Pacific/Kiritimati. Do not estimate. Reply only with the returned timestamp.",
         backend, model=model, provider=provider,
     )
     tool_events_after = [

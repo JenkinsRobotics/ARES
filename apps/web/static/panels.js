@@ -40,11 +40,11 @@ let _logsSeverityFilter = 'all';
 
 // Map of panel names → i18n keys for the app titlebar label.
 const APP_TITLEBAR_KEYS = {
-  chat: 'tab_chat', dispatcher: 'tab_dispatcher', tasks: 'tab_tasks', skills: 'tab_skills',
+  chat: 'tab_chat', dispatcher: 'tab_dispatcher', overview: 'tab_overview', workbench: 'tab_workbench', tasks: 'tab_tasks', skills: 'tab_skills',
   memory: 'tab_memory', workspaces: 'tab_workspaces',
   profiles: 'tab_profiles', todos: 'tab_todos', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
 };
-const MAIN_VIEW_PANELS = ['settings','dispatcher','skills','memory','tasks','kanban','modelLab','content','workspaces','profiles','avatar','insights','logs','plugin'];
+const MAIN_VIEW_PANELS = ['settings','dispatcher','overview','workbench','skills','memory','tasks','kanban','modelLab','content','workspaces','profiles','avatar','insights','logs','plugin'];
 const MAIN_VIEW_SIDEBAR_PANEL_FALLBACKS = { plugin: 'settings' };
 
 /**
@@ -514,6 +514,8 @@ async function switchPanel(name, opts = {}) {
   if (prevPanel === 'dispatcher' && nextPanel !== 'dispatcher' && typeof leaveDispatcher === 'function') {
     leaveDispatcher(nextPanel);
   }
+  if (prevPanel === 'overview' && nextPanel !== 'overview' && typeof leaveOverview === 'function') leaveOverview(nextPanel);
+  if (prevPanel === 'workbench' && nextPanel !== 'workbench' && typeof leaveWorkbench === 'function') leaveWorkbench(nextPanel);
   _currentPanel = nextPanel;
   // Update nav tabs (rail + mobile sidebar-nav share data-panel)
   document.querySelectorAll('[data-panel]').forEach(t => t.classList.toggle('active', t.dataset.panel === nextPanel));
@@ -533,6 +535,8 @@ async function switchPanel(name, opts = {}) {
   }
   // Lazy-load panel data
   if (nextPanel === 'dispatcher' && typeof loadDispatcher === 'function') await loadDispatcher();
+  if (nextPanel === 'overview' && typeof loadOverview === 'function') await loadOverview();
+  if (nextPanel === 'workbench' && typeof loadWorkbench === 'function') await loadWorkbench();
   if (nextPanel === 'tasks') await loadCrons();
   if (nextPanel === 'kanban') await loadKanban();
   if (nextPanel === 'modelLab') await loadModelLab();

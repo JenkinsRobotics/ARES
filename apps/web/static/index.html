@@ -72,6 +72,7 @@
 })()</script>
 <link rel="stylesheet" href="static/style.css?v=__WEBUI_VERSION__">
   <link rel="stylesheet" href="static/dispatcher.css?v=__WEBUI_VERSION__">
+  <link rel="stylesheet" href="static/ares_hubs.css?v=__WEBUI_VERSION__">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" integrity="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh" crossorigin="anonymous">
   <!-- KaTeX math rendering CSS (loaded eagerly from vendored assets to prevent font CSP noise) -->
   <link rel="stylesheet" href="static/vendor/katex/0.16.22/katex.min.css">
@@ -156,6 +157,8 @@
   <nav class="rail" aria-label="Primary navigation">
     <button class="rail-btn nav-tab active has-tooltip" data-panel="chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat" aria-label="Chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="dispatcher" onclick="switchPanel('dispatcher',{fromRailClick:true})" data-tooltip="Dispatcher" aria-label="Dispatcher"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 12-14h-8V2Z"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="overview" onclick="switchPanel('overview',{fromRailClick:true})" data-tooltip="Overview" aria-label="Overview"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button>
+    <button class="rail-btn nav-tab has-tooltip" data-panel="workbench" onclick="switchPanel('workbench',{fromRailClick:true})" data-tooltip="Workbench" aria-label="Workbench"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V10M20 21V10M2 21h20M7 10V6a5 5 0 0 1 10 0v4M2 10h20"/><path d="M9 14h6"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="avatar" onclick="switchPanel('avatar',{fromRailClick:true})" data-tooltip="Avatar" data-i18n-title="tab_avatar" aria-label="Avatar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="12" cy="12" r="10"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks" aria-label="Tasks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="kanban" data-requires-capability="kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban" aria-label="Kanban"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
@@ -179,6 +182,8 @@
     <div class="sidebar-nav">
       <button class="nav-tab active has-tooltip has-tooltip--bottom" data-panel="chat" data-label="Chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="dispatcher" data-label="Dispatcher" onclick="switchPanel('dispatcher',{fromRailClick:true})" data-tooltip="Dispatcher"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 12-14h-8V2Z"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="overview" data-label="Overview" onclick="switchPanel('overview',{fromRailClick:true})" data-tooltip="Overview"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button>
+      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="workbench" data-label="Workbench" onclick="switchPanel('workbench',{fromRailClick:true})" data-tooltip="Workbench"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V10M20 21V10M2 21h20M7 10V6a5 5 0 0 1 10 0v4M2 10h20"/><path d="M9 14h6"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="avatar" data-label="Avatar" onclick="switchPanel('avatar',{fromRailClick:true})" data-tooltip="Avatar" data-i18n-title="tab_avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="12" cy="12" r="10"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="tasks" data-capability-domain="work_management" data-requires-capability="schedules" data-label="Tasks" onclick="switchPanel('tasks',{fromRailClick:true})" data-tooltip="Tasks" data-i18n-title="tab_tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="kanban" data-requires-capability="kanban" data-label="Kanban" onclick="switchPanel('kanban',{fromRailClick:true})" data-tooltip="Kanban" data-i18n-title="tab_kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/><path d="M16 4v16"/><path d="M3 10h18"/></svg></button>
@@ -240,6 +245,28 @@
           <button class="btn secondary" type="button" onclick="dispatcherOpenPanel('kanban')">Kanban queue</button>
         </div>
       </div>
+    </div>
+    <div class="panel-view" id="panelOverview">
+      <div class="panel-head"><span>Overview</span><div class="panel-head-actions"><button class="panel-head-btn has-tooltip has-tooltip--bottom" type="button" onclick="refreshOverview(true)" data-tooltip="Refresh overview" aria-label="Refresh overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div></div>
+      <nav class="hub-side-nav" aria-label="Overview sections">
+        <button class="active" data-overview-section="today" onclick="selectOverviewSection('today')">Today <span id="overviewTodayBadge"></span></button>
+        <button data-overview-section="inbox" onclick="selectOverviewSection('inbox')">Inbox <span id="overviewInboxBadge"></span></button>
+        <button data-overview-section="goals" onclick="selectOverviewSection('goals')">Goals</button>
+        <button data-overview-section="timeline" onclick="selectOverviewSection('timeline')">Timeline</button>
+        <button data-overview-section="operations" onclick="selectOverviewSection('operations')">Operations</button>
+      </nav>
+    </div>
+    <div class="panel-view" id="panelWorkbench">
+      <div class="panel-head"><span>Workbench</span><div class="panel-head-actions"><button class="panel-head-btn has-tooltip has-tooltip--bottom" type="button" onclick="refreshWorkbench(true)" data-tooltip="Refresh workbench" aria-label="Refresh workbench"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></div></div>
+      <nav class="hub-side-nav" aria-label="Workbench sections">
+        <button class="active" data-workbench-section="library" onclick="selectWorkbenchSection('library')">Library</button>
+        <button data-workbench-section="code" onclick="selectWorkbenchSection('code')">Code intelligence</button>
+        <button data-workbench-section="models" onclick="selectWorkbenchSection('models')">Model Lab</button>
+        <button data-workbench-section="skills" onclick="selectWorkbenchSection('skills')">Skill Studio</button>
+        <button data-workbench-section="content" onclick="selectWorkbenchSection('content')">Content Studio</button>
+        <button data-workbench-section="apps" onclick="selectWorkbenchSection('apps')">Connected apps</button>
+        <button data-workbench-section="personalization" onclick="selectWorkbenchSection('personalization')">Personalization</button>
+      </nav>
     </div>
     <div class="panel-view" id="panelTasks">
       <div class="panel-head">
@@ -862,6 +889,14 @@
           <section class="dispatcher-card"><div class="dispatcher-card-head"><strong>Operations</strong></div><div class="dispatcher-operation-grid"><button type="button" onclick="dispatcherOpenPanel('tasks')"><strong id="dispatcherTaskCount">—</strong><span>Scheduled jobs</span></button><button type="button" onclick="dispatcherOpenPanel('kanban')"><strong id="dispatcherKanbanCount">—</strong><span>Kanban tasks</span></button></div></section>
         </aside>
       </div>
+    </div>
+    <div id="mainOverview" class="main-view hub-main">
+      <header class="hub-header"><div><div class="hub-eyebrow">Your work and attention</div><h1 id="overviewHeading">Today</h1><p id="overviewSubheading">What is active, due, or waiting for you.</p></div><div class="hub-header-actions"><span class="hub-updated" id="overviewUpdated"></span><button class="btn secondary" type="button" onclick="switchPanel('dispatcher')">Open Dispatcher</button></div></header>
+      <div class="hub-content" id="overviewContent"><div class="hub-loading">Loading overview…</div></div>
+    </div>
+    <div id="mainWorkbench" class="main-view hub-main">
+      <header class="hub-header"><div><div class="hub-eyebrow">Research, build, and connect</div><h1 id="workbenchHeading">Library</h1><p id="workbenchSubheading">Search conversations, documents, and workspace knowledge.</p></div><div class="hub-header-actions"><span class="hub-updated" id="workbenchUpdated"></span></div></header>
+      <div class="hub-content" id="workbenchContent"><div class="hub-loading">Loading workbench…</div></div>
     </div>
     <div id="mainSkills" class="main-view">
       <div class="main-view-header">
@@ -1874,6 +1909,8 @@
 <script src="static/panels.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/avatar.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/dispatcher.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/overview.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/workbench.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/onboarding.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/boot.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/outline.js?v=__WEBUI_VERSION__" defer></script>

@@ -948,6 +948,8 @@ const LOCALES = {
     // Sidebar & Tabs
     tab_chat: 'Chat',
     tab_dispatcher: 'Dispatcher',
+    tab_overview: 'Overview',
+    tab_workbench: 'Workbench',
     tab_avatar: 'Avatar',
     tab_tasks: 'Tasks',
     tab_skills: 'Skills',

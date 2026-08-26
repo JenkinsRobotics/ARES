@@ -31,6 +31,8 @@ Commands:
   restart   Stop, then start again
   status    Show daemon and health status
   logs      Show the daemon log
+  chat      Send one prompt through production ARES HTTP/SSE
+  bookmarks Audit/review/apply/rollback Safari bookmarks locally
   doctor    Check system health and repair common issues
   update    Pull the latest code and rebuild the application
   setup     Launch native onboarding window (first-run setup)
@@ -298,6 +300,10 @@ case "${cmd}" in
     ;;
   stop|restart|status|logs)
     exec bash "${CTL_SCRIPT}" "${cmd}" "$@"
+    ;;
+  chat|bookmarks)
+    exec "${ARES_ROOT}/services/controller/.venv/bin/python" \
+      "${ARES_ROOT}/services/controller/scripts/ares_terminal.py" "${cmd}" "$@"
     ;;
   doctor)
     cmd_doctor

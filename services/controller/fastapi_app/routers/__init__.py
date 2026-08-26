@@ -65,6 +65,7 @@ from .content_features import router as content_features_router
 from .provider_compat import router as provider_compat_router
 from .harness import router as harness_router
 from .inventory import router as inventory_router
+from .safari_bookmarks import router as safari_bookmarks_router
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,7 @@ CORE_ROUTER_REGISTRY = (
     RouterRegistration("research", research_router),
     RouterRegistration("sam_conversation", sam_conversation_router),
     RouterRegistration("inventory", inventory_router),
+    RouterRegistration("safari_bookmarks", safari_bookmarks_router),
     RouterRegistration("provider_compat", provider_compat_router, legacy=True),
 )
 

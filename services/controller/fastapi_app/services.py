@@ -437,6 +437,11 @@ class AresCoreService:
                 enabled_toolsets=request.enabled_toolsets,
                 worktree_info=worktree_info,
             )
+            if request.source == "cli":
+                session.source_tag = "cli"
+                session.session_source = "cli"
+                session.source_label = "ARES Terminal"
+                session.is_cli_session = True
             try:
                 from api.session_contract import (
                     backend_for_session,

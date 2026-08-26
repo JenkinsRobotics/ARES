@@ -118,6 +118,7 @@ class SessionCreate(BaseModel):
     project_id: str | None = Field(default=None, max_length=256)
     enabled_toolsets: list[str] | None = None
     worktree: bool = False
+    source: Literal["webui", "cli"] = "webui"
 
 
 class SessionMutation(BaseModel):

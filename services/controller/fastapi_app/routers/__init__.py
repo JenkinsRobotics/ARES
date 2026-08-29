@@ -63,6 +63,7 @@ from .native_system import router as native_system_router
 from .companion import router as companion_router
 from .content_features import router as content_features_router
 from .provider_compat import router as provider_compat_router
+from .agent_governance import router as agent_governance_router
 from .harness import router as harness_router
 from .inventory import router as inventory_router
 from .safari_bookmarks import router as safari_bookmarks_router
@@ -142,6 +143,7 @@ CORE_ROUTER_REGISTRY = (
     RouterRegistration("inventory", inventory_router),
     RouterRegistration("safari_bookmarks", safari_bookmarks_router),
     RouterRegistration("provider_compat", provider_compat_router, legacy=True),
+    RouterRegistration("agent_governance", agent_governance_router),
 )
 
 

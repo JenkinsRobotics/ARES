@@ -11,6 +11,12 @@
   <header><div><span class="mark">A</span><strong>ARES</strong><small>Autonomous Reasoning and Execution System</small></div><button id="pause" class="danger">Pause all</button></header>
   <main>
     <section class="hero"><div><p class="eyebrow">LOCAL CONTROL PLANE</p><h1>Independent agents.<br><em>One accountable loop.</em></h1><p>ARES coordinates goals, wakeups, approvals and evidence. Agent memory, tools, sessions and credentials remain with their owners.</p></div><div id="system" class="system">Loading controller…</div></section>
+    <section class="system-console">
+      <div class="section-title"><div><p class="eyebrow">SYSTEM INBOX</p><h2>Message the coordinated assistant</h2></div><div class="service-links"><a id="hermesLink">Hermes</a><a id="jaegerLink">Jaeger</a><a id="n8nLink">n8n</a><a id="gatewayLink">Gateway</a></div></div>
+      <p class="muted">Auto currently delegates to Hermes. Choose Jaeger explicitly when you want Jaeger's native tools, identity, or macOS runtime.</p>
+      <div class="composer"><select id="systemAgent"><option value="hermes">Auto · Hermes</option><option value="jaeger">JaegerAI</option></select><textarea id="systemMessage" placeholder="Tell the System what outcome you want…"></textarea><button id="sendSystem" class="primary">Send</button></div>
+      <pre id="systemResult" class="system-result">No System run started in this browser yet.</pre>
+    </section>
     <section><div class="section-title"><h2>Connected agents</h2><span>Open an agent UI or trigger work</span></div><div id="agents" class="grid"></div></section>
     <section class="columns"><div><div class="section-title"><h2>Goals</h2><button id="newGoal">New goal</button></div><div id="goals" class="stack"></div></div><div><div class="section-title"><h2>Pending approvals</h2></div><div id="approvals" class="stack"></div></div></section>
     <section><div class="section-title"><h2>Run ledger</h2><button id="refresh">Refresh</button></div><div id="runs" class="stack"></div></section>

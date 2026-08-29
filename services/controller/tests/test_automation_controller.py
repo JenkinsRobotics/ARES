@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import threading
 import time
 
 from fastapi.testclient import TestClient
@@ -214,6 +216,44 @@ def test_hermes_adapter_uses_runtime_owned_configuration_api():
     assert ("POST", "/api/memory/write", {"section": "soul", "content": "After\n"}) in calls
 
 
+def test_hermes_adapter_recovers_when_runtime_history_was_cleaned(tmp_path, monkeypatch):
+    calls = []
+
+    class Process:
+        def __init__(self, args, **_kwargs):
+            calls.append(args)
+            self.returncode = 1 if "--resume" in args else 0
+
+        def communicate(self, timeout):
+            assert timeout > 0
+            if self.returncode:
+                return "", "Session not found: deleted-session"
+            return "fresh answer\nsession_id: fresh-session\n", ""
+
+        def terminate(self):
+            return None
+
+    monkeypatch.setattr("core.automation.adapters.subprocess.Popen", Process)
+    adapter = HermesAdapter(command="/runtime/hermes")
+    agent = Agent.from_dict({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "reference", "model": "", "workspace": str(tmp_path),
+    })
+    events = []
+    result = adapter.start_run(
+        agent, "continue", "deleted-session",
+        lambda kind, data: events.append((kind, data)),
+        __import__("threading").Event(),
+    )
+
+    assert result.error == ""
+    assert result.session_id == "fresh-session"
+    assert result.text == "fresh answer"
+    assert "--resume" in calls[0]
+    assert "--resume" not in calls[1]
+    assert events[0][0] == "checkpoint"
+
+
 def test_global_pause_blocks_new_work(tmp_path):
     controller = service(tmp_path)
     controller.put_agent({"id": "hermes", "runtime": "hermes", "name": "Hermes", "identity": "worker", "model": "", "workspace": "/workspace"})
@@ -271,3 +311,81 @@ def test_interrupted_run_is_checkpointed_for_safe_resume(tmp_path):
     recovered = controller.snapshot()
     assert recovered["runs"][0]["status"] == "continue"
     assert recovered["events"][0]["type"] == "checkpoint"
+
+
+def test_cancellation_stops_adapter_and_remains_terminal(tmp_path):
+    class BlockingAdapter(FakeAdapter):
+        def start_run(self, agent, prompt, session_id, emit, cancel):
+            assert cancel.wait(2)
+            return AdapterResult("", session_id, "cancelled")
+
+    adapter = BlockingAdapter()
+    controller = AutomationService(
+        store=AutomationStore(tmp_path / "automation.json"),
+        adapters={"hermes": adapter, "jaeger": adapter},
+    )
+    controller.put_agent({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "worker", "model": "", "workspace": "/workspace",
+    })
+    goal = controller.create_goal({"agent_id": "hermes", "objective": "hold"})
+    run = controller.wake("hermes", goal_id=goal["id"])
+    cancelled = controller.cancel(run["id"])
+    assert cancelled["status"] == "cancelled"
+    time.sleep(0.05)
+    assert controller._run(run["id"])["status"] == "cancelled"
+
+
+def test_failed_runs_retry_with_bounded_backoff(tmp_path):
+    class FailingAdapter(FakeAdapter):
+        def start_run(self, agent, prompt, session_id, emit, cancel):
+            return AdapterResult("", session_id or "failed-session", "temporary failure")
+
+    adapter = FailingAdapter()
+    controller = AutomationService(
+        store=AutomationStore(tmp_path / "automation.json"),
+        adapters={"hermes": adapter, "jaeger": adapter},
+    )
+    controller.put_agent({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "worker", "model": "", "workspace": "/workspace",
+        "heartbeat_minutes": 1,
+    })
+    goal = controller.create_goal({"agent_id": "hermes", "objective": "retry"})
+    first = controller.wake("hermes", goal_id=goal["id"], attempt=1)
+    first = wait_for_run(controller, first["id"])
+    second = controller.tick(now=first["finished_at"] + 31)[0]
+    second = wait_for_run(controller, second["id"])
+    third = controller.tick(now=second["finished_at"] + 61)[0]
+    third = wait_for_run(controller, third["id"])
+    assert [first["attempt"], second["attempt"], third["attempt"]] == [1, 2, 3]
+    assert controller.tick(now=third["finished_at"] + 3600) == []
+
+
+def test_hermes_timeout_terminates_child_and_fails_closed(tmp_path, monkeypatch):
+    class TimedOutProcess:
+        returncode = 1
+
+        def __init__(self, *_args, **_kwargs):
+            self.terminated = False
+            self.communications = 0
+
+        def communicate(self, timeout):
+            self.communications += 1
+            if self.communications == 1:
+                raise subprocess.TimeoutExpired("hermes", timeout)
+            assert self.terminated
+            return "", "terminated"
+
+        def terminate(self):
+            self.terminated = True
+
+    monkeypatch.setattr("core.automation.adapters.subprocess.Popen", TimedOutProcess)
+    adapter = HermesAdapter(command="/runtime/hermes")
+    agent = Agent.from_dict({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "reference", "model": "", "workspace": str(tmp_path),
+        "timeout_seconds": 10,
+    })
+    result = adapter.start_run(agent, "work", "", lambda *_: None, threading.Event())
+    assert result.error == "Hermes run timed out"

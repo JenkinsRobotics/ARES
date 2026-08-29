@@ -17,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .adapters import AdapterRegistry
+from .a2a_server import install_a2a_routes
 from .errors import CoreApiError
 from .frontend import CsrfTokenResolver, create_frontend_router
 from .lifecycle import ares_lifespan
@@ -63,6 +64,7 @@ def create_app(
     core_service: AresCoreService | None = None,
     realtime_service: RealtimeService | None = None,
     adapter_registry: AdapterRegistry | None = None,
+    automation_service: AutomationService | None = None,
     enable_lifecycle: bool = False,
 ) -> FastAPI:
     """Build the application, optionally without background services for tests.
@@ -79,7 +81,7 @@ def create_app(
         lifespan=ares_lifespan if enable_lifecycle else None,
     )
     application.state.core_service = core_service or AresCoreService()
-    application.state.automation_service = AutomationService()
+    application.state.automation_service = automation_service or AutomationService()
     application.state.requests_total = 0
     application.state.last_request_at = 0.0
     registry = (
@@ -116,6 +118,10 @@ def create_app(
 
     if install_api_routes is not None:
         install_api_routes(application)
+
+    # ARES publishes one protocol-level System identity.  The executor only
+    # delegates to runtime adapters; it does not absorb either agent loop.
+    install_a2a_routes(application, application.state.automation_service)
 
     # Keep this last. Route order is part of the API-not-swallowed invariant.
     application.include_router(

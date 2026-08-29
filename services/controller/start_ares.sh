@@ -5,6 +5,7 @@
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+export PYTHONPATH="$DIR/../..${PYTHONPATH:+:$PYTHONPATH}"
 
 # Port 8787 remains unused for compatibility with older local deployments.
 export ARES_WEBUI_PORT="${ARES_WEBUI_PORT:-8788}"

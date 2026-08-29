@@ -1,48 +1,99 @@
 # ARES
 
-ARES is a local automation controller for independently owned AI agents. It
-defines identities, goals, schedules, budgets, permissions and approvals, then
-wakes Hermes or JaegerAI through explicit adapters and evaluates the result.
+ARES is the local control fabric for independently owned AI agents. It gives a
+person or another agent one audited place to create goals, route work, approve
+consequential actions, and inspect results without turning ARES into another
+chat model or copying an agent's private memory.
 
-ARES is not a chat agent, model runtime, shared memory store, or WebUI clone.
-Hermes and Jaeger retain their own tools, sessions, memory and credentials.
+Hermes Agent and JaegerAI remain useful on their own. ARES connects them with
+explicit adapters and default-deny sharing.
 
-## Quick start
+## What runs on this Mac
+
+| Service | Role | Location | Address |
+| --- | --- | --- | --- |
+| Hermes Agent + WebUI | Stable reference agent | Apple container | `http://127.0.0.1:8787` |
+| JaegerAI + WebUI adapter | Native macOS agent | Host | `http://127.0.0.1:8790` |
+| ARES System dashboard/API | Goals, routing, approvals, audit | Host | `http://127.0.0.1:8788` |
+| Agentgateway | Authenticated MCP and A2A edge | Host | MCP `8811`, A2A `8812` |
+| n8n | Optional deterministic workflow executor | Apple container | `http://127.0.0.1:5678` |
+| Ollama | Local weights and Ollama Cloud routing | Host | `http://127.0.0.1:11434` |
+
+ARES never imports Hermes Agent or JaegerAI. Hermes is invoked through its
+installed launcher; Jaeger is reached through its versioned native runner API.
+Each agent owns its own sessions, memory, tools, credentials, and model policy.
+
+## Install the System fabric
+
+The checked-in lock file pins the external components and checksums used by the
+installer. On an Apple Silicon Mac with Apple `container`, Hermes, JaegerAI,
+ARES, and Ollama already installed:
 
 ```bash
-git clone https://github.com/JenkinsRobotics/ARES.git
-cd ARES
-cd services/controller
-.venv/bin/python -m uvicorn fastapi_app.main:app --host 127.0.0.1 --port 8788
+cd ~/GitHub/ARES/services/controller
+.venv/bin/pip install -r requirements.txt
+
+cd ~/GitHub/ARES
+./scripts/install-agentgateway.py
+./scripts/configure-system-fabric.py
+./scripts/install-n8n-container.sh
+./scripts/install-system-services.py
 ```
 
-Open `http://127.0.0.1:8788` for the lightweight agent/goal/run/approval
-dashboard. It also links to Hermes (`8787`) and Jaeger (`8790`). Keep ARES on
-loopback; network exposure is opt-in and requires authentication.
+The service installer creates login jobs for Agentgateway and the managed Apple
+containers. ARES and Jaeger retain their existing native launch jobs during
+development.
 
-## Runtime topology
+n8n is optional and starts loopback-only with a dedicated state directory and
+the single shared folder `~/workspace`. Finish n8n's owner setup locally before
+considering remote access.
 
-- Hermes Agent + Hermes WebUI: stable Apple container, port `8787`.
-- JaegerAI + its Hermes-WebUI-derived interface: native macOS, port `8790`.
-- ARES controller dashboard: native during development, port `8788`.
-- Ollama and all downloaded model weights: Mac host, independently consumed by
-  both agents.
+## Talk to the system
 
-Sharing tools, memory, sessions or credentials is denied unless an explicit,
-scoped grant exists. Credentials are represented only by opaque Keychain
-references.
+The ARES dashboard has a small System Inbox. Pick Hermes or Jaeger and send a
+goal; ARES records the goal, run, events, and final state.
+
+Agentic clients such as Claude Code, Codex, and other MCP clients can connect to:
+
+```text
+http://127.0.0.1:8811/mcp
+Authorization: Bearer <contents of ~/.ares/gateway/client.token>
+```
+
+Tools are namespaced as `system_*`, `hermes_*`, and `jaeger_*`. ARES also
+publishes an official A2A v1 Agent Card at:
+
+```text
+http://127.0.0.1:8812/.well-known/agent-card.json
+```
+
+A2A calls require the same bearer token and `A2A-Version: 1.0`. Prefix a request
+with `@hermes` or `@jaeger` to choose explicitly; otherwise the configured
+default is Hermes.
+
+## Safety boundary
+
+- Sharing tools, memory, sessions, workspaces, or credentials is off unless a
+  scoped grant says otherwise.
+- Credentials are opaque Keychain references, never values stored in ARES JSON.
+- ARES executes one leased run per agent and records immutable run events.
+- Consequential operations fail closed and require approval.
+- The global pause blocks new work without deleting active session history.
+- Browser services bind to loopback; Tailscale publication is an explicit host
+  configuration, not a repository default.
+- Agentgateway's admin, metrics, and readiness endpoints bind to loopback. MCP
+  and A2A require a generated API key.
 
 ## Repository map
 
-- `services/controller/apps/dashboard/static/` — minimal controller dashboard
-- `apps/macos/` — Swift macOS shell and native tools
-- `services/controller/` — FastAPI controller and tests
-- `integrations/` — versioned runtime/provider adapters
-- `core/` — ARES-owned authority and package boundary
-- `docs/` — current architecture, API, security, and decisions
+- `services/controller/core/automation/` — durable goals, runs, policy, adapters
+- `services/controller/fastapi_app/a2a_server.py` — official A2A v1 surface
+- `services/controller/system_mcp_server.py` — ARES control-plane MCP tools
+- `services/controller/jaeger_mcp_proxy.py` — MCP-to-native-Jaeger bridge
+- `services/controller/apps/dashboard/static/` — lightweight System dashboard
+- `scripts/` — checksum-verified gateway, container, and launchd installers
+- `config/system-fabric.lock.json` — pinned external dependencies
+- `docs/system-fabric.md` — protocol, state, and security details
 
-Runtime inventory and capability status are calculated dynamically. Query the
-authenticated `/api/inventory` endpoint instead of relying on documented counts.
-
-See `docs/vision.md`, `docs/architecture.md`, `docs/development.md`, and
-`docs/api.md`.
+See `DOCTRINE.md`, `docs/architecture.md`, `docs/api.md`, and
+`docs/development.md` before changing ownership boundaries.

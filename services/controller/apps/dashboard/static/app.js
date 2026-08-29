@@ -5,6 +5,30 @@ const esc = value => String(value ?? '').replace(
 );
 let snapshot = {agents: [], goals: [], runs: [], approvals: [], paused: false};
 let configurationAgent = '';
+const isLocalBrowser = ['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname);
+
+function serviceUrl(service) {
+  if (isLocalBrowser) {
+    return {
+      hermes: 'http://127.0.0.1:8787/', jaeger: 'http://127.0.0.1:8790/',
+      n8n: 'http://127.0.0.1:5678/', gateway: 'http://127.0.0.1:15000/ui',
+    }[service];
+  }
+  const host = window.location.hostname;
+  return {hermes: `https://${host}/`, jaeger: `https://${host}:8443/`}[service] || '';
+}
+
+function configureServiceLinks() {
+  for (const [id, service] of [
+    ['hermesLink', 'hermes'], ['jaegerLink', 'jaeger'],
+    ['n8nLink', 'n8n'], ['gatewayLink', 'gateway'],
+  ]) {
+    const element = $(id);
+    const href = serviceUrl(service);
+    if (href) element.href = href;
+    else element.hidden = true;
+  }
+}
 
 async function api(path, options = {}) {
   const headers = {'Content-Type': 'application/json', ...(options.headers || {})};
@@ -35,7 +59,7 @@ function render() {
       <p>${esc(agent.identity)}</p>
       <div class="muted">${esc(agent.runtime)} · ${esc(agent.model || 'agent default')}</div>
       <div class="actions">
-        <a class="button" href="${agent.runtime === 'hermes' ? 'http://127.0.0.1:8787' : 'http://127.0.0.1:8790'}">Open UI</a>
+        <a class="button" href="${serviceUrl(agent.runtime)}">Open UI</a>
         <button class="primary" onclick="wake('${esc(agent.id)}')">Wake</button>
         ${agent.runtime === 'hermes' ? `<button onclick="configure('${esc(agent.id)}')">Configure</button>` : ''}
       </div>
@@ -55,6 +79,45 @@ async function wake(agent, goalId = '') {
     await load();
   } catch (error) {
     alert(error.message);
+  }
+}
+
+async function sendSystemMessage() {
+  const objective = $('systemMessage').value.trim();
+  const agent = $('systemAgent').value;
+  if (!objective) return;
+  $('sendSystem').disabled = true;
+  $('systemResult').textContent = 'Creating a durable goal…';
+  try {
+    const goal = await api('/api/goals', {
+      method: 'POST', body: JSON.stringify({agent_id: agent, objective}),
+    });
+    const run = await api(`/api/agents/${encodeURIComponent(agent)}/wake`, {
+      method: 'POST',
+      body: JSON.stringify({goal_id: goal.id, trigger: 'system_ui', idempotency_key: crypto.randomUUID()}),
+    });
+    $('systemMessage').value = '';
+    $('systemResult').textContent = `Delegated to ${agent}.\nRun: ${run.id}\nStatus: ${run.status}`;
+    const poll = setInterval(async () => {
+      try {
+        const runs = await api('/api/runs');
+        const current = runs.find(row => row.id === run.id);
+        if (!current) return;
+        $('systemResult').textContent = `Agent: ${agent}\nRun: ${run.id}\nStatus: ${current.status}\n\n${current.result || current.error || 'Working…'}`;
+        if (!['queued', 'running'].includes(current.status)) {
+          clearInterval(poll);
+          $('sendSystem').disabled = false;
+          await load();
+        }
+      } catch (error) {
+        clearInterval(poll);
+        $('systemResult').textContent = error.message;
+        $('sendSystem').disabled = false;
+      }
+    }, 1500);
+  } catch (error) {
+    $('systemResult').textContent = error.message;
+    $('sendSystem').disabled = false;
   }
 }
 
@@ -90,6 +153,10 @@ $('pause').onclick = async () => {
   await load();
 };
 $('refresh').onclick = load;
+$('sendSystem').onclick = sendSystemMessage;
+$('systemMessage').addEventListener('keydown', event => {
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendSystemMessage();
+});
 $('newGoal').onclick = () => $('goalDialog').showModal();
 $('saveGoal').onclick = async event => {
   event.preventDefault();
@@ -113,5 +180,6 @@ $('saveConfiguration').onclick = async event => {
   }
 };
 
+configureServiceLinks();
 load().catch(error => $('system').textContent = error.message);
 setInterval(load, 10000);

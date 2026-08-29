@@ -13,7 +13,39 @@
 
 This document describes stable, product-relevant contracts implemented by the
 ARES controller. The router source and generated OpenAPI schema remain the
-complete route inventory.
+complete route inventory. The System automation API below is the current
+control-plane interface; later sections document legacy product surfaces that
+remain in the repository during migration.
+
+## System automation API
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET`, `PUT` | `/api/agents` | Inspect or update identity, runtime, schedule, budget, and policy |
+| `GET`, `POST` | `/api/goals` | Inspect or create durable goals |
+| `POST` | `/api/agents/{id}/wake` | Create one leased run for an agent |
+| `GET` | `/api/runs` | Inspect durable runs |
+| `GET` | `/api/runs/{id}/events` | Read normalized immutable evidence events |
+| `POST` | `/api/runs/{id}/cancel` | Request safe cancellation |
+| `GET`, `POST` | `/api/approvals` | Inspect or resolve consequential operations |
+| `POST` | `/api/control/pause`, `/api/control/resume` | Change global admission pause |
+| `POST` | `/api/control/tick` | Evaluate scheduled/heartbeat wakeups |
+
+An agent wake requires a goal created for that same agent. `idempotency_key`
+deduplicates retries. Run event types are `run_started`, `text_delta`,
+`reasoning_delta`, `tool_requested`, `tool_result`, `approval_required`,
+`checkpoint`, `run_completed`, and `run_failed`.
+
+Agent-owned session IDs may appear in run records solely for resume. Agent
+transcripts, memory contents, and credential values are not System API data.
+
+### Protocol edges
+
+- MCP: `http://127.0.0.1:8811/mcp`, strict bearer token from
+  `~/.ares/gateway/client.token`.
+- A2A Agent Card: `http://127.0.0.1:8812/.well-known/agent-card.json`.
+- A2A JSON-RPC: `http://127.0.0.1:8812/a2a`, bearer token plus
+  `A2A-Version: 1.0`.
 
 `GET /api/ares/backend` returns the profile/session selection plus a `status`
 map derived from the canonical framework-adapter registry. It must not report

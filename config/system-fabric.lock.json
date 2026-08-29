@@ -1,0 +1,20 @@
+{
+  "agentgateway": {
+    "version": "1.5.0",
+    "darwin_arm64_asset": "agentgateway-darwin-arm64",
+    "sha256": "da432d35bd696da0564f7b2b6bbc783542b6b9c616d6c0c4d4c3daef9dfa11a1",
+    "source": "https://github.com/agentgateway/agentgateway/releases/tag/v1.5.0",
+    "license": "Apache-2.0"
+  },
+  "a2a_sdk": {
+    "package": "a2a-sdk[http-server]",
+    "version": "1.1.2",
+    "source": "https://github.com/a2aproject/a2a-python",
+    "license": "Apache-2.0"
+  },
+  "n8n": {
+    "image": "docker.io/n8nio/n8n:2.14.2",
+    "role": "optional workflow executor",
+    "license_note": "Sustainable Use License; ARES connects to it as an external service"
+  }
+}

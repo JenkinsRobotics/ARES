@@ -1,29 +1,27 @@
-# ARES Vision: The Cognitive Operating System
+# ARES vision
 
-ARES is a professional-grade control surface for artificial intelligence. It transforms the "black box" of LLMs into a transparent, tunable, and verifiable personal assistant.
+ARES makes independently built agent frameworks behave like one understandable
+personal system without pretending they share one brain.
 
-## The Core Ambition
-To provide the average person with the professional research tools used by AI engineers—polished into a seamless, mass-market software experience.
+The user may talk directly to Hermes, directly to JaegerAI, or through the
+System Inbox. The System route follows explicit policy and preserves the chosen
+agent's identity and session. A shared control policy can make the experience
+coherent, while ownership boundaries prevent accidental credential, memory, or
+tool leakage.
 
-## The Product Pillars
+## Product principles
 
-### 1. Verifiable Autonomy (The Glass Box)
-ARES rejects the "magic" of invisible automation. Every action taken by the assistant is backed by a checkable model. The user can always see:
-- Which model/weights were used.
-- What prompts were injected.
-- Which tools were executed.
-- How to verify the result manually.
+1. **One relationship, visible routing.** The system can feel continuous, but
+   every run shows which agent acted and why.
+2. **Independent agents.** Hermes and Jaeger remain complete, directly usable
+   products when ARES is stopped.
+3. **Closed-loop automation.** ARES supplies schedules, wakeups, evaluation,
+   pause, approval, retry, and audit—not model reasoning.
+4. **Default-deny sharing.** Tools, memory, sessions, workspaces, and credentials
+   cross a boundary only through an explicit scoped grant.
+5. **Replaceable plumbing.** MCP, A2A, Agentgateway, and optional workflow
+   engines are dependencies behind contracts, not forks that ARES must own.
+6. **Reproducible setup.** Pinned installers and conservative defaults should
+   let another Mac reproduce the topology without copying personal state.
 
-### 2. Unified Digital Presence
-ARES presents a stable product identity across runtimes. ARES owns product preferences and metadata; JaegerAI owns authoritative agent transcripts and execution state. The versioned adapter contract keeps that boundary explicit.
-
-### 3. Omni-Channel Interaction
-A seamless transition between text, voice, and video, maintaining a single continuous state.
-
-### 4. Transferable Competence
-ARES is designed to make the user more capable. By exposing the mechanism of its actions, ARES teaches the user how their system works, turning the assistant into a flight instructor for the digital age.
-
-## Architectural Stance
-ARES is an **Orchestrator Shell**. It does not seek to recreate the wheel of multi-agent frameworks or inference engines. Instead, it integrates the best available "engines" (Neural Nets, LLMs, Logic Frameworks) via a standardized adapter layer.
-
-ARES owns the **Relationship**; the Workers own the **Execution**.
+ARES is the system around the assistants. It is not a third assistant.

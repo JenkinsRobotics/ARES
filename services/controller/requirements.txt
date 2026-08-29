@@ -29,6 +29,9 @@ fastapi>=0.115.14,<0.116; python_version < "3.10"
 fastapi>=0.136.3,<1.0; python_version >= "3.10"
 uvicorn[standard]>=0.30.6,<0.41; python_version < "3.10"
 uvicorn[standard]>=0.41.0,<1.0; python_version >= "3.10"
+# Official Linux Foundation A2A SDK. ARES publishes its deterministic System
+# router through this protocol; Hermes and Jaeger remain independent runtimes.
+a2a-sdk[http-server]==1.1.2
 # Pydantic resolves postponed model annotations at runtime. Python 3.9 needs
 # this compatibility evaluator for PEP 604 union strings such as ``str | None``.
 eval-type-backport>=0.2.2,<1.0; python_version < "3.10"

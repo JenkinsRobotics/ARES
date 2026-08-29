@@ -3,40 +3,61 @@
 ## Product boundary
 
 ```text
-User → ARES UI → ARES controller → versioned adapter → JaegerAI
+                         ┌─ Hermes Agent (container) ─ Ollama on Mac
+User / MCP / A2A ─ ARES ─┤
+                         └─ JaegerAI (native Mac) ─── Ollama on Mac
 ```
 
-ARES owns UI workflows and product metadata. JaegerAI owns agent execution,
-transcripts, tools, skills, MCP, credentials, models, personas, and runtime
-history. ARES combines owner projections but does not duplicate authoritative
-transcripts or edit JaegerAI files.
+ARES is deterministic control-plane plumbing. It selects an agent from explicit
+policy, creates a durable goal and leased run, relays the request through an
+adapter, records evidence, and evaluates the returned status. It does not choose
+answers, run inference, execute another agent's tools, or merge agent memory.
 
-## Integration rules
+The direct Hermes and Jaeger browser/CLI paths do not depend on ARES.
 
-- The stdio bridge is the canonical local JaegerAI transport.
-- The bridge advertises a versioned contract and live capabilities.
-- ARES routes mutations to the owner and treats retries as idempotent.
-- Session deletion uses tombstones so imports or restarts cannot resurrect it.
-- Secrets remain in the owner credential service; ARES receives references or
-  redacted status only.
-- UI features stay visible with explicit unavailable states. User settings may
-  disable a feature or plugin.
+## Ownership map
 
-### External worker source boundary
+| Owner | Authoritative state |
+| --- | --- |
+| Hermes | Hermes sessions, transcripts, memory, identity, tools, credentials, model policy |
+| JaegerAI | Jaeger sessions, transcripts, memory, identity, tools, credentials, model policy |
+| ARES | Definitions, goals, schedules, budgets, runs, approvals, grants, audit events |
+| Agentgateway | Edge configuration, API-key policy, transient protocol sessions |
+| n8n | Optional workflow definitions and execution state |
 
-ARES does not import or copy the worker's execution loop. Development source mounts can be removed
-without changing the product contract; only the installed
-runtime launcher and versioned bridge are dependencies.
+ARES stores only owner-issued session identifiers needed to resume a run. If an
+agent deletes its history, the adapter discards the stale identifier and starts
+a fresh owner session.
 
-## Dynamic inventory
+## Protocol boundaries
 
-Routers, routes, tools, skills, plugins, MCP servers, and capabilities are
-enumerated from their registries and negotiated runtime contract. Documentation
-does not contain numeric inventory claims.
+- `HermesAdapter` runs the installed `hermes` launcher noninteractively. Hermes
+  remains containerized and chooses its configured model.
+- `JaegerAdapter` calls the native versioned runner on `127.0.0.1:8791`.
+- `system_mcp_server.py` exposes safe controller operations through MCP.
+- `jaeger_mcp_proxy.py` maps MCP directly onto the native Jaeger runner without
+  importing or booting Jaeger.
+- Agentgateway federates MCP targets on `8811` and protects MCP/A2A with a
+  generated bearer key.
+- The official A2A Python SDK publishes an A2A v1 Agent Card and JSON-RPC handler.
 
-## Extensibility
+## Closed loop
 
-Agent-callable integrations use tools, skills, MCP, or the generic plugin
-manifest. App-only presentation belongs to ARES. Sidecars bind to loopback,
-authenticate, receive only declared environment variables, and require approval
-for administrative actions.
+1. A wake creates an immutable run record with agent, goal, policy version,
+   trigger, attempt, and idempotency key.
+2. A per-agent lease admits one active run.
+3. The adapter streams normalized events and returns the owner session ID.
+4. ARES evaluates `continue`, `complete`, `blocked`, `approval_required`,
+   `failed`, `paused`, or `cancelled`.
+5. Heartbeats may wake incomplete goals; bounded retries retain evidence.
+6. Global pause blocks admission without modifying owner sessions.
+
+## Access boundary
+
+Browser and management interfaces bind to loopback. Hermes receives only its
+declared Apple-container mounts. n8n receives its state directory and
+`~/workspace`, not the user's home folder or credential stores. Jaeger stays
+native because audio, Metal, Accessibility, and other macOS capabilities cannot
+be delegated safely to a Linux container.
+
+See `system-fabric.md` for ports, installation, and protocol details.

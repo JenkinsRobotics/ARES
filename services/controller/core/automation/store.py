@@ -48,7 +48,8 @@ class AutomationStore:
         }
 
     def _write(self, value: dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.path.parent.chmod(0o700)
         fd, temporary = tempfile.mkstemp(prefix="automation-", suffix=".json", dir=self.path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:

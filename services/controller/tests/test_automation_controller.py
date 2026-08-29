@@ -102,6 +102,30 @@ def test_heartbeat_tick_resumes_incomplete_goal_with_bounded_idempotency(tmp_pat
     assert controller.tick(now=181) == []  # fake adapter completed the durable goal
 
 
+def test_duplicate_wake_is_rejected_before_a_run_record_is_written(tmp_path):
+    class BlockingAdapter(FakeAdapter):
+        def start_run(self, agent, prompt, session_id, emit, cancel):
+            time.sleep(0.15)
+            return super().start_run(agent, prompt, session_id, emit, cancel)
+
+    controller = AutomationService(
+        store=AutomationStore(tmp_path / "automation.json"),
+        adapters={"hermes": BlockingAdapter(), "jaeger": BlockingAdapter()},
+    )
+    controller.put_agent({"id": "hermes", "runtime": "hermes", "name": "Hermes", "identity": "worker", "model": "", "workspace": "/workspace"})
+    goal = controller.create_goal({"agent_id": "hermes", "objective": "hold lease"})
+    first = controller.wake("hermes", goal_id=goal["id"], idempotency_key="first")
+    try:
+        controller.wake("hermes", goal_id=goal["id"], idempotency_key="second")
+    except RuntimeError as exc:
+        assert "active" in str(exc)
+    else:
+        raise AssertionError("duplicate wake was admitted")
+    assert [row["id"] for row in controller.snapshot()["runs"]] == [first["id"]]
+    assert controller.tick(now=time.time() + 3600) == []
+    wait_for_run(controller, first["id"])
+
+
 def test_interrupted_run_is_checkpointed_for_safe_resume(tmp_path):
     store = AutomationStore(tmp_path / "automation.json")
     state = store.read()

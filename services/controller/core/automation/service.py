@@ -59,22 +59,25 @@ class AutomationService:
         return goal.as_dict()
 
     def wake(self, agent_id: str, *, goal_id: str = "", trigger: str = "manual", idempotency_key: str = "", attempt: int = 1) -> dict[str, Any]:
-        state = self.snapshot()
-        if state["paused"]:
-            raise RuntimeError("ARES is paused")
-        agent = self._agent(agent_id, state)
-        if not agent.enabled:
-            raise RuntimeError("agent is disabled")
-        goal = next((row for row in state["goals"] if row["id"] == goal_id), None) if goal_id else next((row for row in state["goals"] if row["agent_id"] == agent_id and row["status"] == "active"), None)
-        if goal is None:
-            raise ValueError("active goal not found")
-        if idempotency_key:
-            existing = next((row for row in state["runs"] if row.get("idempotency_key") == idempotency_key), None)
-            if existing:
-                return existing
-        run = Run(id=self._id("run"), agent_id=agent_id, goal_id=goal["id"], trigger=trigger, policy_version=agent.policy_version, created_at=time.time(), attempt=max(1, attempt))
-        record = {**run.as_dict(), "idempotency_key": idempotency_key}
-        self.store.update(lambda current: current["runs"].append(record))
+        with self._guard:
+            state = self.snapshot()
+            if state["paused"]:
+                raise RuntimeError("ARES is paused")
+            agent = self._agent(agent_id, state)
+            if not agent.enabled:
+                raise RuntimeError("agent is disabled")
+            goal = next((row for row in state["goals"] if row["id"] == goal_id), None) if goal_id else next((row for row in state["goals"] if row["agent_id"] == agent_id and row["status"] == "active"), None)
+            if goal is None:
+                raise ValueError("active goal not found")
+            if idempotency_key:
+                existing = next((row for row in state["runs"] if row.get("idempotency_key") == idempotency_key), None)
+                if existing:
+                    return existing
+            if any(row["agent_id"] == agent_id and row["status"] in {"queued", "running"} for row in state["runs"]):
+                raise RuntimeError("another run is active for this agent")
+            run = Run(id=self._id("run"), agent_id=agent_id, goal_id=goal["id"], trigger=trigger, policy_version=agent.policy_version, created_at=time.time(), attempt=max(1, attempt))
+            record = {**run.as_dict(), "idempotency_key": idempotency_key}
+            self.store.update(lambda current: current["runs"].append(record))
         cancel = threading.Event()
         self._cancellations[run.id] = cancel
         threading.Thread(target=self._execute, args=(run.id, cancel), name=f"ares-{run.id}", daemon=True).start()
@@ -111,8 +114,10 @@ class AutomationService:
                 if goal is None:
                     continue
                 runs = [row for row in state["runs"] if row["agent_id"] == agent.id and row["goal_id"] == goal["id"]]
+                if any(row["status"] in {"queued", "running"} for row in runs):
+                    continue
                 latest = runs[-1] if runs else None
-                if latest and latest["status"] in {"queued", "running", "complete", "blocked", "approval_required", "paused", "cancelled"}:
+                if latest and latest["status"] in {"complete", "blocked", "approval_required", "paused", "cancelled"}:
                     continue
                 delay = agent.heartbeat_minutes * 60
                 attempt = 1

@@ -3,9 +3,9 @@
 This module intentionally owns no API routes. It is included after every API
 router so the SPA fallback can never shadow a backend endpoint.
 
-The ARES WebUI is a vanilla JS/HTML/CSS single-page application. Static files
-live in apps/web/static/ and are served under the /static/ URL prefix, matching
-the frontend's convention. The index.html uses template tokens
+The ARES controller dashboard is a vanilla JS/HTML/CSS single-page application.
+Static files live in apps/dashboard/static/ and are served under the /static/
+URL prefix. The index.html may use template tokens
 (__WEBUI_VERSION__, __MAX_UPLOAD_BYTES__, __CSRF_TOKEN_JSON__) that are
 substituted at request time.
 """
@@ -21,7 +21,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 
-DEFAULT_FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "apps" / "web" / "static"
+DEFAULT_FRONTEND_ROOT = Path(__file__).resolve().parents[1] / "apps" / "dashboard" / "static"
 
 # Frontend template tokens (substituted in index.html at request time)
 _WEBUI_VERSION_PLACEHOLDER = "__WEBUI_VERSION__"

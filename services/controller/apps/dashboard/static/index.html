@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>ARES Automation</title>
+  <link rel="stylesheet" href="/static/style.css?v=__WEBUI_VERSION__">
+</head>
+<body>
+  <header><div><span class="mark">A</span><strong>ARES</strong><small>Autonomous Reasoning and Execution System</small></div><button id="pause" class="danger">Pause all</button></header>
+  <main>
+    <section class="hero"><div><p class="eyebrow">LOCAL CONTROL PLANE</p><h1>Independent agents.<br><em>One accountable loop.</em></h1><p>ARES coordinates goals, wakeups, approvals and evidence. Agent memory, tools, sessions and credentials remain with their owners.</p></div><div id="system" class="system">Loading controller…</div></section>
+    <section><div class="section-title"><h2>Connected agents</h2><span>Open an agent UI or trigger work</span></div><div id="agents" class="grid"></div></section>
+    <section class="columns"><div><div class="section-title"><h2>Goals</h2><button id="newGoal">New goal</button></div><div id="goals" class="stack"></div></div><div><div class="section-title"><h2>Pending approvals</h2></div><div id="approvals" class="stack"></div></div></section>
+    <section><div class="section-title"><h2>Run ledger</h2><button id="refresh">Refresh</button></div><div id="runs" class="stack"></div></section>
+  </main>
+  <dialog id="goalDialog"><form method="dialog"><h2>Create goal</h2><label>Agent<select id="goalAgent"></select></label><label>Objective<textarea id="goalObjective" required></textarea></label><menu><button value="cancel">Cancel</button><button id="saveGoal" value="default">Create</button></menu></form></dialog>
+  <script>window.__ARES_BOOT__=__CSRF_TOKEN_JSON__;</script>
+  <script src="/static/app.js?v=__WEBUI_VERSION__"></script>
+</body>
+</html>

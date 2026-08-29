@@ -24,7 +24,8 @@ flowchart TB
 - Hermes owns its runtime, tools, sessions, memory, schedules, and WebUI.
 - Jaeger owns its runtime, tools, sessions, memory, schedules, and browser UI.
 - ARES owns agent definitions, policy decisions, explicit sharing grants,
-  evaluations, approvals, budgets, and closed-loop control records.
+  desired identity/workspace configuration, evaluations, approvals, budgets,
+  and closed-loop control records.
 - Ollama owns model serving. Model weights remain on the Mac.
 
 ## Isolation and sharing
@@ -42,6 +43,8 @@ operation and never exposes the secret to a session transcript or browser.
 ## Automation API
 
 - `GET/PUT /api/agents` lists and validates runtime definitions.
+- `GET/PUT /api/agents/{id}/configuration` inspects runtime-owned effective
+  configuration or creates an approval-gated desired-state change.
 - `GET/POST /api/goals` manages durable objectives.
 - `POST /api/agents/{id}/wake` leases one run for an agent.
 - `GET /api/runs` and `GET /api/runs/{id}/events` expose immutable evidence.
@@ -54,6 +57,21 @@ dependency. The dashboard consumes these APIs; it is not a second executor.
 
 Definitions, goals, runs, events and approval metadata are stored with mode
 `0600` under `$ARES_HOME/automation/state.json` using an atomic replace.
+
+## Runtime configuration
+
+ARES may define how an agent should be configured, but it applies that desired
+state only through an adapter exposed by the runtime owner. The Hermes adapter
+uses Hermes WebUI's `/api/memory` and `/api/workspaces` interfaces to inspect
+effective state, and `/api/memory/write` plus `/api/workspaces/add` to apply an
+approved change. ARES does not open or edit the Hermes state directory.
+
+Hermes workspace registration and container filesystem exposure are separate
+operations. ARES can register an existing container path under `/workspace`.
+It cannot make an arbitrary Mac path visible to Hermes. Adding a host mount is
+an infrastructure change that requires its own explicit grant and container
+reconciliation contract; it is deliberately not hidden inside the workspace
+registration endpoint.
 
 ## Development topology
 

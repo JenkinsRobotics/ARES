@@ -4,13 +4,24 @@ import time
 
 from fastapi.testclient import TestClient
 
-from core.automation.adapters import AdapterResult, AgentAdapter
+from core.automation.adapters import AdapterResult, AgentAdapter, HermesAdapter
+from core.automation.models import Agent
 from core.automation.service import AutomationService
 from core.automation.store import AutomationStore
 from fastapi_app.main import create_app
 
 
 class FakeAdapter(AgentAdapter):
+    def __init__(self):
+        self.configuration = {
+            "owner": "hermes",
+            "endpoint": "http://runtime.invalid",
+            "soul": "Original\n",
+            "soul_path": "/runtime/SOUL.md",
+            "workspaces": [{"path": "/workspace", "name": "Home"}],
+            "last_workspace": "/workspace",
+        }
+
     def probe(self, agent):
         return {"available": True, "owner": agent.runtime}
 
@@ -20,6 +31,19 @@ class FakeAdapter(AgentAdapter):
 
     def cancel_run(self, session_id):
         return None
+
+    def inspect_configuration(self, agent):
+        return self.configuration
+
+    def apply_configuration(self, agent, desired):
+        paths = {row["path"] for row in self.configuration["workspaces"]}
+        paths.update(desired.get("workspaces") or [])
+        self.configuration = {
+            **self.configuration,
+            "soul": desired.get("soul", self.configuration["soul"]),
+            "workspaces": [{"path": path, "name": path.rsplit("/", 1)[-1]} for path in sorted(paths)],
+        }
+        return self.configuration
 
 
 def service(tmp_path):
@@ -61,6 +85,19 @@ def test_credentials_must_be_opaque_references(tmp_path):
         raise AssertionError("raw credential was accepted")
 
 
+def test_agent_id_rejects_dashboard_script_injection(tmp_path):
+    controller = service(tmp_path)
+    try:
+        controller.put_agent({
+            "id": "bad');alert(1);//", "runtime": "hermes", "name": "bad",
+            "identity": "bad", "model": "", "workspace": "/workspace",
+        })
+    except ValueError as exc:
+        assert "agent id" in str(exc)
+    else:
+        raise AssertionError("unsafe agent id was accepted")
+
+
 def test_public_api_and_lightweight_dashboard(tmp_path):
     controller = service(tmp_path)
     app = create_app()
@@ -72,10 +109,109 @@ def test_public_api_and_lightweight_dashboard(tmp_path):
         assert put.status_code == 200
         goal = client.post("/api/goals", json={"agent_id": "jaeger", "objective": "test"})
         assert goal.status_code == 200
-        wake = client.post(f"/api/agents/jaeger/wake", json={"goal_id": goal.json()["id"]})
+        wake = client.post("/api/agents/jaeger/wake", json={"goal_id": goal.json()["id"]})
         assert wake.status_code == 200
         assert client.get("/api/runs").status_code == 200
         assert client.get("/api/approvals").status_code == 200
+
+
+def test_hermes_configuration_is_approval_gated_and_audited(tmp_path):
+    controller = service(tmp_path)
+    controller.put_agent({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "reference agent", "model": "cloud", "workspace": "/workspace",
+    })
+    requested = controller.request_agent_configuration("hermes", {
+        "soul": "Independent reference agent",
+        "workspaces": ["/workspace", "/workspace/GitHub"],
+    })
+    change = requested["change"]
+    approval = requested["approval"]
+    assert change["status"] == "pending"
+    assert approval["kind"] == "configuration"
+    assert controller.inspect_agent_configuration("hermes")["current"]["soul"] == "Original\n"
+
+    resolved = controller.resolve_approval({"id": approval["id"], "decision": "approved"})
+    assert resolved["configuration_change_id"] == change["id"]
+    effective = controller.inspect_agent_configuration("hermes")
+    assert effective["current"]["soul"] == "Independent reference agent\n"
+    assert {row["path"] for row in effective["current"]["workspaces"]} == {
+        "/workspace", "/workspace/GitHub",
+    }
+    applied = effective["changes"][0]
+    assert applied["status"] == "applied"
+    assert len(applied["evidence"]["soul_sha256"]) == 64
+
+
+def test_hermes_configuration_rejects_unmounted_host_paths(tmp_path):
+    controller = service(tmp_path)
+    controller.put_agent({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "reference agent", "model": "cloud", "workspace": "/workspace",
+    })
+    try:
+        controller.request_agent_configuration("hermes", {
+            "workspaces": ["/Users/matthewjenkins/GitHub"],
+        })
+    except ValueError as exc:
+        assert "approved /workspace mount" in str(exc)
+    else:
+        raise AssertionError("host path bypassed the Hermes container boundary")
+
+
+def test_configuration_api_creates_approval_before_mutation(tmp_path):
+    controller = service(tmp_path)
+    controller.put_agent({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "reference agent", "model": "cloud", "workspace": "/workspace",
+    })
+    app = create_app()
+    app.state.automation_service = controller
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        before = client.get("/api/agents/hermes/configuration")
+        assert before.status_code == 200
+        requested = client.put(
+            "/api/agents/hermes/configuration",
+            json={"soul": "Managed by its runtime", "workspaces": ["/workspace"]},
+        )
+        assert requested.status_code == 200
+        assert requested.json()["approval"]["status"] == "pending"
+        assert client.get("/api/agents/hermes/configuration").json()["current"]["soul"] == "Original\n"
+
+
+def test_hermes_adapter_uses_runtime_owned_configuration_api():
+    adapter = HermesAdapter(command="/bin/true", webui_url="http://127.0.0.1:8787")
+    calls = []
+    state = {
+        "soul": "Before\n",
+        "workspaces": [{"path": "/workspace", "name": "Home"}],
+    }
+
+    def request(method, path, payload=None):
+        calls.append((method, path, payload))
+        if path == "/api/memory" and method == "GET":
+            return {"soul": state["soul"], "soul_path": "/runtime/SOUL.md"}
+        if path == "/api/workspaces" and method == "GET":
+            return {"workspaces": state["workspaces"], "last": "/workspace"}
+        if path == "/api/workspaces/add":
+            state["workspaces"].append({"path": payload["path"], "name": "GitHub"})
+            return {"ok": True}
+        if path == "/api/memory/write":
+            state["soul"] = payload["content"]
+            return {"ok": True}
+        raise AssertionError((method, path, payload))
+
+    adapter._webui_request = request
+    agent = Agent.from_dict({
+        "id": "hermes", "runtime": "hermes", "name": "Hermes",
+        "identity": "reference", "model": "cloud", "workspace": "/workspace",
+    })
+    effective = adapter.apply_configuration(agent, {
+        "soul": "After\n", "workspaces": ["/workspace", "/workspace/GitHub"],
+    })
+    assert effective["soul"] == "After\n"
+    assert ("POST", "/api/workspaces/add", {"path": "/workspace/GitHub"}) in calls
+    assert ("POST", "/api/memory/write", {"section": "soul", "content": "After\n"}) in calls
 
 
 def test_global_pause_blocks_new_work(tmp_path):
@@ -94,7 +230,7 @@ def test_global_pause_blocks_new_work(tmp_path):
 def test_heartbeat_tick_resumes_incomplete_goal_with_bounded_idempotency(tmp_path):
     controller = service(tmp_path)
     controller.put_agent({"id": "hermes", "runtime": "hermes", "name": "Hermes", "identity": "worker", "model": "", "workspace": "/workspace", "heartbeat_minutes": 1})
-    goal = controller.create_goal({"agent_id": "hermes", "objective": "continue"})
+    controller.create_goal({"agent_id": "hermes", "objective": "continue"})
     first = controller.tick(now=120)
     assert len(first) == 1
     wait_for_run(controller, first[0]["id"])

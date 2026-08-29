@@ -23,6 +23,8 @@ class AutomationStore:
             value = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(value, dict) or value.get("version") != 1:
                 raise ValueError("unsupported ARES automation-store version")
+            for key, default in self._empty().items():
+                value.setdefault(key, default)
             return value
 
     def update(self, fn: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
@@ -34,7 +36,16 @@ class AutomationStore:
 
     @staticmethod
     def _empty() -> dict[str, Any]:
-        return {"version": 1, "paused": False, "agents": [], "goals": [], "runs": [], "events": [], "approvals": []}
+        return {
+            "version": 1,
+            "paused": False,
+            "agents": [],
+            "goals": [],
+            "runs": [],
+            "events": [],
+            "approvals": [],
+            "configuration_changes": [],
+        }
 
     def _write(self, value: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

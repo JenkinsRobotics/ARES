@@ -44,6 +44,29 @@ def probe_agent(agent_id: str, request: Request) -> dict[str, Any]:
         raise CoreApiError(404, str(exc)) from exc
 
 
+@router.get("/agents/{agent_id}/configuration")
+def agent_configuration(agent_id: str, request: Request) -> dict[str, Any]:
+    try:
+        return service(request).inspect_agent_configuration(agent_id)
+    except NotImplementedError as exc:
+        raise CoreApiError(409, str(exc)) from exc
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise fail(exc) from exc
+
+
+@router.put("/agents/{agent_id}/configuration")
+def request_agent_configuration(
+    agent_id: str,
+    payload: dict[str, Any],
+    request: Request,
+    _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
+) -> dict[str, Any]:
+    try:
+        return service(request).request_agent_configuration(agent_id, payload)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise fail(exc) from exc
+
+
 @router.get("/goals")
 def goals(request: Request) -> list[dict[str, Any]]:
     return service(request).snapshot()["goals"]
@@ -92,7 +115,7 @@ def approvals(request: Request) -> list[dict[str, Any]]:
 def resolve_approval(payload: dict[str, Any], request: Request, _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)]) -> dict[str, Any]:
     try:
         return service(request).resolve_approval(payload)
-    except ValueError as exc:
+    except (RuntimeError, TypeError, ValueError) as exc:
         raise fail(exc) from exc
 
 

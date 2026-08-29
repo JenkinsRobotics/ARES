@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
@@ -34,7 +35,7 @@ class Agent:
     def from_dict(cls, raw: dict[str, Any]) -> "Agent":
         agent_id = str(raw.get("id") or "").strip()
         runtime = str(raw.get("runtime") or "").strip()
-        if not agent_id or runtime not in {"hermes", "jaeger"}:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", agent_id) or runtime not in {"hermes", "jaeger"}:
             raise ValueError("agent id and runtime hermes|jaeger are required")
         if any(not str(ref).startswith("keychain://") for ref in raw.get("credential_references") or []):
             raise ValueError("credentials must be opaque keychain:// references")
@@ -118,6 +119,26 @@ class Approval:
     status: str = "pending"
     created_at: float = 0.0
     resolved_at: float | None = None
+    kind: str = "run"
+    subject_id: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ConfigurationChange:
+    """ARES-owned request to configure an independently owned runtime."""
+
+    id: str
+    agent_id: str
+    desired: dict[str, Any]
+    status: str = "pending"
+    created_at: float = 0.0
+    resolved_at: float | None = None
+    applied_at: float | None = None
+    error: str = ""
+    evidence: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

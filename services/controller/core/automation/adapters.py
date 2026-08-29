@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import shutil
 import subprocess
 import threading
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,13 +46,20 @@ class AgentAdapter(ABC):
     def collect_result(self, result: AdapterResult) -> AdapterResult:
         return result
 
+    def inspect_configuration(self, _agent: Agent) -> dict[str, Any]:
+        raise NotImplementedError("runtime does not expose configuration management")
+
+    def apply_configuration(self, _agent: Agent, _desired: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError("runtime does not expose configuration management")
+
 
 class HermesAdapter(AgentAdapter):
     _session = re.compile(r"(?im)^session_id:\s*([A-Za-z0-9_.:-]+)\s*$")
 
-    def __init__(self, command: str | None = None) -> None:
+    def __init__(self, command: str | None = None, webui_url: str | None = None) -> None:
         configured = command or os.environ.get("ARES_HERMES_COMMAND")
         self.command = configured or shutil.which("hermes") or str(Path.home() / "bin" / "hermes")
+        self.webui_url = (webui_url or os.environ.get("ARES_HERMES_WEBUI_URL") or "http://127.0.0.1:8787").rstrip("/")
         self._active: subprocess.Popen[str] | None = None
 
     def probe(self, _agent: Agent) -> dict[str, Any]:
@@ -58,7 +68,97 @@ class HermesAdapter(AgentAdapter):
         if resolved is None and os.sep not in self.command:
             resolved_path = shutil.which(self.command)
             resolved = Path(resolved_path) if resolved_path else None
-        return {"available": resolved is not None, "command": str(resolved or self.command), "owner": "hermes"}
+        result = {
+            "available": resolved is not None,
+            "command": str(resolved or self.command),
+            "owner": "hermes",
+            "configuration": {"available": False, "endpoint": self.webui_url},
+        }
+        try:
+            current = self.inspect_configuration(_agent)
+            result["configuration"] = {
+                "available": True,
+                "endpoint": self.webui_url,
+                "workspace_count": len(current["workspaces"]),
+            }
+        except Exception as exc:
+            result["configuration"]["error"] = str(exc)
+        return result
+
+    def _webui_request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.webui_url}{path}",
+            data=body,
+            method=method,
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                encoded = response.read(1_048_577)
+                if len(encoded) > 1_048_576:
+                    raise RuntimeError(f"Hermes WebUI response is too large for {method} {path}")
+                raw = encoded.decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Hermes WebUI rejected {method} {path}: HTTP {exc.code}: {detail[:500]}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Hermes WebUI is unavailable at {self.webui_url}: {exc.reason}") from exc
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Hermes WebUI returned non-JSON for {method} {path}") from exc
+        if not isinstance(value, dict):
+            raise RuntimeError(f"Hermes WebUI returned an invalid object for {method} {path}")
+        if value.get("error"):
+            raise RuntimeError(f"Hermes WebUI rejected {method} {path}: {value['error']}")
+        return value
+
+    def inspect_configuration(self, _agent: Agent) -> dict[str, Any]:
+        memory = self._webui_request("GET", "/api/memory")
+        workspace_payload = self._webui_request("GET", "/api/workspaces")
+        workspaces = []
+        for row in workspace_payload.get("workspaces") or []:
+            if isinstance(row, dict) and row.get("path"):
+                workspaces.append({"path": str(row["path"]), "name": str(row.get("name") or "")})
+        return {
+            "owner": "hermes",
+            "endpoint": self.webui_url,
+            "soul": str(memory.get("soul") or ""),
+            "soul_path": str(memory.get("soul_path") or ""),
+            "workspaces": workspaces,
+            "last_workspace": str(workspace_payload.get("last") or ""),
+        }
+
+    def apply_configuration(self, agent: Agent, desired: dict[str, Any]) -> dict[str, Any]:
+        before = self.inspect_configuration(agent)
+        existing_paths = {row["path"] for row in before["workspaces"]}
+        added: list[str] = []
+        try:
+            for workspace in desired.get("workspaces") or []:
+                if workspace in existing_paths:
+                    continue
+                self._webui_request("POST", "/api/workspaces/add", {"path": workspace})
+                added.append(workspace)
+            soul = desired.get("soul")
+            if soul is not None and soul != before["soul"]:
+                self._webui_request("POST", "/api/memory/write", {"section": "soul", "content": soul})
+        except Exception:
+            # Workspace registration is reversible; restore only entries added
+            # by this request. The prior SOUL is written last, so a workspace
+            # failure cannot leave an identity half-applied.
+            for workspace in reversed(added):
+                try:
+                    self._webui_request("POST", "/api/workspaces/remove", {"path": workspace})
+                except Exception:
+                    pass
+            raise
+        after = self.inspect_configuration(agent)
+        after_paths = {row["path"] for row in after["workspaces"]}
+        missing = [path for path in desired.get("workspaces") or [] if path not in after_paths]
+        if missing or (soul is not None and after["soul"] != soul):
+            raise RuntimeError("Hermes configuration verification failed")
+        return after
 
     def start_run(self, agent: Agent, prompt: str, session_id: str, emit: EventSink, cancel: threading.Event) -> AdapterResult:
         args = [self.command, "--in", agent.workspace, "chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", str(agent.max_turns)]

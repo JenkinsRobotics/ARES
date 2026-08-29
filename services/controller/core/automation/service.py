@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import posixpath
 import re
 import os
 import threading
 import time
 import uuid
-from dataclasses import replace
 from typing import Any
 
 from .adapters import AgentAdapter, HermesAdapter, JaegerAdapter
-from .models import Agent, Approval, Goal, Run, RunEvent
+from .models import Agent, Approval, ConfigurationChange, Goal, Run, RunEvent
 from .store import AutomationStore
 
 
@@ -46,6 +47,48 @@ class AutomationService:
     def probe_agent(self, agent_id: str) -> dict[str, Any]:
         agent = self._agent(agent_id)
         return self.adapters[agent.runtime].probe(agent)
+
+    def inspect_agent_configuration(self, agent_id: str) -> dict[str, Any]:
+        agent = self._agent(agent_id)
+        current = self.adapters[agent.runtime].inspect_configuration(agent)
+        changes = [
+            row for row in self.snapshot()["configuration_changes"]
+            if row["agent_id"] == agent_id
+        ]
+        return {"agent_id": agent_id, "current": current, "changes": list(reversed(changes))}
+
+    def request_agent_configuration(self, agent_id: str, raw: dict[str, Any]) -> dict[str, Any]:
+        agent = self._agent(agent_id)
+        if agent.runtime != "hermes":
+            raise ValueError("configuration management is not available for this runtime")
+        desired = self._validate_configuration(raw)
+        now = time.time()
+        with self._guard:
+            state = self.snapshot()
+            if any(
+                row["agent_id"] == agent_id and row["status"] in {"pending", "applying"}
+                for row in state["configuration_changes"]
+            ):
+                raise RuntimeError("another configuration change is pending for this agent")
+            change = ConfigurationChange(
+                id=self._id("config"), agent_id=agent_id, desired=desired,
+                created_at=now,
+            )
+            summary = []
+            if "soul" in desired:
+                summary.append("identity document")
+            if desired.get("workspaces"):
+                summary.append(f"{len(desired['workspaces'])} workspace registration(s)")
+            approval = Approval(
+                id=self._id("approval"), run_id="", operation="configure_agent",
+                reason=f"Apply {', '.join(summary)} to {agent.name} through its runtime API",
+                created_at=now, kind="configuration", subject_id=change.id,
+            )
+            def update(current: dict[str, Any]) -> None:
+                current["configuration_changes"].append(change.as_dict())
+                current["approvals"].append(approval.as_dict())
+            self.store.update(update)
+        return {"change": change.as_dict(), "approval": approval.as_dict()}
 
     def create_goal(self, raw: dict[str, Any]) -> dict[str, Any]:
         agent_id = str(raw.get("agent_id") or "").strip()
@@ -162,6 +205,14 @@ class AutomationService:
         if decision not in {"approved", "denied"}:
             raise ValueError("decision must be approved or denied")
         now = time.time()
+        current = next((row for row in self.snapshot()["approvals"] if row["id"] == approval_id), None)
+        if current is None:
+            raise ValueError("approval not found")
+        if current.get("status") != "pending":
+            raise ValueError("approval is already resolved")
+        if current.get("kind") == "configuration":
+            return self._resolve_configuration_approval(current, decision, now)
+
         def update(state: dict[str, Any]) -> None:
             found = False
             for row in state["approvals"]:
@@ -178,6 +229,119 @@ class AutomationService:
             return {**resolved, "resumed_run_id": resumed["id"]}
         return resolved
 
+    def _resolve_configuration_approval(
+        self, approval: dict[str, Any], decision: str, now: float,
+    ) -> dict[str, Any]:
+        with self._guard:
+            state = self.snapshot()
+            current_approval = next(
+                (row for row in state["approvals"] if row["id"] == approval["id"]), None,
+            )
+            if current_approval is None or current_approval.get("status") != "pending":
+                raise ValueError("approval is already resolved")
+            change = next(
+                (
+                    row for row in state["configuration_changes"]
+                    if row["id"] == str(current_approval.get("subject_id") or "")
+                ),
+                None,
+            )
+            if change is None or change.get("status") != "pending":
+                raise ValueError("configuration change is not pending")
+            if decision == "denied":
+                def deny(current: dict[str, Any]) -> None:
+                    for row in current["approvals"]:
+                        if row["id"] == approval["id"]:
+                            row.update(status="denied", resolved_at=now)
+                    for row in current["configuration_changes"]:
+                        if row["id"] == change["id"]:
+                            row.update(status="denied", resolved_at=now)
+                state = self.store.update(deny)
+                return next(row for row in state["approvals"] if row["id"] == approval["id"])
+
+            def lease(current: dict[str, Any]) -> None:
+                for row in current["approvals"]:
+                    if row["id"] == approval["id"]:
+                        row.update(status="applying")
+                for row in current["configuration_changes"]:
+                    if row["id"] == change["id"]:
+                        row.update(status="applying")
+            self.store.update(lease)
+
+        agent = self._agent(change["agent_id"])
+        try:
+            effective = self.adapters[agent.runtime].apply_configuration(agent, change["desired"])
+            evidence = self._configuration_evidence(effective)
+        except Exception as exc:
+            failed_at = time.time()
+            error = str(exc)
+            def fail(state: dict[str, Any]) -> None:
+                for row in state["approvals"]:
+                    if row["id"] == approval["id"]:
+                        row.update(status="failed", resolved_at=failed_at)
+                for row in state["configuration_changes"]:
+                    if row["id"] == change["id"]:
+                        row.update(status="failed", resolved_at=failed_at, error=error)
+            self.store.update(fail)
+            raise RuntimeError(f"agent configuration failed: {error}") from exc
+
+        applied_at = time.time()
+        def apply(state: dict[str, Any]) -> None:
+            for row in state["approvals"]:
+                if row["id"] == approval["id"]:
+                    row.update(status="approved", resolved_at=applied_at)
+            for row in state["configuration_changes"]:
+                if row["id"] == change["id"]:
+                    row.update(
+                        status="applied", resolved_at=applied_at,
+                        applied_at=applied_at, error="", evidence=evidence,
+                    )
+        state = self.store.update(apply)
+        resolved = next(row for row in state["approvals"] if row["id"] == approval["id"])
+        return {**resolved, "configuration_change_id": change["id"], "evidence": evidence}
+
+    @staticmethod
+    def _validate_configuration(raw: dict[str, Any]) -> dict[str, Any]:
+        desired: dict[str, Any] = {}
+        if "soul" in raw:
+            soul = raw.get("soul")
+            if not isinstance(soul, str) or not soul.strip():
+                raise ValueError("soul must be a non-empty string")
+            if "\x00" in soul or len(soul.encode("utf-8")) > 65536:
+                raise ValueError("soul is invalid or exceeds 64 KiB")
+            desired["soul"] = soul.rstrip() + "\n"
+        if "workspaces" in raw:
+            rows = raw.get("workspaces")
+            if not isinstance(rows, list) or len(rows) > 32:
+                raise ValueError("workspaces must be a list of at most 32 paths")
+            normalized: list[str] = []
+            for value in rows:
+                path = str(value or "").strip()
+                if "\x00" in path or not path.startswith("/"):
+                    raise ValueError("workspace paths must be absolute container paths")
+                path = posixpath.normpath(path)
+                if path != "/workspace" and not path.startswith("/workspace/"):
+                    raise ValueError("Hermes workspaces must be inside the approved /workspace mount")
+                if path not in normalized:
+                    normalized.append(path)
+            desired["workspaces"] = normalized
+        if not desired:
+            raise ValueError("soul or workspaces is required")
+        return desired
+
+    @staticmethod
+    def _configuration_evidence(effective: dict[str, Any]) -> dict[str, Any]:
+        soul = str(effective.get("soul") or "")
+        return {
+            "owner": str(effective.get("owner") or ""),
+            "endpoint": str(effective.get("endpoint") or ""),
+            "soul_sha256": hashlib.sha256(soul.encode("utf-8")).hexdigest(),
+            "workspaces": [
+                str(row.get("path") or "") for row in effective.get("workspaces") or []
+                if isinstance(row, dict) and row.get("path")
+            ],
+        }
+
     def _recover_interrupted_runs(self) -> None:
         now = time.time()
         interrupted: list[str] = []
@@ -186,6 +350,19 @@ class AutomationService:
                 if row.get("status") in {"queued", "running"}:
                     row.update(status="continue", error="controller restarted; safe resume pending", finished_at=now)
                     interrupted.append(row["id"])
+            interrupted_changes = {
+                row["id"] for row in state["configuration_changes"]
+                if row.get("status") == "applying"
+            }
+            for row in state["configuration_changes"]:
+                if row["id"] in interrupted_changes:
+                    row.update(
+                        status="failed", resolved_at=now,
+                        error="controller restarted during configuration; inspect runtime state before retrying",
+                    )
+            for row in state["approvals"]:
+                if row.get("subject_id") in interrupted_changes and row.get("status") == "applying":
+                    row.update(status="failed", resolved_at=now)
         self.store.update(update)
         for run_id in interrupted:
             self._event(run_id, "checkpoint", {"reason": "controller_restart", "resume": "pending"})
@@ -270,6 +447,15 @@ class AutomationService:
         row = next((row for row in self.snapshot()["runs"] if row["id"] == run_id), None)
         if row is None:
             raise ValueError("run not found")
+        return row
+
+    def _configuration_change(self, change_id: str) -> dict[str, Any]:
+        row = next(
+            (row for row in self.snapshot()["configuration_changes"] if row["id"] == change_id),
+            None,
+        )
+        if row is None:
+            raise ValueError("configuration change not found")
         return row
 
     def _patch_run(self, run_id: str, **values: Any) -> None:

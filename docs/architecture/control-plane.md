@@ -39,18 +39,21 @@ contains an opaque reference such as `keychain://ares/github/jaeger`. A future
 credential broker resolves the reference only while performing an authorized
 operation and never exposes the secret to a session transcript or browser.
 
-## Initial API
+## Automation API
 
-- `GET /api/control-plane/agents` lists definitions and states that isolation
-  is the default.
-- `PUT /api/control-plane/agents/{id}` validates and atomically persists an
-  agent definition. Mutating access uses the controller's existing identity
-  and CSRF/authentication dependency.
-- `POST /api/control-plane/agents/{id}/evaluate` returns an auditable allow or
-  deny decision. It does not execute the requested action.
+- `GET/PUT /api/agents` lists and validates runtime definitions.
+- `GET/POST /api/goals` manages durable objectives.
+- `POST /api/agents/{id}/wake` leases one run for an agent.
+- `GET /api/runs` and `GET /api/runs/{id}/events` expose immutable evidence.
+- `POST /api/runs/{id}/cancel` cooperatively cancels active work.
+- `GET/POST /api/approvals` keeps consequential effects fail-closed.
+- `POST /api/control/pause`, `/resume`, and `/tick` control scheduling.
 
-Definitions are stored with mode `0600` under
-`$ARES_HOME/control-plane/definitions.json` using an atomic replace.
+Mutating access uses the controller's existing identity and CSRF/authentication
+dependency. The dashboard consumes these APIs; it is not a second executor.
+
+Definitions, goals, runs, events and approval metadata are stored with mode
+`0600` under `$ARES_HOME/automation/state.json` using an atomic replace.
 
 ## Development topology
 
@@ -58,12 +61,14 @@ Definitions are stored with mode `0600` under
 - Jaeger bridge and its WebUI run natively from the JaegerAI working tree.
 - ARES runs natively from its working tree while the control plane evolves.
 - Browser access remains loopback-only locally and is published remotely only
-  by authenticated Tailscale Serve routes.
+  by authenticated Tailscale Serve routes. ARES stays local by default even
+  when the two agent interfaces are published to the tailnet.
 
 ## Closed-loop boundary
 
 ARES may observe, evaluate, request revisions, approve within policy, or pause
 an agent. It must not fabricate a human approval. Consequential effects remain
 approval-aware, inspectable, and attributable to a definition and policy
-version. The next phase adds durable evaluation events and action proposals on
-top of this definition/policy foundation.
+version. Heartbeats resume incomplete work, failed runs retry at most three
+times with bounded exponential backoff, restart recovery records a checkpoint,
+and an idempotency key prevents duplicate wakes.

@@ -24,22 +24,25 @@ services:
       # and Linux (/home/<you>/.ares) — no change needed for standard installs.
       # Only set ARES_HOME explicitly if your .ares lives somewhere non-standard.
       # macOS note: set UID and GID below to match your user ID (run `id -u` and `id -g`).
-      - ${ARES_HOME:-${HOME}/.ares}:/home/areswebui/.ares
+      - /Users/matthewjenkins/.ares:/home/areswebui/.ares
       # Your workspace directory shown on first launch (adapt if yours is different, the container will use the mounted /workspace)
-      - ${ARES_WORKSPACE:-${HOME}/workspace}:/workspace
+      - /Users/matthewjenkins/workspace:/workspace
     environment:
       # Set to your host user ID: run `id -u` and `id -g` to find them.
       # On macOS, UIDs start at 501 (not 1000), so set UID and GID in a .env file:
       #   echo "UID=$(id -u)" >> .env
       #   echo "GID=$(id -g)" >> .env
       # Without this, the container may not be able to read your mounted files.
-      - WANTED_UID=${UID:-1000}
-      - WANTED_GID=${GID:-1000}
+      - WANTED_UID=501
+      - WANTED_GID=20
       # Required: bind address and port
       - ARES_WEBUI_HOST=0.0.0.0
       - ARES_WEBUI_PORT=8787
       # Where to store sessions, workspaces, and other state (default: ~/.ares/webui)
       - ARES_WEBUI_STATE_DIR=/home/areswebui/.ares/webui
+      - ARES_HOME=/home/areswebui/.ares
+      - ARES_LOG_DIR=/home/areswebui/.ares/logs
+      - OLLAMA_HOST=http://192.168.64.1:11434
       # Default workspace directory shown on first launch
 #      - ARES_WEBUI_DEFAULT_WORKSPACE=/workspace
       # Optional: set a password for remote access

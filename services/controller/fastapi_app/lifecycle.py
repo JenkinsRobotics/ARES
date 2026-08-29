@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Same guarded pattern used throughout services/controller/api/*.py (e.g.
 # context_chunker.py) — integrations.* lives at the monorepo root, one level
 # above services/controller, so it is not on sys.path by default here.
-_MONOREPO_ROOT = Path(__file__).resolve().parents[3]
+_MONOREPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_MONOREPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_MONOREPO_ROOT))
 

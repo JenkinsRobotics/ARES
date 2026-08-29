@@ -21,7 +21,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 
-DEFAULT_FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "apps" / "web" / "static"
+DEFAULT_FRONTEND_ROOT = Path(__file__).resolve().parents[1] / "apps" / "web" / "static"
 
 # Frontend template tokens (substituted in index.html at request time)
 _WEBUI_VERSION_PLACEHOLDER = "__WEBUI_VERSION__"

@@ -123,8 +123,9 @@ class JaegerAdapter(AgentAdapter):
                 self._client = client
                 if cancel.is_set():
                     return AdapterResult("", session_id, "cancelled")
-                reply = client.turn(prompt, session=session_id or agent.runtime_instance, workspace=agent.workspace, on_event=on_event, on_request=on_request)
-                return AdapterResult(str(reply.get("text") or ""), session_id or agent.runtime_instance, str(reply.get("error") or ""))
+                durable_session = session_id or f"ares-{agent.id}"
+                reply = client.turn(prompt, session=durable_session, workspace=agent.workspace, on_event=on_event, on_request=on_request)
+                return AdapterResult(str(reply.get("text") or ""), durable_session, str(reply.get("error") or ""))
         except Exception as exc:
             return AdapterResult("", session_id, str(exc))
         finally:

@@ -6,7 +6,7 @@ import threading
 import time
 
 
-def test_dead_bridge_turn_retries_once_with_fresh_client(monkeypatch):
+def test_dead_bridge_turn_is_not_replayed_without_idempotency(monkeypatch):
     from api.providers.jaeger import streaming
 
     calls = []
@@ -20,9 +20,7 @@ def test_dead_bridge_turn_retries_once_with_fresh_client(monkeypatch):
 
         def turn(self, text, **_kwargs):
             calls.append(text)
-            if len(calls) == 1:
-                raise BrokenPipeError(32, "broken pipe")
-            return {"text": "recovered", "error": None}
+            raise BrokenPipeError(32, "broken pipe")
 
     monkeypatch.setattr(streaming, "_jaeger_instance_name", lambda: "test")
     monkeypatch.setattr(streaming, "_get_or_start_bridge_client", lambda _instance: Client())
@@ -32,8 +30,9 @@ def test_dead_bridge_turn_retries_once_with_fresh_client(monkeypatch):
         "hello", "session-1", "/tmp/workspace", threading.Event()
     )
 
-    assert result == ("recovered", "", [])
-    assert calls == ["hello", "hello"]
+    assert result[0] == ""
+    assert "broken pipe" in result[1]
+    assert calls == ["hello"]
 
 
 def test_bridge_failure_is_redacted_before_log_or_api(monkeypatch, caplog):
@@ -141,8 +140,8 @@ def test_same_instance_turns_are_serialized(monkeypatch):
     assert {row[0] for row in results} == {"one", "two"}
 
 
-def test_stale_instance_lock_is_cleared_and_retried_once(monkeypatch):
-    """A dead orphan's lock recovers automatically instead of needing `jaeger kill` by hand."""
+def test_live_instance_lock_is_not_cleared_destructively(monkeypatch):
+    """A lock fault must never make a readiness probe kill another process."""
     from api.providers.jaeger import streaming
 
     starts = []
@@ -153,11 +152,9 @@ def test_stale_instance_lock_is_cleared_and_retried_once(monkeypatch):
             starts.append(self._attempt)
 
         def start(self):
-            if self._attempt == 1:
-                raise streaming.JaegerError(
-                    "instance 'jarvis' is locked by pid 20822 (still running)."
-                )
-            return {"ok": True}
+            raise streaming.JaegerError(
+                "instance 'jarvis' is locked by pid 20822 (still running)."
+            )
 
         def close(self):
             return None
@@ -165,23 +162,16 @@ def test_stale_instance_lock_is_cleared_and_retried_once(monkeypatch):
         def is_alive(self):
             return True
 
-    clear_calls = []
-
     monkeypatch.setattr(streaming, "local_jaeger_root", lambda: __import__("pathlib").Path("/tmp"))
     monkeypatch.setattr(streaming, "JaegerClient", FakeClient)
-    monkeypatch.setattr(
-        streaming,
-        "_force_clear_stale_instance_lock",
-        lambda instance: clear_calls.append(instance) or True,
-    )
     streaming._BRIDGE_CLIENTS.clear()
     streaming._BRIDGE_TURN_LOCKS.clear()
 
-    client = streaming._get_or_start_bridge_client("jarvis")
+    import pytest
+    with pytest.raises(streaming.JaegerError, match="already running"):
+        streaming._get_or_start_bridge_client("jarvis")
 
-    assert isinstance(client, FakeClient)
-    assert starts == [1, 2]
-    assert clear_calls == ["jarvis"]
+    assert starts == [1]
 
 
 def test_lock_error_surfaces_when_auto_recovery_cannot_clear_it(monkeypatch):
@@ -202,7 +192,6 @@ def test_lock_error_surfaces_when_auto_recovery_cannot_clear_it(monkeypatch):
 
     monkeypatch.setattr(streaming, "local_jaeger_root", lambda: __import__("pathlib").Path("/tmp"))
     monkeypatch.setattr(streaming, "JaegerClient", AlwaysLockedClient)
-    monkeypatch.setattr(streaming, "_force_clear_stale_instance_lock", lambda instance: False)
     streaming._BRIDGE_CLIENTS.clear()
     streaming._BRIDGE_TURN_LOCKS.clear()
 

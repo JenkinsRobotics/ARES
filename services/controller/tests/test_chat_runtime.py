@@ -173,6 +173,13 @@ def test_adapter_context_identifies_selected_framework_and_model(monkeypatch):
 
 
 def test_gateway_worker_receives_clean_turn_without_serialized_transcript(monkeypatch):
+    """The gateway branch bypasses the transcript builder.
+
+    Scope note: ``_Backend(is_gateway=True)`` is a stand-in, so this covers
+    the branch and nothing about which backends reach it. That a real
+    backend selects this shape is proven separately, against the router's
+    own JaegerBackend, in ``test_jaeger_production_promises.py``.
+    """
     session = _session()
     session.messages = [
         {"role": "user", "content": "Earlier question"},

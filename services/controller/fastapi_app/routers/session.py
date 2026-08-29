@@ -98,6 +98,7 @@ def search_sessions(
     content: bool = Query(default=True),
     depth: str = Query(default="5", max_length=16),
     all_profiles: bool = Query(default=False),
+    lineage: bool = Query(default=True),
 ):
     from api.session_query import search_sessions as search
 
@@ -106,7 +107,7 @@ def search_sessions(
     except (TypeError, ValueError):
         parsed_depth = 5
     with profile_scope(identity.profile):
-        return search(q, content_search=content, depth=parsed_depth, all_profiles=all_profiles)
+        return search(q, content_search=content, depth=parsed_depth, all_profiles=all_profiles, lineage=lineage)
 
 
 @router.get("/session/export")

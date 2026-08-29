@@ -4959,6 +4959,9 @@ body.resizing .sidebar{transition:none!important;}
    main.main.showing-<name> > #main<Name> { display:flex } rule. */
 .main-view{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--bg);}
 main.main > #mainChat,
+main.main > #mainDispatcher,
+main.main > #mainOverview,
+main.main > #mainWorkbench,
 main.main > #mainSettings,
 main.main > #mainSkills,
 main.main > #mainMemory,
@@ -4971,7 +4974,10 @@ main.main > #mainInsights,
 main.main > #mainLogs{display:none;}
 main.main > #mainModelLab,
 main.main > #mainContent{display:none;}
-main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-modelLab):not(.showing-content):not(.showing-workspaces):not(.showing-profiles):not(.showing-avatar):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex;}
+main.main:not(.showing-dispatcher):not(.showing-overview):not(.showing-workbench):not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-modelLab):not(.showing-content):not(.showing-workspaces):not(.showing-profiles):not(.showing-avatar):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex;}
+main.main.showing-dispatcher > #mainDispatcher{display:flex;}
+main.main.showing-overview > #mainOverview{display:flex;}
+main.main.showing-workbench > #mainWorkbench{display:flex;}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto;}
 main.main.showing-skills > #mainSkills{display:flex;}
 main.main.showing-memory > #mainMemory{display:flex;}

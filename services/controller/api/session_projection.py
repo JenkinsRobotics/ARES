@@ -54,6 +54,10 @@ def _authoritative_jaeger_transcript(session) -> tuple[list[dict], list[dict]] |
         if role == "assistant":
             message["backend"] = "jaeger"
         metadata = raw.get("metadata")
+        if role == "assistant" and isinstance(metadata, dict):
+            reasoning = str(metadata.get("reasoning") or "").strip()
+            if reasoning:
+                message["reasoning"] = reasoning
         runtime_tools = metadata.get("tool_calls") if isinstance(metadata, dict) else None
         if isinstance(runtime_tools, list) and runtime_tools:
             normalized = []

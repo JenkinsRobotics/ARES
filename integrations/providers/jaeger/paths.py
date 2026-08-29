@@ -83,7 +83,20 @@ def jaeger_bridge_socket_candidates(
 
     Mirrors JaegerAI ``bridge_socket.candidate_paths`` without importing it.
     """
-    name = str(instance or "default").strip() or "default"
+    name = str(instance or "").strip()
+    if not name and home:
+        active = expand_path(home) / ".jaeger_ai" / "active_instance"
+        try:
+            name = active.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+    if not name:
+        active = Path.home() / ".jaeger" / "active_instance"
+        try:
+            name = active.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+    name = name or "default"
     out: list[Path] = []
     env_dir = str(os.environ.get("JAEGER_INSTANCE_DIR") or "").strip()
     if env_dir:

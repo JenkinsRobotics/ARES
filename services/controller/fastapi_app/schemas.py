@@ -118,6 +118,7 @@ class SessionCreate(BaseModel):
     project_id: str | None = Field(default=None, max_length=256)
     enabled_toolsets: list[str] | None = None
     worktree: bool = False
+    source: Literal["webui", "cli"] = "webui"
 
 
 class SessionMutation(BaseModel):
@@ -367,6 +368,9 @@ class DelegationCreate(BaseModel):
     backend: str = Field(min_length=1, max_length=128)
     model: str | None = Field(default=None, max_length=256)
     provider: str | None = Field(default=None, max_length=128)
+    parent_task_id: str | None = Field(default=None, max_length=128)
+    parent_session_id: str | None = Field(default=None, max_length=256)
+    relation: str = Field(default="delegated", min_length=1, max_length=64)
 
 
 class WorkspaceRecord(ExtensibleResponse):

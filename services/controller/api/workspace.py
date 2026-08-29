@@ -807,7 +807,7 @@ def list_workspace_suggestions(prefix: str = "", limit: int = 12) -> list[str]:
         if value not in suggestions:
             suggestions.append(value)
 
-    # If the user is typing a partial trusted root like /Users/xuef..., suggest
+    # If the user is typing a partial trusted root like ~/worksp..., suggest
     # the matching trusted roots without scanning arbitrary system parents.
     for root in roots:
         if str(root).lower().startswith(normalized_lower):
@@ -947,7 +947,7 @@ def _strip_surrounding_quotes(path: str) -> str:
     """Strip a single pair of surrounding single or double quotes from a path string.
 
     macOS Finder's "Copy as Pathname" (Cmd+Option+C) returns paths wrapped in
-    single quotes, e.g. ``'/Users/x/Documents/foo'``. Other shells and OS file
+    single quotes, e.g. ``'~/Documents/foo'``. Other shells and OS file
     managers do similar things with double quotes. Users routinely paste these
     quoted strings into the Add Space input expecting them to "just work" —
     the only reason they didn't was a missing strip.

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "areas": [
+    {
+      "path": "apps/web/static",
+      "classification": "ARES_MODIFIED",
+      "reason": "Hermes-derived browser UI with ARES identity, session, approval, clarification, tool, and Jaeger behavior."
+    },
+    {
+      "path": "services/controller",
+      "classification": "ARES_MODIFIED",
+      "reason": "Hermes-derived HTTP application evolved into the ARES product controller and provider boundary."
+    },
+    {
+      "path": "apps/macos",
+      "classification": "ARES_ONLY",
+      "reason": "ARES native macOS shell and lifecycle integration."
+    },
+    {
+      "path": "integrations",
+      "classification": "ARES_ONLY",
+      "reason": "ARES provider and worker adapters, including the versioned Jaeger bridge."
+    },
+    {
+      "path": "core",
+      "classification": "ARES_ONLY",
+      "reason": "ARES-owned product orchestration, memory projections, and authority code."
+    }
+  ],
+  "allowed_classifications": [
+    "UPSTREAM",
+    "ARES_MODIFIED",
+    "ARES_ONLY"
+  ]
+}

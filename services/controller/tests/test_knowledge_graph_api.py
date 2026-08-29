@@ -5,7 +5,12 @@ import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-from api.knowledge_graph import build_knowledge_graph, read_knowledge_document
+from api.knowledge_graph import (
+    _get_rag_sources,
+    _resolve_knowledge_folders,
+    build_knowledge_graph,
+    read_knowledge_document,
+)
 from fastapi_app.main import app
 
 
@@ -52,6 +57,20 @@ def test_build_knowledge_graph(temp_vault):
     assert "agent_architecture" in node_ids
     assert "ares_gateway" in node_ids
     assert "hardware_interface" in node_ids
+
+
+def test_missing_config_does_not_invent_a_developer_specific_source(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    assert _get_rag_sources() == []
+
+
+def test_configured_folder_is_not_silently_rewritten_to_named_child(tmp_path):
+    configured = tmp_path / "vault"
+    configured.mkdir()
+    (configured / "03_Knowledge").mkdir()
+
+    assert _resolve_knowledge_folders([str(configured)]) == [configured]
 
 
 def test_read_knowledge_document(temp_vault):

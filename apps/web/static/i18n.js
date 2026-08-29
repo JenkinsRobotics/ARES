@@ -947,6 +947,9 @@ const LOCALES = {
     project_name_prompt: 'Project name:',
     // Sidebar & Tabs
     tab_chat: 'Chat',
+    tab_dispatcher: 'Dispatcher',
+    tab_overview: 'Overview',
+    tab_workbench: 'Workbench',
     tab_avatar: 'Avatar',
     tab_tasks: 'Tasks',
     tab_skills: 'Skills',
@@ -2712,6 +2715,7 @@ const LOCALES = {
     project_name_prompt: 'Nome progetto:',
     // Sidebar & Tabs
     tab_chat: 'Chat',
+    tab_dispatcher: 'Dispatcher',
     tab_tasks: 'Task',
     tab_skills: 'Skill',
     tab_memory: 'Memoria',
@@ -4459,6 +4463,7 @@ const LOCALES = {
     project_name_prompt: 'プロジェクト名:',
     // Sidebar & Tabs
     tab_chat: 'チャット',
+    tab_dispatcher: 'Dispatcher',
     tab_tasks: 'タスク',
     tab_skills: 'スキル',
     tab_memory: 'メモリ',
@@ -5900,6 +5905,7 @@ const LOCALES = {
     login_invalid_pw: 'Неверный пароль',
     login_conn_failed: 'Не удалось подключиться',
     tab_chat: 'Чат',
+    tab_dispatcher: 'Dispatcher',
     tab_tasks: 'Задачи',
     tab_skills: 'Навыки',
     tab_memory: 'Память',
@@ -7610,6 +7616,7 @@ const LOCALES = {
     project_name_prompt: 'Nombre del proyecto:',
     // Sidebar & Tabs
     tab_chat: 'Chat',
+    tab_dispatcher: 'Dispatcher',
     tab_tasks: 'Tareas',
     tab_skills: 'Habilidades',
     tab_memory: 'Memoria',

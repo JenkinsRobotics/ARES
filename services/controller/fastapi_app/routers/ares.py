@@ -217,6 +217,15 @@ def set_directives(
     }
 
 
+@router.get("/api/ares/verification-evidence")
+def runtime_verification_evidence(
+    _identity: Annotated[RequestIdentity, Depends(require_identity)],
+):
+    from api.verification_evidence import verification_evidence
+
+    return verification_evidence()
+
+
 @router.get("/api/ares/backend")
 def backend(
     identity: Annotated[RequestIdentity, Depends(require_identity)],
@@ -490,6 +499,12 @@ def legacy_adapters(_identity: Annotated[RequestIdentity, Depends(require_identi
         except Exception:
             label = str(getattr(backend, "display_label", "") or name)
         try:
+            tools = backend.tools()
+            backend_inventory = backend.inventory()
+            execution_state = (
+                backend_inventory.get("active_execution", {})
+                if isinstance(backend_inventory, dict) else {}
+            )
             inventory[name] = {
                 "available": backend.is_available(),
                 "label": label,
@@ -497,7 +512,11 @@ def legacy_adapters(_identity: Annotated[RequestIdentity, Depends(require_identi
                 "identity_projection": backend.identity_projection(),
                 "capabilities": backend.capabilities(),
                 "chat_session_support": backend.chat_session_support(),
-                "tools": backend.tools(),
+                "tools": tools,
+                # [] can mean either an authoritative empty runtime or a
+                # bridge ARES could not interrogate. Preserve that distinction
+                # for legacy consumers instead of silently certifying no tools.
+                "tools_unknown": bool(execution_state.get("tools_unknown")),
                 "settings_schema": backend.settings_schema(),
             }
         except Exception as exc:
@@ -519,6 +538,7 @@ def legacy_adapters(_identity: Annotated[RequestIdentity, Depends(require_identi
                 "capabilities": {},
                 "chat_session_support": {},
                 "tools": [],
+                "tools_unknown": True,
                 "settings_schema": {"type": "object", "properties": {}},
             }
     return inventory

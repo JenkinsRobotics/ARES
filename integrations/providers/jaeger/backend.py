@@ -20,7 +20,9 @@ class JaegerBackend(AgenticBackend):
     def get_worker_target(self) -> tuple:
         from api.providers.jaeger.streaming import run_jaeger_streaming
 
-        return run_jaeger_streaming, False, True
+        # (worker, is_gateway, is_jaeger). Jaeger keeps the live thread, so
+        # ARES must send the clean user turn — not a serialized transcript.
+        return run_jaeger_streaming, True, True
 
     def get_backend_name(self) -> str:
         return "Jaeger AI"
@@ -78,6 +80,17 @@ class JaegerBackend(AgenticBackend):
         except Exception:
             return []
 
+    def _tools_inventory(self) -> tuple[list[dict[str, Any]], bool]:
+        """Return tools plus whether the bridge answer is authoritative."""
+        try:
+            from api.providers.jaeger.streaming import query_local_companion
+
+            payload = query_local_companion("list_tools", {})
+            tools = list(payload) if isinstance(payload, list) else list((payload or {}).get("tools") or [])
+            return tools, False
+        except Exception:
+            return [], True
+
     def settings_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
@@ -115,6 +128,7 @@ class JaegerBackend(AgenticBackend):
         catalog = catalog if isinstance(catalog, dict) else {}
         contract = contract if isinstance(contract, dict) else {}
         serving = catalog.get("serving") if isinstance(catalog.get("serving"), dict) else {}
+        tools_summary, tools_unknown = self._tools_inventory()
         return finalize_inventory({
             "worker_id": self.name,
             "display_name": "Jaeger AI",
@@ -127,11 +141,12 @@ class JaegerBackend(AgenticBackend):
             )],
             "gateways": [],
             "mcp": list(catalog.get("mcp") or []),
-            "tools_summary": self.tools(),
+            "tools_summary": tools_summary,
             "active_execution": {
                 "available": self.is_available(), "transport": "stdio_bridge",
                 "instance": catalog.get("instance"), "model": serving.get("model"),
                 "provider": serving.get("provider"),
+                "tools_unknown": tools_unknown,
             },
             "notes": f"Jaeger integration contract v{contract.get('contract_version', 'unknown')}",
         })

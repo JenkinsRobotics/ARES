@@ -88,7 +88,10 @@ def test_canonical_projection_uses_jaeger_instead_of_local_transcript(monkeypatc
             {"role": "user", "text": "canonical", "ts": 2},
             {
                 "role": "assistant", "text": "done", "ts": 3,
-                "metadata": {"tool_calls": [{"name": "write_file", "done": True}]},
+                "metadata": {
+                    "tool_calls": [{"name": "write_file", "done": True}],
+                    "reasoning": "verify before claiming success",
+                },
             },
         ],
     )
@@ -100,6 +103,7 @@ def test_canonical_projection_uses_jaeger_instead_of_local_transcript(monkeypatc
     assert payload["tool_calls"] == [
         {"name": "write_file", "done": True, "assistant_msg_idx": 1},
     ]
+    assert payload["messages"][1]["reasoning"] == "verify before claiming success"
     assert "stale local copy" not in json.dumps(payload)
 
 

@@ -41,8 +41,30 @@ reads or writes another product's private state.
 
 ## Verification
 
+Read the implementation to understand it. Run the real system to prove it.
+Test the production wiring to prevent regression. Do not claim "fully working",
+"production ready", "end-to-end complete", or "session persistence works".
+State the command, git commit, expected vs actual, and any mocked boundary.
+
+User-visible promises, with current runtime evidence, code-path trace, gaps,
+and mocked boundaries:
+[`docs/verification/jaeger-five-promises-report.md`](docs/verification/jaeger-five-promises-report.md).
+
+The evidence is time- and revision-scoped. Re-run
+`services/controller/scripts/verify_jaeger_promises.py` before repeating it;
+never turn its last result into an unqualified standing claim.
+
+A test file does not lock a promise it does not exercise. When adding one here,
+say which of the two it is.
+
+A unit test that sets `is_gateway=True` on a fake backend only proves the
+branch. Production proof is `JaegerBackend.get_worker_target()` plus a
+multi-turn send on that backend.
+
 ```bash
 cd services/controller
+./scripts/test.sh -q tests/test_jaeger_production_promises.py
+./scripts/test.sh -q tests/test_jaeger_attach_and_status_honesty.py
 ./scripts/test.sh -q tests/test_jaeger_ownership_literals.py
 cd ../..
 swift test

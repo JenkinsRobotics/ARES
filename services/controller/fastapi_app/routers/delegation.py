@@ -33,13 +33,19 @@ def create_delegation(
 
     from api.delegation_runner import delegate
 
-    with profile_scope(identity.profile):
-        task = delegate(
-            prompt=prompt,
-            backend=backend,
-            model=payload.model,
-            provider=payload.provider,
-        )
+    try:
+        with profile_scope(identity.profile):
+            task = delegate(
+                prompt=prompt,
+                backend=backend,
+                model=payload.model,
+                provider=payload.provider,
+                parent_task_id=payload.parent_task_id,
+                parent_session_id=payload.parent_session_id,
+                relation=payload.relation,
+            )
+    except ValueError as exc:
+        raise CoreApiError(400, str(exc)) from exc
     return task
 
 
@@ -66,6 +72,20 @@ def list_delegations(
 
     with profile_scope(identity.profile):
         return {"tasks": list_tasks()}
+
+
+@router.get("/tasks/{task_id}/lineage")
+def get_delegation_lineage(
+    task_id: str,
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
+):
+    from api.delegation_tasks import task_lineage
+
+    with profile_scope(identity.profile):
+        rows = task_lineage(task_id)
+    if not rows:
+        raise CoreApiError(404, "task not found")
+    return {"root_task_id": rows[0].get("root_task_id"), "tasks": rows}
 
 
 @router.post("/tasks/{task_id}/cancel")

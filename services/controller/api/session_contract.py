@@ -115,6 +115,9 @@ def runtime_query(operation: str, *, session_id: str = "", query: str = "", limi
     if operation == "list":
         return query_local_companion("list_sessions", {"limit": limit})
     if operation == "load":
+        # Display/search only. Interactive turns hydrate with resume=True in
+        # streaming._hydrate_live_session so a projection cannot swap the live
+        # agent to a session the user is only browsing.
         return query_local_companion(
             "load_session", {"id": shared_session_id(session_id), "resume": False}
         )

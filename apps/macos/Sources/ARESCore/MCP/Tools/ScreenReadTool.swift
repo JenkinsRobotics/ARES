@@ -51,17 +51,17 @@ public final class ScreenReadTool: MCPTool, @unchecked Sendable {
             )
         }
 
-        // Gate 2 — OS permission, reported honestly.
-        switch service.accessibilityPermission() {
-        case .granted:
-            break
-        case .denied:
+        // Gate 2 — OS permission (Screen Recording or Accessibility), reported honestly.
+        let accPermission = service.accessibilityPermission()
+        let capPermission = service.screenCapturePermission()
+        if accPermission != .granted && capPermission != .granted {
+            if accPermission == .unsupported && capPermission == .unsupported {
+                return deny("Screen read is not supported on this platform.")
+            }
             return deny(
-                "Screen read unavailable: macOS Accessibility permission is not granted. "
-                + "Grant ARES access in System Settings → Privacy & Security → Accessibility."
+                "Screen read unavailable: macOS Screen Recording / Accessibility permission is not granted. "
+                + "Grant ARES access in System Settings → Privacy & Security → Screen Recording (or Accessibility)."
             )
-        case .unsupported:
-            return deny("Screen read is not supported on this platform.")
         }
 
         let windows = service.windowSnapshot()

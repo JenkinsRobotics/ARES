@@ -60,12 +60,10 @@ def _get_rag_sources() -> list[dict[str, Any]]:
     """Load configured RAG sources from ~/.ares/rag_sources.yaml."""
     cfg_file = Path.home() / ".ares" / "rag_sources.yaml"
     if not cfg_file.exists():
-        return [{"path": "/Volumes/Jenkins_Robotics/03_Knowledge", "enabled": True}]
+        return []
     try:
         data = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
         sources = data.get("sources", [])
-        if not sources and Path("/Volumes/Jenkins_Robotics/03_Knowledge").exists():
-            return [{"path": "/Volumes/Jenkins_Robotics/03_Knowledge", "enabled": True}]
         return sources
     except Exception as exc:
         logger.debug("Failed reading rag_sources.yaml: %s", exc)
@@ -88,18 +86,11 @@ def _resolve_knowledge_folders(sources: list[str] | None = None) -> list[Path]:
             p = Path(raw_p).expanduser()
             if p.exists():
                 if p.is_dir():
-                    # If this is /Volumes/Jenkins_Robotics and 03_Knowledge exists, scope to 03_Knowledge
-                    if (p / "03_Knowledge").exists():
-                        target_folders.append(p / "03_Knowledge")
-                    else:
-                        target_folders.append(p)
+                    target_folders.append(p)
                 elif p.is_file() and p.suffix == ".md":
                     target_folders.append(p.parent)
 
     if not target_folders:
-        default_nas = Path("/Volumes/Jenkins_Robotics/03_Knowledge")
-        if default_nas.exists():
-            target_folders.append(default_nas)
         default_local = Path.home() / ".ares" / "knowledge"
         if default_local.exists():
             target_folders.append(default_local)

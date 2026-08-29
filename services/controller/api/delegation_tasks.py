@@ -83,23 +83,33 @@ def _write_tasks(tasks: list[dict[str, Any]]) -> None:
 
 
 def create_task(
-    *, prompt: str, backend: str, model: str | None = None, provider: str | None = None
+    *, prompt: str, backend: str, model: str | None = None, provider: str | None = None,
+    parent_task_id: str | None = None, parent_session_id: str | None = None,
+    relation: str = "delegated",
 ) -> dict[str, Any]:
     """Persist a new delegated task in the Queued state and return it."""
-    task = {
-        "id": uuid.uuid4().hex,
-        "prompt": str(prompt or ""),
-        "backend": str(backend or ""),
-        "model": model,
-        "provider": provider,
-        "status": STATUS_QUEUED,
-        "result": None,
-        "error": None,
-        "created_at": _now(),
-        "updated_at": _now(),
-    }
     with _LOCK:
         tasks = _read_tasks()
+        parent = next((row for row in tasks if row.get("id") == parent_task_id), None) if parent_task_id else None
+        if parent_task_id and parent is None:
+            raise ValueError(f"parent task not found: {parent_task_id}")
+        task_id = uuid.uuid4().hex
+        task = {
+            "id": task_id,
+            "prompt": str(prompt or ""),
+            "backend": str(backend or ""),
+            "model": model,
+            "provider": provider,
+            "status": STATUS_QUEUED,
+            "result": None,
+            "error": None,
+            "created_at": _now(),
+            "updated_at": _now(),
+            "parent_task_id": parent_task_id,
+            "root_task_id": (parent.get("root_task_id") or parent.get("id")) if parent else task_id,
+            "parent_session_id": parent_session_id or (parent.get("parent_session_id") if parent else None),
+            "relation": str(relation or "delegated"),
+        }
         tasks.append(task)
         _write_tasks(tasks)
     return dict(task)
@@ -119,6 +129,19 @@ def get_task(task_id: str) -> dict[str, Any] | None:
 def list_tasks() -> list[dict[str, Any]]:
     with _LOCK:
         return _read_tasks()
+
+
+def task_lineage(task_id: str) -> list[dict[str, Any]]:
+    with _LOCK:
+        tasks = _read_tasks()
+    selected = next((row for row in tasks if row.get("id") == task_id), None)
+    if selected is None:
+        return []
+    root_id = selected.get("root_task_id") or selected.get("id")
+    return sorted(
+        (dict(row) for row in tasks if row.get("id") == root_id or row.get("root_task_id") == root_id),
+        key=lambda row: str(row.get("created_at") or ""),
+    )
 
 
 def update_status(

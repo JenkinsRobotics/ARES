@@ -72,7 +72,7 @@ def mount_smb(server: str, share: str, username: Optional[str] = None, password:
 
     Args:
         server: SMB server hostname or IP (e.g. "192.168.1.100" or "nas.local")
-        share: Share name (e.g. "Jenkins_Robotics")
+        share: Share name (e.g. "team_documents")
         username: Optional username for authentication
         password: Optional password (will prompt if needed and not provided)
 

@@ -308,3 +308,5 @@ def test_goal_halt_uses_structured_code_not_assistant_prose(monkeypatch):
     )
     assert decision["should_continue"] is False
     assert managers[-1].paused is True
+    assert "tool-call safety budget" in decision["message"]
+    assert "timed out" not in decision["message"]

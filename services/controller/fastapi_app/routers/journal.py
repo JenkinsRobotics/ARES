@@ -92,7 +92,7 @@ def journal_unmount_volume(
 
 @router.get("/volumes/scan")
 def journal_scan_volume(
-    path: str = Query("/Volumes/Jenkins_Robotics", description="Volume path to scan"),
+    path: str = Query(..., description="Mounted volume or directory path to scan"),
 ):
     """Scan a mounted volume for conversation data sources."""
     from core.memory.journal.volume_scanner import scan_volume

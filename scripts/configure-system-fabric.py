@@ -24,6 +24,29 @@ def executable(*candidates: Path | str) -> str:
     raise SystemExit(f"Required executable was not found: {', '.join(map(str, candidates))}")
 
 
+def client_token(path: Path) -> str:
+    """Read or issue one identity-owned gateway token without printing it."""
+
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.parent.chmod(0o700)
+    if path.exists():
+        value = path.read_text(encoding="utf-8").strip()
+    else:
+        value = secrets.token_urlsafe(32)
+        path.write_text(value + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    if not value:
+        raise SystemExit(f"Gateway client token is empty: {path}")
+    return value
+
+
+def key_record(value: str, identity: str, group: str) -> dict[str, object]:
+    return {
+        "keyHash": f"sha256:{hashlib.sha256(value.encode()).hexdigest()}",
+        "metadata": {"user": identity, "group": group},
+    }
+
+
 def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     state = Path(os.environ.get("ARES_HOME") or Path.home() / ".ares")
@@ -33,22 +56,21 @@ def main() -> int:
     gateway_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     gateway_dir.chmod(0o700)
     output = gateway_dir / "config.yaml"
-    token_path = gateway_dir / "client.token"
-    if token_path.exists():
-        client_token = token_path.read_text(encoding="utf-8").strip()
-    else:
-        client_token = secrets.token_urlsafe(32)
-        token_path.write_text(client_token + "\n", encoding="utf-8")
-        token_path.chmod(0o600)
-    if not client_token:
-        raise SystemExit(f"Gateway client token is empty: {token_path}")
-    api_key_policy = {
-        "keys": [{"keyHash": f"sha256:{hashlib.sha256(client_token.encode()).hexdigest()}"}],
+    admin_token = client_token(gateway_dir / "client.token")
+    hermes_token = client_token(Path.home() / ".hermes" / "ares" / "ares-mcp.token")
+    admin_api_key_policy = {
+        "keys": [key_record(admin_token, "admin", "owner")],
+        "mode": "strict",
+    }
+    mcp_api_key_policy = {
+        "keys": [
+            key_record(admin_token, "admin", "owner"),
+            key_record(hermes_token, "hermes", "agent"),
+        ],
         "mode": "strict",
     }
 
     controller_python = executable(repo / "services" / "controller" / ".venv" / "bin" / "python")
-    hermes = executable(Path.home() / "bin" / "hermes", "hermes")
     config = {
         "config": {
             "database": {"url": f"sqlite://{gateway_dir / 'data.db'}"},
@@ -57,10 +79,16 @@ def main() -> int:
         "mcp": {
             "port": 8811,
             "policies": {
-                "apiKey": api_key_policy,
+                "apiKey": mcp_api_key_policy,
+                "mcpAuthorization": {
+                    "rules": [
+                        'apiKey.user == "admin"',
+                        'apiKey.user == "hermes" && mcp.tool.target == "host-hermes"',
+                    ],
+                },
                 "cors": {
                     "allowOrigins": ["http://127.0.0.1", "http://localhost"],
-                    "allowHeaders": ["mcp-protocol-version", "content-type", "cache-control", "mcp-session-id"],
+                    "allowHeaders": ["authorization", "mcp-protocol-version", "content-type", "cache-control", "mcp-session-id"],
                     "exposeHeaders": ["Mcp-Session-Id"],
                 }
             },
@@ -73,15 +101,12 @@ def main() -> int:
                         "env": {"ARES_SYSTEM_URL": "http://127.0.0.1:8788"},
                     },
                 },
-                {"name": "hermes", "stdio": {"cmd": hermes, "args": ["mcp", "serve"]}},
                 {
-                    "name": "jaeger",
+                    "name": "host-hermes",
                     "stdio": {
                         "cmd": controller_python,
-                        "args": [str(repo / "services" / "controller" / "jaeger_mcp_proxy.py")],
-                        "env": {
-                            "JAEGER_BRIDGE_URL": "http://127.0.0.1:8791",
-                        },
+                        "args": [str(repo / "services" / "controller" / "host_capability_mcp_server.py")],
+                        "env": {"ARES_CAPABILITY_IDENTITY": "hermes"},
                     },
                 },
             ],
@@ -99,7 +124,7 @@ def main() -> int:
                             },
                             {
                                 "policies": {
-                                    "apiKey": api_key_policy,
+                                    "apiKey": admin_api_key_policy,
                                     "cors": {
                                         "allowOrigins": ["*"],
                                         "allowHeaders": ["content-type", "cache-control", "a2a-version"],

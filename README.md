@@ -35,6 +35,7 @@ cd ~/GitHub/ARES/services/controller
 
 cd ~/GitHub/ARES
 ./scripts/install-agentgateway.py
+./scripts/configure-host-capabilities.py
 ./scripts/configure-system-fabric.py
 ./scripts/install-n8n-container.sh
 ./scripts/install-system-services.py
@@ -60,7 +61,10 @@ http://127.0.0.1:8811/mcp
 Authorization: Bearer <contents of ~/.ares/gateway/client.token>
 ```
 
-Tools are namespaced as `system_*`, `hermes_*`, and `jaeger_*`. ARES also
+Owner tools are namespaced as `system_*`. Hermes receives a separate
+credential that reveals only `host-hermes_*`. Jaeger connects to the same
+ARES-owned capability worker through its private native stdio configuration,
+so it does not depend on the remote gateway. ARES also
 publishes an official A2A v1 Agent Card at:
 
 ```text
@@ -83,6 +87,8 @@ default is Hermes.
   configuration, not a repository default.
 - Agentgateway's admin, metrics, and readiness endpoints bind to loopback. MCP
   and A2A require a generated API key.
+- Host capabilities expose approved workspace read/write, read-only Git, and
+  service health only. There is no arbitrary shell, delete, or credential tool.
 
 ## Repository map
 
@@ -90,6 +96,7 @@ default is Hermes.
 - `services/controller/fastapi_app/a2a_server.py` — official A2A v1 surface
 - `services/controller/system_mcp_server.py` — ARES control-plane MCP tools
 - `services/controller/jaeger_mcp_proxy.py` — MCP-to-native-Jaeger bridge
+- `services/controller/host_capability_mcp_server.py` — scoped, audited Mac work tools
 - `services/controller/apps/dashboard/static/` — lightweight System dashboard
 - `scripts/` — checksum-verified gateway, container, and launchd installers
 - `config/system-fabric.lock.json` — pinned external dependencies

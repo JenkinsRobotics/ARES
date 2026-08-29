@@ -4,6 +4,7 @@ set -eu
 ares_state_dir="${ARES_HOME:-$HOME/.ares}"
 gateway_binary="$HOME/Library/Application Support/ARES/bin/agentgateway-v1.5.0"
 gateway_config="$ares_state_dir/gateway/config.yaml"
+capability_grants="$ares_state_dir/capabilities/grants.json"
 
 if [[ ! -x "$gateway_binary" ]]; then
   print -u2 "Agentgateway is not installed. Run scripts/install-agentgateway.py."
@@ -11,6 +12,10 @@ if [[ ! -x "$gateway_binary" ]]; then
 fi
 if [[ ! -f "$gateway_config" ]]; then
   print -u2 "Agentgateway config is missing. Run scripts/configure-system-fabric.py."
+  exit 1
+fi
+if [[ ! -f "$capability_grants" ]]; then
+  print -u2 "Host capability grants are missing. Run scripts/configure-host-capabilities.py."
   exit 1
 fi
 

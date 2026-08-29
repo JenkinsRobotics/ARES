@@ -23,6 +23,7 @@ repository root:
 
 ```bash
 ./scripts/install-agentgateway.py
+./scripts/configure-host-capabilities.py
 ./scripts/configure-system-fabric.py
 ./scripts/install-n8n-container.sh
 ./scripts/install-system-services.py

@@ -24,6 +24,7 @@ from .routers import install_core_routers
 from .realtime import RealtimeService
 from .security import security_headers_middleware
 from .services import AresCoreService
+from core.automation import AutomationService
 
 
 import os
@@ -78,6 +79,7 @@ def create_app(
         lifespan=ares_lifespan if enable_lifecycle else None,
     )
     application.state.core_service = core_service or AresCoreService()
+    application.state.automation_service = AutomationService()
     application.state.requests_total = 0
     application.state.last_request_at = 0.0
     registry = (

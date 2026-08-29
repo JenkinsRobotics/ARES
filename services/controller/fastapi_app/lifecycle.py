@@ -223,9 +223,14 @@ async def shutdown_runtime() -> None:
 @asynccontextmanager
 async def ares_lifespan(_application: FastAPI) -> AsyncIterator[None]:
     await startup_runtime()
+    automation = getattr(_application.state, "automation_service", None)
+    if automation is not None:
+        automation.start_scheduler()
     try:
         yield
     finally:
+        if automation is not None:
+            automation.stop_scheduler()
         await shutdown_runtime()
 
 

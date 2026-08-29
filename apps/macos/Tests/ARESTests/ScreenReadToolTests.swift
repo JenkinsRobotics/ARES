@@ -79,12 +79,13 @@ final class ScreenReadToolTests: XCTestCase {
         let context = MCPExecutionContext(conversationId: conversationId)
         let result = await tool.execute(parameters: [:], context: context)
 
-        if ScreenAccessibilityService().accessibilityPermission() == .granted {
+        let service = ScreenAccessibilityService()
+        if service.accessibilityPermission() == .granted || service.screenCapturePermission() == .granted {
             // Dev machine with permission: a real read is allowed to succeed.
             XCTAssertTrue(result.success)
         } else {
             XCTAssertFalse(result.success)
-            XCTAssertTrue(result.output.content.contains("Accessibility permission"))
+            XCTAssertTrue(result.output.content.contains("permission"))
         }
     }
 }

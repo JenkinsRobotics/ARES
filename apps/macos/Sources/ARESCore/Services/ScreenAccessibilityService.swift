@@ -51,6 +51,15 @@ public struct ScreenAccessibilityService: Sendable {
         #endif
     }
 
+    /// Probe whether the macOS Screen Recording permission is granted.
+    public func screenCapturePermission() -> ScreenCapabilityPermission {
+        #if os(macOS)
+        return CGPreflightScreenCaptureAccess() ? .granted : .denied
+        #else
+        return .unsupported
+        #endif
+    }
+
     /// Snapshot the current on-screen windows (owner + title + layer).
     ///
     /// Requires macOS Screen Recording permission to include window titles.

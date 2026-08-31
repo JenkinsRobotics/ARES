@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from ..runtimes import normalize_runtime_id
+
 ResourceKind = Literal["model", "tool", "memory", "session", "credential"]
 AccessMode = Literal["use", "read", "write", "delegate"]
 
@@ -47,9 +49,17 @@ class SharingGrant:
 @dataclass(frozen=True)
 class AgentDefinition:
     id: str
-    runtime: Literal["hermes", "jaeger"]
+    runtime: str
     enabled: bool = True
-    ollama_base_url: str = "http://192.168.64.1:11434/v1"
+    #: Advisory only -- ARES stores and validates this but nothing reads it to
+    #: build a request. Every live Ollama call resolves the endpoint through
+    #: ``integrations.workers.cli_backends._ollama_base_url()`` (``OLLAMA_HOST``
+    #: or host loopback) instead. The previous default here was
+    #: ``192.168.64.1``, an address unreachable from the current container
+    #: bridge, which read as a live misconfiguration precisely because the
+    #: field looks authoritative. Keep it aligned with the resolver until it is
+    #: either wired up or removed.
+    ollama_base_url: str = "http://127.0.0.1:11434/v1"
     heartbeat_enabled: bool = True
     schedules_enabled: bool = True
     grants: tuple[SharingGrant, ...] = field(default_factory=tuple)
@@ -59,7 +69,8 @@ class AgentDefinition:
     def from_dict(cls, raw: dict[str, Any]) -> "AgentDefinition":
         agent_id = str(raw.get("id") or "").strip()
         runtime = str(raw.get("runtime") or "").strip()
-        if not agent_id or runtime not in {"hermes", "jaeger"}:
+        runtime = normalize_runtime_id(runtime)
+        if not agent_id or not runtime:
             raise ValueError("agent id and supported runtime are required")
         url = str(raw.get("ollama_base_url") or "").strip()
         if not url.startswith(("http://", "https://")):

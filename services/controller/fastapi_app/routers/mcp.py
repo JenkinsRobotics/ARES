@@ -5,9 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from ..errors import CoreApiError
-from ..request_context import RequestIdentity, profile_scope, require_identity, require_mutation_identity
+from ..request_context import (
+    RequestIdentity,
+    profile_scope,
+    require_identity,
+    require_mutation_identity,
+)
 from ..schemas import McpServerToggle, McpServerUpdate
-
 
 router = APIRouter(tags=["mcp"])
 
@@ -33,11 +37,10 @@ def servers(identity: Annotated[RequestIdentity, Depends(require_identity)]):
 
 @router.get("/api/mcp/catalog")
 def catalog(_identity: Annotated[RequestIdentity, Depends(require_identity)]):
-    return {
-        "ok": True,
-        "catalog": [],
-        "diagnostics": ["MCP servers are configured explicitly; no hard-coded server catalog is installed."],
-    }
+    from api.mcp_catalog import get_mcp_catalog
+
+    return get_mcp_catalog()
+
 
 
 @router.put("/api/mcp/servers/{name}")

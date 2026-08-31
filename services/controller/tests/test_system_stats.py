@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from api.system_stats import get_system_stats, _query_ollama_ps, _query_jaeger_status
+from api.system_stats import _query_jaeger_status, _query_ollama_ps, get_system_stats
 
 
 def test_system_stats_returns_valid_structure():
@@ -24,6 +22,22 @@ def test_system_stats_returns_valid_structure():
     assert "ai_runtimes" in stats
     assert "ollama" in stats["ai_runtimes"]
     assert "jaeger" in stats["ai_runtimes"]
+    assert "swap" in stats["host"]
+    assert "memory_breakdown" in stats["host"]
+    assert stats["host"]["metrics_source"]
+
+
+def test_system_stats_process_inventory_is_opt_in_and_bounded(monkeypatch):
+    monkeypatch.setattr(
+        "api.system_stats._top_processes",
+        lambda limit: [{"pid": value, "name": "safe", "memory_bytes": value}
+                       for value in range(limit)],
+    )
+    ordinary = get_system_stats(force_refresh=True)
+    detailed = get_system_stats(include_processes=True, process_limit=3)
+
+    assert "top_processes" not in ordinary["host"]
+    assert len(detailed["host"]["top_processes"]) == 3
 
 
 def test_ollama_ps_parser_with_loaded_models():

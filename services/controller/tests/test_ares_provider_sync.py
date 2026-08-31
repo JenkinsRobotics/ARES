@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 import pytest
 import yaml
+from fastapi.testclient import TestClient
 
+import api.config as config
 from api.ares_provider_sync import sync_fallback_chain, sync_provider
 from fastapi_app.main import create_app
 from fastapi_app.request_context import RequestIdentity, require_mutation_identity
@@ -91,6 +92,46 @@ def test_provider_sync_post_route_calls_sync_provider(monkeypatch, tmp_path):
             "provider": "gemini", "model": "gemini-2.5-pro", "targets": ["ares"], "dry_run": True})
     assert response.status_code == 200
     assert captured["targets"] == ["ares"]
+
+
+def test_ordinary_settings_save_does_not_sync_the_active_provider(monkeypatch):
+    calls = []
+    monkeypatch.setattr(config, "_trigger_provider_sync", lambda *args: calls.append(args))
+
+    config._sync_providers_on_settings_save(
+        {"default_model_provider": "ollama-local"},
+        requested_keys={"language"},
+    )
+
+    assert calls == []
+
+
+def test_provider_sync_queue_is_single_worker_and_last_write_wins(monkeypatch):
+    threads = []
+
+    class FakeThread:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.started = False
+            threads.append(self)
+
+        def start(self):
+            self.started = True
+
+        def is_alive(self):
+            return self.started
+
+    monkeypatch.setattr(config.threading, "Thread", FakeThread)
+    monkeypatch.setattr(config, "_PROVIDER_SYNC_THREAD", None)
+    monkeypatch.setattr(config, "_PROVIDER_SYNC_PENDING", None)
+
+    config._trigger_provider_sync("ollama-local", "first")
+    config._trigger_provider_sync("ollama-cloud", "latest")
+
+    assert len(threads) == 1
+    assert threads[0].started is True
+    assert threads[0].kwargs["name"] == "ares-provider-sync"
+    assert config._PROVIDER_SYNC_PENDING == ("ollama-cloud", "latest")
 
 
 def _stub_contract(monkeypatch, *, commands: list[str], capabilities=None):

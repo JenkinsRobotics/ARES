@@ -114,6 +114,13 @@ def _start_server(port: int, cert: str = None, key: str = None) -> subprocess.Po
     env = {k: v for k, v in os.environ.items()}
     env["ARES_WEBUI_HOST"] = "127.0.0.1"
     env["ARES_WEBUI_PORT"] = str(port)
+    env["ARES_WEBUI_PRESERVE_ENV"] = "1"
+    # This suite validates the Uvicorn/TLS boundary, not external agents.  A
+    # fresh production app enables its lifespan, so isolate both network and
+    # stdio/Unix-socket integrations or the test can attach to the operator's
+    # live Jaeger instance and wait on its model during startup.
+    env["ARES_WEBUI_TEST_NETWORK_BLOCK"] = "1"
+    env["ARES_NO_JAEGER"] = "1"
     env.pop("ARES_WEBUI_TLS_CERT", None)
     env.pop("ARES_WEBUI_TLS_KEY", None)
     if cert:
@@ -170,7 +177,10 @@ def _start_and_wait(use_ssl: bool, cert: str = None, key: str = None,
         # Capture diagnostics before retrying with a fresh port.
         with suppress(Exception):
             os.set_blocking(proc.stdout.fileno(), False)
-            last_output = (proc.stdout.read(4000) or "")[:4000]
+            # Preserve the tail, where Python prints the root exception.  The
+            # beginning can contain many repeated merged-lifespan frames.
+            captured = proc.stdout.read() or ""
+            last_output = captured[-20_000:]
         _terminate(proc)
     raise AssertionError(
         f"server did not become reachable after {attempts} attempts "

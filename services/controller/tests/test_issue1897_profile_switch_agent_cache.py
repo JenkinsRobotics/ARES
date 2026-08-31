@@ -8,7 +8,6 @@ import sys
 import types
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parent.parent
 STREAMING_PY = (REPO / "api" / "streaming.py").read_text(encoding="utf-8")
 
@@ -30,9 +29,7 @@ def test_same_session_profile_switch_rebuilds_agent_under_new_soul_home(tmp_path
     """
     sys.path.insert(0, str(REPO))
     from api import config as cfg
-    from api import oauth
-    from api import profiles
-    from api import streaming
+    from api import oauth, profiles, streaming
 
     default_home = tmp_path / "ares-home"
     profile_a_home = default_home / "profiles" / "alpha"
@@ -170,7 +167,17 @@ def test_same_session_profile_switch_rebuilds_agent_under_new_soul_home(tmp_path
             "base_url": None,
         },
     )
-    monkeypatch.setattr("api.config.get_config", lambda: {})
+    # The test exercises the legacy in-process agent cache, not default-runtime
+    # election.  Select its non-Jaeger lane explicitly so an operator's live
+    # Jaeger instance can never become part of this unit test.
+    monkeypatch.setattr(
+        "api.config.get_config",
+        lambda: {"ares_backend": "ollama_local"},
+    )
+    monkeypatch.setattr(
+        "api.config.get_config_for_profile_home",
+        lambda _home: {"ares_backend": "ollama_local"},
+    )
     monkeypatch.setattr("api.config._resolve_cli_toolsets", lambda _cfg: [])
     monkeypatch.setattr("api.config.load_settings", lambda: {})
     monkeypatch.setitem(sys.modules, "ares_cli", fake_ares_cli)

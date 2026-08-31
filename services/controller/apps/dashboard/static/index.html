@@ -4,25 +4,207 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>ARES Automation</title>
+  <title>ARES</title>
   <link rel="stylesheet" href="/static/style.css?v=__WEBUI_VERSION__">
 </head>
 <body>
-  <header><div><span class="mark">A</span><strong>ARES</strong><small>Autonomous Reasoning and Execution System</small></div><button id="pause" class="danger">Pause all</button></header>
+  <header>
+    <div class="brand">
+      <span class="mark">A</span>
+      <div>
+        <strong>ARES</strong>
+        <small>Autonomous Reasoning &amp; Execution System</small>
+      </div>
+    </div>
+    <div class="fleet-strip" id="fleetStrip">
+      <div class="fleet-item" id="fleetHermes">
+        <span class="pulse-dot"></span>
+        <span class="fleet-label">Hermes</span>
+        <span class="fleet-meta">Container :8787</span>
+      </div>
+      <div class="fleet-item" id="fleetJaeger">
+        <span class="pulse-dot"></span>
+        <span class="fleet-label">Jaeger</span>
+        <span class="fleet-meta">Host :8790</span>
+      </div>
+      <div class="fleet-item" id="fleetOpenClaw">
+        <span class="pulse-dot"></span>
+        <span class="fleet-label">OpenClaw</span>
+        <span class="fleet-meta">Container :18789</span>
+      </div>
+      <div class="fleet-item" id="fleetGateway">
+        <span class="pulse-dot"></span>
+        <span class="fleet-label">Gateway</span>
+        <span class="fleet-meta">MCP :8811</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="pause" class="danger">Pause all</button>
+    </div>
+  </header>
+
   <main>
-    <section class="hero"><div><p class="eyebrow">LOCAL CONTROL PLANE</p><h1>Independent agents.<br><em>One accountable loop.</em></h1><p>ARES coordinates goals, wakeups, approvals and evidence. Agent memory, tools, sessions and credentials remain with their owners.</p></div><div id="system" class="system">Loading controller…</div></section>
-    <section class="system-console">
-      <div class="section-title"><div><p class="eyebrow">SYSTEM INBOX</p><h2>Message the coordinated assistant</h2></div><div class="service-links"><a id="hermesLink">Hermes</a><a id="jaegerLink">Jaeger</a><a id="n8nLink">n8n</a><a id="gatewayLink">Gateway</a></div></div>
-      <p class="muted">Auto currently delegates to Hermes. Choose Jaeger explicitly when you want Jaeger's native tools, identity, or macOS runtime.</p>
-      <div class="composer"><select id="systemAgent"><option value="hermes">Auto · Hermes</option><option value="jaeger">JaegerAI</option></select><textarea id="systemMessage" placeholder="Tell the System what outcome you want…"></textarea><button id="sendSystem" class="primary">Send</button></div>
-      <pre id="systemResult" class="system-result">No System run started in this browser yet.</pre>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">LOCAL CONTROL PLANE</p>
+        <h1>Independent agents.<br><em>One accountable loop.</em></h1>
+        <p>ARES coordinates goals, wakeups, approvals and evidence. Agent memory, tools, sessions and credentials remain with their owners.</p>
+      </div>
+      <div id="system" class="system">Loading controller…</div>
     </section>
-    <section><div class="section-title"><h2>Connected agents</h2><span>Open an agent UI or trigger work</span></div><div id="agents" class="grid"></div></section>
-    <section class="columns"><div><div class="section-title"><h2>Goals</h2><button id="newGoal">New goal</button></div><div id="goals" class="stack"></div></div><div><div class="section-title"><h2>Pending approvals</h2></div><div id="approvals" class="stack"></div></div></section>
-    <section><div class="section-title"><h2>Run ledger</h2><button id="refresh">Refresh</button></div><div id="runs" class="stack"></div></section>
+
+    <section class="capacity-panel" aria-labelledby="capacityTitle">
+      <div class="section-title compact-title">
+        <div>
+          <p class="eyebrow">LOCAL TELEMETRY</p>
+          <h2 id="capacityTitle">System capacity</h2>
+        </div>
+        <span id="capacitySource">Reading macOS counters…</span>
+      </div>
+      <div id="capacityMetrics" class="capacity-grid" aria-live="polite"></div>
+      <details class="process-details">
+        <summary>Top memory processes</summary>
+        <div id="topProcesses" class="process-list"></div>
+      </details>
+    </section>
+
+    <!-- Elevated Multi-Agent Command Console -->
+    <section class="system-console elevated-hub">
+      <div class="section-title hub-header">
+        <div>
+          <p class="eyebrow">COMMAND CONSOLE</p>
+          <h2>System Inbox &amp; Interactive Hub</h2>
+          <span class="muted" id="activeThreadLabel">Loading conversation…</span>
+        </div>
+        <div class="service-links">
+          <button id="newThread" type="button">New thread</button>
+          <a id="hermesLink" target="_blank" rel="noopener">Hermes UI ↗</a>
+          <a id="jaegerLink" target="_blank" rel="noopener">Jaeger UI ↗</a>
+          <a id="n8nLink" target="_blank" rel="noopener">n8n ↗</a>
+          <a id="gatewayLink" target="_blank" rel="noopener">Gateway ↗</a>
+        </div>
+      </div>
+
+      <!-- Durable conversational run stream -->
+      <div id="chatStream" class="chat-stream">
+        <div class="chat-empty" id="chatEmpty">
+          <div class="empty-icon">⚡</div>
+          <h3>Direct or Autonomous Agent Workspace</h3>
+          <p class="muted">Send a message below. Select any registered agent, or prefix the message with its agent ID.</p>
+          <div class="quick-prompts">
+            <button class="quick-prompt" data-agent="jaeger" data-prompt="@jaeger Inspect git status and list uncommitted changes in ARES">"Inspect git status in ARES"</button>
+            <button class="quick-prompt" data-agent="hermes" data-prompt="@hermes Run pytest on services/controller/tests and report the test summary">"Run test suite in Hermes"</button>
+            <button class="quick-prompt" data-agent="jaeger" data-prompt="@jaeger Check active system capabilities and service health">"Check capability health"</button>
+            <button class="quick-prompt" data-agent="openclaw" data-prompt="@openclaw Summarize your current runtime and model status">"Ask OpenClaw for status"</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent Selection Pills -->
+      <div class="agent-pill-bar">
+        <span class="pill-label">Route to:</span>
+        <div class="pill-group" id="agentPills">
+          <button type="button" class="agent-pill active" data-agent="hermes">⚡ Auto · Hermes</button>
+          <button type="button" class="agent-pill" data-agent="jaeger">🐺 JaegerAI</button>
+          <button type="button" class="agent-pill" data-agent="openclaw">🦞 OpenClaw</button>
+        </div>
+        <span class="hub-hint" id="hubHint">Press <kbd>⌘</kbd>+<kbd>Enter</kbd> to dispatch</span>
+      </div>
+
+      <!-- Interactive Composer -->
+      <div class="composer">
+        <!-- Kept for backward compatibility and form bindings -->
+        <select id="systemAgent" style="display:none;">
+          <option value="hermes">Auto · Hermes</option>
+          <option value="jaeger">JaegerAI</option>
+          <option value="openclaw">OpenClaw</option>
+        </select>
+        <textarea id="systemMessage" placeholder="Message the system… Select an agent or prefix with @hermes, @jaeger, or @openclaw."></textarea>
+        <div class="composer-buttons">
+          <button id="sendSystem" class="primary">Send</button>
+          <button id="cancelSystem" class="danger-outline" style="display:none;">Cancel run</button>
+        </div>
+      </div>
+
+      <!-- Legacy target for backward-compatibility with tests/scripts -->
+      <pre id="systemResult" class="system-result" style="display:none;">No System run started in this browser yet.</pre>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Connected agents</h2>
+        <span>Open an agent UI or trigger work</span>
+      </div>
+      <div id="agents" class="grid"></div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Ollama model routes</h2>
+        <span>Local and cloud are explicit; only tool-capable models usable now are shown</span>
+      </div>
+      <div id="modelRoutes" class="grid"></div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Integration registry</h2>
+        <span>One ARES gateway; external write access stays approval-gated</span>
+      </div>
+      <div id="integrations" class="grid"></div>
+    </section>
+
+    <section class="columns">
+      <div>
+        <div class="section-title">
+          <h2>Goals</h2>
+          <button id="newGoal">New goal</button>
+        </div>
+        <div id="goals" class="stack"></div>
+      </div>
+      <div>
+        <div id="approvalsHeader" class="section-title">
+          <h2>Pending approvals</h2>
+        </div>
+        <div id="approvals" class="stack"></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Run ledger</h2>
+        <button id="refresh">Refresh</button>
+      </div>
+      <div id="runs" class="stack"></div>
+    </section>
   </main>
-  <dialog id="goalDialog"><form method="dialog"><h2>Create goal</h2><label>Agent<select id="goalAgent"></select></label><label>Objective<textarea id="goalObjective" required></textarea></label><menu><button value="cancel">Cancel</button><button id="saveGoal" value="default">Create</button></menu></form></dialog>
-  <dialog id="configurationDialog"><form method="dialog"><h2>Configure Hermes</h2><p class="muted">ARES submits this change for approval, then applies it through Hermes WebUI's runtime-owned API.</p><label>SOUL.md<textarea id="configurationSoul" required></textarea></label><label>Registered container workspaces<textarea id="configurationWorkspaces" placeholder="/workspace&#10;/workspace/GitHub"></textarea></label><p class="muted">Only paths already exposed inside <code>/workspace</code> are accepted. Host mounts are managed separately.</p><menu><button value="cancel">Cancel</button><button id="saveConfiguration" class="primary" value="default">Request approval</button></menu></form></dialog>
+
+  <dialog id="goalDialog">
+    <form method="dialog">
+      <h2>Create goal</h2>
+      <label>Agent<select id="goalAgent"></select></label>
+      <label>Objective<textarea id="goalObjective" required></textarea></label>
+      <menu>
+        <button value="cancel">Cancel</button>
+        <button id="saveGoal" value="default">Create</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="configurationDialog">
+    <form method="dialog">
+      <h2>Configure Hermes</h2>
+      <p class="muted">ARES submits this change for approval, then applies it through Hermes WebUI's runtime-owned API.</p>
+      <label>SOUL.md<textarea id="configurationSoul" required></textarea></label>
+      <label>Registered container workspaces<textarea id="configurationWorkspaces" placeholder="/workspace&#10;/workspace/GitHub"></textarea></label>
+      <p class="muted">Only paths already exposed inside <code>/workspace</code> are accepted. Host mounts are managed separately.</p>
+      <menu>
+        <button value="cancel">Cancel</button>
+        <button id="saveConfiguration" class="primary" value="default">Request approval</button>
+      </menu>
+    </form>
+  </dialog>
+
   <script>window.__ARES_BOOT__=__CSRF_TOKEN_JSON__;</script>
   <script src="/static/app.js?v=__WEBUI_VERSION__"></script>
 </body>

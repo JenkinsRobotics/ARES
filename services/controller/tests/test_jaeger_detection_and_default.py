@@ -8,7 +8,6 @@ tests pin the diagnostic and the election rule that depends on it.
 from __future__ import annotations
 
 import pytest
-
 from api.providers.jaeger import paths, status
 
 
@@ -141,3 +140,16 @@ def test_session_backend_inherits_the_jaeger_default(monkeypatch):
     monkeypatch.setattr(backend_selector, "is_jaeger_available", lambda: True)
     session = SimpleNamespace(ares_backend=None)
     assert backend_selector.get_session_backend(session, {}) == backend_selector.BACKEND_JAEGER
+
+
+def test_explicit_session_backend_does_not_probe_the_live_default(monkeypatch):
+    from types import SimpleNamespace
+
+    from api import backend_selector
+
+    def _unexpected_probe():
+        raise AssertionError("persisted session metadata must not probe Jaeger")
+
+    monkeypatch.setattr(backend_selector, "is_jaeger_available", _unexpected_probe)
+    session = SimpleNamespace(ares_backend="jaeger_local")
+    assert backend_selector.get_session_backend(session, {}) == "jaeger_local"

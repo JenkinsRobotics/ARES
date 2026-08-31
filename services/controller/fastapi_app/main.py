@@ -7,28 +7,28 @@ Run the scaffold directly with::
 
 from __future__ import annotations
 
+import os
+import time
 from collections.abc import Callable
 from pathlib import Path
-import time
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .adapters import AdapterRegistry
+from core.automation import AutomationService
+
 from .a2a_server import install_a2a_routes
+from .adapters import AdapterRegistry
 from .errors import CoreApiError
 from .frontend import CsrfTokenResolver, create_frontend_router
 from .lifecycle import ares_lifespan
-from .routers import install_core_routers
 from .realtime import RealtimeService
+from .request_context import _enforce_tailscale_identity
+from .routers import install_core_routers
 from .security import security_headers_middleware
 from .services import AresCoreService
-from core.automation import AutomationService
-
-
-import os
 
 ApiInstaller = Callable[[FastAPI], None]
 
@@ -54,6 +54,22 @@ async def request_diagnostics_middleware(request: Request, call_next):
     finally:
         if diagnostics is not None:
             diagnostics.finish()
+
+
+async def tailscale_identity_middleware(request: Request, call_next):
+    """Gate every tailnet-host request before routing or static-file access.
+
+    Endpoint dependencies still establish the normal application identity and
+    CSRF context.  This boundary check exists so a newly added route cannot
+    accidentally expose data merely because its author omitted that dependency.
+    Local loopback access keeps the existing owner workflow.
+    """
+
+    try:
+        _enforce_tailscale_identity(request)
+    except CoreApiError as exc:
+        return JSONResponse(exc.payload(), status_code=exc.status_code)
+    return await call_next(request)
 
 
 def create_app(
@@ -95,6 +111,7 @@ def create_app(
     )
     application.middleware("http")(request_diagnostics_middleware)
     application.middleware("http")(security_headers_middleware)
+    application.middleware("http")(tailscale_identity_middleware)
 
     @application.exception_handler(CoreApiError)
     async def core_api_error_handler(_request: Request, exc: CoreApiError):

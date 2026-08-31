@@ -108,8 +108,8 @@ class AresCoreService:
                 checks["state_db"] = {"status": "error", "error": type(exc).__name__}
                 payload["status"] = "degraded"
             try:
-                from api.si.identity import load_identity
                 from api.si.bridge import si_enabled as _si_enabled
+                from api.si.identity import load_identity
 
                 identity = load_identity()
                 enabled = bool(_si_enabled())
@@ -168,7 +168,12 @@ class AresCoreService:
             except Exception:
                 pass
             try:
-                from api.updates import AGENT_VERSION, WEBUI_VERSION, _read_update_channel, channel_version_badge
+                from api.updates import (
+                    AGENT_VERSION,
+                    WEBUI_VERSION,
+                    _read_update_channel,
+                    channel_version_badge,
+                )
 
                 settings["webui_version"] = WEBUI_VERSION
                 settings["agent_version"] = AGENT_VERSION
@@ -202,7 +207,9 @@ class AresCoreService:
             from api.config import load_settings
             from api.models import all_sessions, get_cli_sessions
             from api.profiles import _profiles_match, get_active_profile_name
-            from api.session_runtime_state import reconcile_stale_stream_state_for_session_rows
+            from api.session_runtime_state import (
+                reconcile_stale_stream_state_for_session_rows,
+            )
 
             active_profile = profile or get_active_profile_name()
             rows = list(all_sessions())
@@ -260,8 +267,8 @@ class AresCoreService:
                 jaeger_rows = [
                     row
                     for row in rows
-                    if backend_for_session(row) == JAEGER_BACKEND_ID
-                    and runtime_owns_transcript(row)
+                    if runtime_owns_transcript(row)
+                    and backend_for_session(row) == JAEGER_BACKEND_ID
                 ]
                 if jaeger_rows:
                     require_operation("list", backend=JAEGER_BACKEND_ID)
@@ -492,7 +499,11 @@ class AresCoreService:
     def workspaces(self, *, profile: str | None) -> dict[str, Any]:
         with profile_scope(profile):
             from api.config import get_config
-            from api.workspace import _is_remote_terminal_backend, get_last_workspace, load_workspaces
+            from api.workspace import (
+                _is_remote_terminal_backend,
+                get_last_workspace,
+                load_workspaces,
+            )
 
             terminal_config = get_config().get("terminal", {})
             return {

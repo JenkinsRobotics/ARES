@@ -40,6 +40,8 @@ class AutomationStore:
             "version": 1,
             "paused": False,
             "agents": [],
+            "threads": [],
+            "messages": [],
             "goals": [],
             "runs": [],
             "events": [],

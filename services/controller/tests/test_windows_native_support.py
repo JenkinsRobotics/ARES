@@ -147,6 +147,10 @@ class TestBootstrapForegroundWindows:
         monkeypatch.setattr(bs, "ensure_python_has_webui_deps", lambda *a, **kw: a[0])
         monkeypatch.setattr(bs, "wait_for_health", lambda *a, **kw: True)
         monkeypatch.setattr(bs, "open_browser", lambda *a, **kw: None)
+        # These tests cover POSIX-vs-Windows foreground process creation, not
+        # live port ownership.  The production ARES service legitimately owns
+        # the default port while the suite runs.
+        monkeypatch.setattr(bs, "check_port_in_use", lambda *a, **kw: False)
         monkeypatch.setenv("ARES_WEBUI_STATE_DIR", str(tmp_path / "state"))
         (tmp_path / "agent").mkdir(parents=True, exist_ok=True)
         return bs

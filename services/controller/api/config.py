@@ -34,7 +34,11 @@ from urllib.parse import urlparse
 import api.paths as _paths
 from api.plugin_providers import (
     effective_provider_display_name as _effective_provider_display_name,
+)
+from api.plugin_providers import (
     is_plugin_model_provider as _is_plugin_model_provider,
+)
+from api.plugin_providers import (
     plugin_model_provider_profiles as _plugin_model_provider_profiles,
 )
 
@@ -968,7 +972,6 @@ def _warn_state_dir_divergence(warn_prefix: str) -> None:
 
 def print_startup_config() -> None:
     """Print detected configuration at startup so the user can verify what was found."""
-    ok = "\033[32m[ok]\033[0m"
     warn = "\033[33m[!!]\033[0m"
     try:
         from api.backend_selector import get_active_backend
@@ -2498,8 +2501,8 @@ def _base_url_points_at_local_server(base_url: str) -> bool:
     if not base_url:
         return False
     try:
-        from urllib.parse import urlparse
         import ipaddress
+        from urllib.parse import urlparse
         host = (urlparse(base_url).hostname or "").lower()
         if not host:
             return False
@@ -5667,7 +5670,7 @@ def _get_models_cache_path() -> Path:
     ``_models_cache_path`` to an isolated tmp file).
     """
     try:
-        from api.profiles import get_active_profile_name, _is_root_profile
+        from api.profiles import _is_root_profile, get_active_profile_name
 
         name = (get_active_profile_name() or "").strip()
         if not name or _is_root_profile(name):
@@ -6661,8 +6664,8 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
 
         _ares_auth_used = False
         try:
-            from ares_cli.models import list_available_providers as _lap
             from ares_cli.auth import get_auth_status as _gas
+            from ares_cli.models import list_available_providers as _lap
 
             for _p in _lap():
                 if not _p.get("authenticated"):
@@ -6964,9 +6967,9 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                 return [], None
             try:
                 import ipaddress
+                import socket
                 import urllib.error
                 import urllib.request
-                import socket
 
                 endpoint_url = _models_endpoint_for_base_url(base)
                 headers = {}
@@ -7486,7 +7489,9 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                 elif pid == "ollama-cloud":
                     raw_models = []
                     try:
-                        from ares_cli.models import provider_model_ids as _provider_model_ids
+                        from ares_cli.models import (
+                            provider_model_ids as _provider_model_ids,
+                        )
 
                         raw_models = [
                             {"id": mid, "label": _format_ollama_label(mid)}
@@ -7507,7 +7512,9 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                     raw_models = []
                     codex_ids = []
                     try:
-                        from ares_cli.models import provider_model_ids as _provider_model_ids
+                        from ares_cli.models import (
+                            provider_model_ids as _provider_model_ids,
+                        )
 
                         codex_ids = [mid for mid in (_provider_model_ids("openai-codex") or []) if mid]
                     except Exception:
@@ -7545,7 +7552,9 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                     raw_models = []
                     live_fetch_failed = False
                     try:
-                        from ares_cli.models import provider_model_ids as _provider_model_ids
+                        from ares_cli.models import (
+                            provider_model_ids as _provider_model_ids,
+                        )
 
                         live_ids = _provider_model_ids("nous") or []
                     except Exception:
@@ -7606,7 +7615,9 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                     raw_models = []
                     lm_ids: list[str] = []
                     try:
-                        from ares_cli.models import provider_model_ids as _provider_model_ids
+                        from ares_cli.models import (
+                            provider_model_ids as _provider_model_ids,
+                        )
                         lm_ids = _provider_model_ids("lmstudio") or []
                     except Exception:
                         logger.debug("ares_cli LM Studio lookup unavailable; using urlopen fallback")
@@ -8051,7 +8062,11 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
         try:
             from api.profiles import (
                 get_active_profile_name as _gapn,
+            )
+            from api.profiles import (
                 profile_env_for_active_request as _prof_env_request,
+            )
+            from api.profiles import (
                 profile_scope_for_detached_worker as _prof_scope_worker,
             )
             _active_profile_name = (_gapn() or "").strip()
@@ -8253,8 +8268,8 @@ def get_available_models_for_session_visit() -> dict:
     feed into RequestDiagnostics when called from /api/models; standalone
     callers get the same envelope via the local _stagelog dict.
     """
-    import time as _time
     import logging as _logging
+    import time as _time
     _stagelog: list[tuple[str, float]] = [("enter", _time.monotonic())]
     def _mark(name: str) -> None:
         _stagelog.append((name, _time.monotonic()))
@@ -8829,7 +8844,12 @@ def _evict_session_agent(session_id: str) -> None:
         return
     should_close = True
     try:
-        from api.session_lifecycle import commit_session_memory, discard_session, has_uncommitted_work, unregister_agent
+        from api.session_lifecycle import (
+            commit_session_memory,
+            discard_session,
+            has_uncommitted_work,
+            unregister_agent,
+        )
         if has_uncommitted_work(session_id):
             commit_session_memory(session_id, agent=agent, wait=True)
         if not has_uncommitted_work(session_id):
@@ -9370,6 +9390,7 @@ def _coerce_provider_cost_budget(value: Any) -> float | None:
 
 def save_settings(settings: dict) -> dict:
     """Save settings to disk. Returns the merged settings. Ignores unknown keys."""
+    requested_keys = set(settings)
     raw_settings = _read_raw_settings_file()
     persisted_speech_keys = _extract_persisted_speech_keys(raw_settings)
     current = load_settings()
@@ -9563,19 +9584,31 @@ def save_settings(settings: dict) -> dict:
 
     # ARES: Auto-sync provider changes to Ares and JaegerAI configs
     # This ensures both backends use the same providers and fallbacks
-    _sync_providers_on_settings_save(current)
+    _sync_providers_on_settings_save(current, requested_keys=requested_keys)
 
     current["default_model"] = get_effective_default_model()
     return current
 
 
-def _sync_providers_on_settings_save(settings: dict) -> None:
+def _sync_providers_on_settings_save(
+    settings: dict,
+    *,
+    requested_keys: set[str] | None = None,
+) -> None:
     """Sync provider changes to Ares and JaegerAI configs automatically.
     
     Called after save_settings() to ensure both backends stay in sync.
     Only syncs when provider-related settings actually changed.
     """
     try:
+        # load_settings() enriches every settings payload with the active model
+        # provider. That does not mean the caller changed it. The old code
+        # launched a Jaeger configuration request after every language, theme,
+        # and layout save, eventually creating thousands of 30-second worker
+        # threads. Only an explicit provider mutation licenses cross-runtime
+        # synchronization.
+        if requested_keys is not None and "default_model_provider" not in requested_keys:
+            return
         # Check if provider settings changed
         provider = settings.get("default_model_provider")
         if not provider:
@@ -9595,15 +9628,26 @@ def _sync_providers_on_settings_save(settings: dict) -> None:
         logger.debug("Provider auto-sync failed", exc_info=True)
 
 
-def _trigger_provider_sync(provider: str, model: str) -> None:
-    """Trigger provider sync in background to avoid blocking UI."""
-    import threading
-    
-    def _sync_worker():
+_PROVIDER_SYNC_LOCK = threading.Lock()
+_PROVIDER_SYNC_PENDING: tuple[str, str] | None = None
+_PROVIDER_SYNC_THREAD: threading.Thread | None = None
+
+
+def _provider_sync_worker() -> None:
+    """Drain last-write-wins provider changes through one bounded worker."""
+
+    global _PROVIDER_SYNC_PENDING, _PROVIDER_SYNC_THREAD
+    while True:
+        with _PROVIDER_SYNC_LOCK:
+            pending = _PROVIDER_SYNC_PENDING
+            _PROVIDER_SYNC_PENDING = None
+            if pending is None:
+                _PROVIDER_SYNC_THREAD = None
+                return
+        provider, model = pending
         try:
             from api.ares_provider_sync import sync_provider
-            from api.config import _get_config_path
-            
+
             # Sync to both Ares and JaegerAI
             sync_provider(
                 provider=provider,
@@ -9614,9 +9658,22 @@ def _trigger_provider_sync(provider: str, model: str) -> None:
             )
         except Exception:
             logger.debug("Background provider sync failed for %s/%s", provider, model)
-    
-    thread = threading.Thread(target=_sync_worker, daemon=True)
-    thread.start()
+
+
+def _trigger_provider_sync(provider: str, model: str) -> None:
+    """Queue provider sync without allowing unbounded background threads."""
+
+    global _PROVIDER_SYNC_PENDING, _PROVIDER_SYNC_THREAD
+    with _PROVIDER_SYNC_LOCK:
+        _PROVIDER_SYNC_PENDING = (provider, model)
+        if _PROVIDER_SYNC_THREAD is not None and _PROVIDER_SYNC_THREAD.is_alive():
+            return
+        _PROVIDER_SYNC_THREAD = threading.Thread(
+            target=_provider_sync_worker,
+            name="ares-provider-sync",
+            daemon=True,
+        )
+        _PROVIDER_SYNC_THREAD.start()
 
 # Apply saved settings on startup (override env-derived defaults)
 # Exception: if ARES_WEBUI_DEFAULT_WORKSPACE is explicitly set in the

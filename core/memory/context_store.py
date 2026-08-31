@@ -20,14 +20,14 @@ here already treats as a degrade condition.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import logging
 import os
-from pathlib import Path
 import sqlite3
 import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from api.context_embeddings import (
@@ -164,6 +164,12 @@ def _connect_once(home: Path | None) -> sqlite3.Connection:
             )
             conn.execute(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(embedding float[{int(DEFAULT_EMBEDDING_DIMS)}])"
+            )
+            conn.commit()
+        indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+        if "idx_context_chunks_source_key" not in indexes:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_context_chunks_source_key ON chunks(source_key)"
             )
             conn.commit()
     except (sqlite3.Error, AttributeError, OSError) as exc:
@@ -323,6 +329,7 @@ def store_status(*, home: Path | None = None) -> dict[str, Any]:
         "chunk_count": 0,
         "source_count": 0,
         "sources": [],
+        "sources_truncated": False,
         "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "embedding_dims": DEFAULT_EMBEDDING_DIMS,
     }
@@ -332,21 +339,34 @@ def store_status(*, home: Path | None = None) -> dict[str, Any]:
         return {**base, "reason": str(exc)}
     try:
         chunk_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        source_count = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
         sources = []
-        for row in conn.execute("SELECT source_key, source_type, path, last_indexed_at FROM sources"):
-            count_row = conn.execute(
-                "SELECT COUNT(*) FROM chunks WHERE source_key = ?", (row[0],)
-            ).fetchone()
+        # One grouped scan replaces the former N+1 query. With a large RAG
+        # index the old implementation rescanned 238k chunks once for each of
+        # 28k sources and pinned a CPU indefinitely. Status is also a summary,
+        # so bound its payload to the 250 most recently indexed sources.
+        for row in conn.execute(
+            "SELECT s.source_key, s.source_type, s.path, s.last_indexed_at, "
+            "(SELECT COUNT(*) FROM chunks c WHERE c.source_key = s.source_key) "
+            "FROM ("
+            "  SELECT source_key, source_type, path, last_indexed_at FROM sources "
+            "  ORDER BY last_indexed_at DESC LIMIT 250"
+            ") s"
+        ):
             sources.append(
                 {
                     "source_key": row[0],
                     "source_type": row[1],
                     "path": row[2],
                     "last_indexed_at": row[3],
-                    "chunk_count": count_row[0] if count_row else 0,
+                    "chunk_count": row[4],
                 }
             )
-        return {**base, "available": True, "chunk_count": chunk_count, "source_count": len(sources), "sources": sources}
+        return {
+            **base, "available": True, "chunk_count": chunk_count,
+            "source_count": source_count, "sources": sources,
+            "sources_truncated": source_count > len(sources),
+        }
     except sqlite3.Error as exc:
         return {**base, "reason": str(exc)}
     finally:

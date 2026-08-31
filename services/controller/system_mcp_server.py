@@ -15,6 +15,10 @@ import urllib.request
 import uuid
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
+from core.runtimes import is_durable_runtime
+
 try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:  # MCP SDK 2.x renamed the server implementation.
@@ -23,6 +27,19 @@ except ImportError:  # MCP SDK 2.x renamed the server implementation.
 
 BASE_URL = os.environ.get("ARES_SYSTEM_URL", "http://127.0.0.1:8788").rstrip("/")
 mcp = FastMCP("ares-system")
+
+READ_ONLY = ToolAnnotations(
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+)
+CONTROL_WRITE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False,
+    idempotentHint=False, openWorldHint=False,
+)
+CONTROL_EFFECT = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=True,
+)
 
 
 def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
@@ -54,7 +71,7 @@ def _find_run(run_id: str) -> dict[str, Any]:
     return run
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def system_status() -> dict[str, Any]:
     """Return the safe ARES control-plane status and recent run summary."""
 
@@ -69,14 +86,37 @@ def system_status() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
+def system_metrics(include_processes: bool = True, process_limit: int = 10) -> dict[str, Any]:
+    """Read current CPU, RAM, swap, disk, Ollama, and Jaeger telemetry.
+
+    Top processes include only PID, executable name, and resident-memory use.
+    Command lines, users, environment variables, and open files are excluded.
+    This tool is read-only and cannot change fan, process, or power settings.
+    """
+
+    limit = max(1, min(int(process_limit), 25))
+    query = (
+        f"?include_processes={'true' if include_processes else 'false'}"
+        f"&process_limit={limit}&force_refresh=true"
+    )
+    return _request("GET", f"/api/system/stats{query}")
+
+
+@mcp.tool(annotations=READ_ONLY)
 def agents_list() -> list[dict[str, Any]]:
     """List independently owned agents registered with ARES."""
 
     return list(_request("GET", "/api/agents").get("agents") or [])
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
+def integrations_list() -> dict[str, Any]:
+    """Return ARES' canonical integration catalog and activation state."""
+    return _request("GET", "/api/integrations")
+
+
+@mcp.tool(annotations=CONTROL_WRITE)
 def system_message(message: str, agent_id: str = "hermes", wait_seconds: int = 0) -> dict[str, Any]:
     """Create a durable goal and delegate it to Hermes or JaegerAI.
 
@@ -84,8 +124,8 @@ def system_message(message: str, agent_id: str = "hermes", wait_seconds: int = 0
     otherwise use ``run_status`` with the returned run ID.
     """
 
-    if agent_id not in {"hermes", "jaeger"}:
-        raise ValueError("agent_id must be hermes or jaeger")
+    if not is_durable_runtime(agent_id):
+        raise ValueError("agent_id must name a registered durable runtime")
     objective = message.strip()
     if not objective:
         raise ValueError("message is required")
@@ -108,27 +148,33 @@ def system_message(message: str, agent_id: str = "hermes", wait_seconds: int = 0
     return {"goal": goal, "run": run}
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def run_status(run_id: str) -> dict[str, Any]:
     """Return one ARES run and its immutable evidence events."""
 
     return {"run": _find_run(run_id), "events": _request("GET", f"/api/runs/{run_id}/events")}
 
 
-@mcp.tool()
+@mcp.tool(annotations=CONTROL_EFFECT)
 def run_cancel(run_id: str) -> dict[str, Any]:
     """Safely request cancellation of an active ARES run."""
 
     return _request("POST", f"/api/runs/{run_id}/cancel", {})
 
 
-@mcp.tool()
+@mcp.tool(annotations=CONTROL_EFFECT)
 def approval_respond(approval_id: str, decision: str) -> dict[str, Any]:
     """Approve or deny one pending consequential action."""
 
     if decision not in {"approved", "denied"}:
         raise ValueError("decision must be approved or denied")
     return _request("POST", "/api/approvals", {"id": approval_id, "decision": decision})
+
+
+@mcp.tool(annotations=READ_ONLY)
+def approval_preview(approval_id: str) -> dict[str, Any]:
+    """Dry-run one approval request without granting or executing anything."""
+    return _request("GET", f"/api/approvals/{approval_id}/preview")
 
 
 if __name__ == "__main__":

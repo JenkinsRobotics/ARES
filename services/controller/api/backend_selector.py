@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import logging
 
-from .backends.router import get_router
 from .backend_catalog import (
     JAEGER_BACKEND_ID,
     VALID_BACKEND_IDS,
     backend_display_name,
     normalize_backend_id,
 )
+from .backends.router import get_router
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,11 @@ def get_active_backend(config: dict) -> str:
 
 
 def get_session_backend(session: object, config: dict) -> str:
-    default_backend = get_active_backend(config)
-    return normalize_backend(getattr(session, "ares_backend", None), fallback=default_backend)
+    # A persisted election is authoritative and must remain a pure metadata
+    # lookup.  Probing the live default first made every session projection
+    # wait on Jaeger even when the row already named another backend.
+    explicit = normalize_backend(getattr(session, "ares_backend", None))
+    return explicit or get_active_backend(config)
 
 
 def is_jaeger_available() -> bool:

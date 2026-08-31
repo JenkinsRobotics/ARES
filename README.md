@@ -16,12 +16,18 @@ explicit adapters and default-deny sharing.
 | JaegerAI + WebUI adapter | Native macOS agent | Host | `http://127.0.0.1:8790` |
 | ARES System dashboard/API | Goals, routing, approvals, audit | Host | `http://127.0.0.1:8788` |
 | Agentgateway | Authenticated MCP and A2A edge | Host | MCP `8811`, A2A `8812` |
+| OpenClaw gateway | Third agent runtime | Apple container | `http://127.0.0.1:18789` |
 | n8n | Optional deterministic workflow executor | Apple container | `http://127.0.0.1:5678` |
 | Ollama | Local weights and Ollama Cloud routing | Host | `http://127.0.0.1:11434` |
 
-ARES never imports Hermes Agent or JaegerAI. Hermes is invoked through its
-installed launcher; Jaeger is reached through its versioned native runner API.
-Each agent owns its own sessions, memory, tools, credentials, and model policy.
+ARES never imports Hermes Agent, JaegerAI, or OpenClaw. Hermes is invoked
+through its installed launcher; Jaeger is reached through its versioned native
+runner API; OpenClaw is reached through its own CLI inside the container ARES
+manages for it. Each agent owns its own sessions, memory, tools, credentials,
+and model policy.
+
+Which runtimes exist, how they are deployed, and which may hold durable goals
+are all declared in one place. See [docs/agent-runtimes.md](docs/agent-runtimes.md).
 
 ## Install the System fabric
 
@@ -37,6 +43,7 @@ cd ~/GitHub/ARES
 ./scripts/install-agentgateway.py
 ./scripts/configure-host-capabilities.py
 ./scripts/configure-system-fabric.py
+./scripts/install-openclaw-container.sh
 ./scripts/install-n8n-container.sh
 ./scripts/install-system-services.py
 ```
@@ -101,6 +108,7 @@ default is Hermes.
 - `scripts/` — checksum-verified gateway, container, and launchd installers
 - `config/system-fabric.lock.json` — pinned external dependencies
 - `docs/system-fabric.md` — protocol, state, and security details
+- `docs/production-plan.md` — release gates, operations, and rollback plan
 
-See `DOCTRINE.md`, `docs/architecture.md`, `docs/api.md`, and
-`docs/development.md` before changing ownership boundaries.
+See `DOCTRINE.md`, `docs/vision.md`, `docs/architecture.md`, `docs/api.md`,
+and `docs/development.md` before changing ownership boundaries.

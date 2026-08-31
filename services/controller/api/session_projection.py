@@ -11,7 +11,6 @@ from api.session_lineage_display import (
     webui_sidecar_lineage_messages_for_display,
 )
 
-
 _TOOL_CONTENT_LIMIT = 4096
 _TOOL_CONTENT_NOTICE = (
     "\n\n[Tool output truncated in paginated session response; "
@@ -30,8 +29,8 @@ def _authoritative_jaeger_transcript(session) -> tuple[list[dict], list[dict]] |
     )
 
     if (
-        backend_for_session(session) != JAEGER_BACKEND_ID
-        or not runtime_owns_transcript(session)
+        not runtime_owns_transcript(session)
+        or backend_for_session(session) != JAEGER_BACKEND_ID
     ):
         return None
     require_operation("load", session=session)
@@ -131,7 +130,10 @@ def session_requires_cli_metadata_lookup(session) -> bool:
 
 
 def merged_session_messages_for_display(session, external_messages=None) -> list:
-    from api.models import _session_message_merge_key, merge_session_messages_append_only
+    from api.models import (
+        _session_message_merge_key,
+        merge_session_messages_append_only,
+    )
 
     external = list(external_messages or [])
     sidecar = webui_sidecar_lineage_messages_for_display(session)
@@ -238,11 +240,15 @@ def project_session_detail(
     resolve_model: bool = True,
 ) -> dict:
     """Build the stable `/api/session` payload without transport dependencies."""
-    from api.models import get_cli_session_messages, get_state_db_session_messages, merge_session_messages_append_only
     from api.model_context import session_context_projection
     from api.model_resolution import (
         _resolve_effective_session_model_for_display,
         _resolve_effective_session_model_provider_for_display,
+    )
+    from api.models import (
+        get_cli_session_messages,
+        get_state_db_session_messages,
+        merge_session_messages_append_only,
     )
 
     metadata = lookup_cli_session_metadata(session.session_id) if session_requires_cli_metadata_lookup(session) else {}

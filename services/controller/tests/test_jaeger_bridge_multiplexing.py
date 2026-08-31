@@ -2,7 +2,8 @@ import json
 import queue
 import threading
 
-from api.providers.jaeger.bridge_client import JaegerClient
+import pytest
+from api.providers.jaeger.bridge_client import JaegerClient, JaegerError
 
 
 class _Lines:
@@ -53,4 +54,17 @@ def test_query_result_is_not_blocked_behind_active_turn():
     lines.items.put({"type": "reply", "text": "done", "session": "s1"})
     turn_thread.join(timeout=1)
     assert turn_result["text"] == "done"
+    lines.items.put(None)
+
+
+def test_read_only_query_timeout_is_bounded_and_configurable():
+    client = JaegerClient(command=["unused"])
+    lines = _Lines()
+    client._rx = lines
+    client._write = lambda _frame: None
+    client._start_reader()
+
+    with pytest.raises(JaegerError, match="timed out after 0.01 seconds"):
+        client.query("serving_model", timeout=0.01)
+
     lines.items.put(None)

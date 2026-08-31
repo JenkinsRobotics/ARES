@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from dataclasses import dataclass
-import os
 from typing import Annotated, Iterator
 from urllib.parse import urlsplit
 
@@ -22,6 +22,41 @@ class RequestIdentity:
     auth_type: str | None = None
     username: str | None = None
     bound_profile: str | None = None
+
+
+def _tailnet_host(connection: HTTPConnection) -> bool:
+    host = str(connection.headers.get("host") or "").split(":", 1)[0].rstrip(".").lower()
+    return host.endswith(".ts.net")
+
+
+def _enforce_tailscale_identity(connection: HTTPConnection) -> None:
+    """Require an allowlisted Tailscale Serve identity on remote portal URLs.
+
+    ARES listens only on loopback. Tailscale Serve strips spoofed identity
+    headers and injects the authenticated user before proxying to that
+    listener. Localhost requests intentionally keep the existing local-owner
+    behavior; a ``*.ts.net`` request without a valid injected identity fails
+    closed.
+    """
+
+    login = str(connection.headers.get("tailscale-user-login") or "").strip().lower()
+    if not _tailnet_host(connection):
+        if login:
+            raise CoreApiError(403, "Tailscale identity header is invalid outside the Serve URL")
+        return
+    from api.network_trust import raw_peer_is_trusted_proxy
+
+    if not raw_peer_is_trusted_proxy(connection):
+        raise CoreApiError(403, "Tailscale identity is accepted only from the loopback Serve proxy")
+    allowed = {
+        value.strip().lower()
+        for value in os.getenv("ARES_WEBUI_TAILSCALE_USERS", "").replace(";", ",").split(",")
+        if value.strip()
+    }
+    if not login:
+        raise CoreApiError(401, "Tailscale user identity is required")
+    if not allowed or login not in allowed:
+        raise CoreApiError(403, "This Tailscale user is not authorized for ARES")
 
 
 def _set_auth_cookie(response: Response, request: HTTPConnection, cookie_value: str) -> None:
@@ -89,6 +124,7 @@ def resolve_request_identity(
     *,
     allow_anonymous: bool = False,
 ) -> RequestIdentity:
+    _enforce_tailscale_identity(request)
     from api.auth import (
         _resolve_cookie_name,
         get_session_info,

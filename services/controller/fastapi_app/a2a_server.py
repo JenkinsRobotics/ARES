@@ -12,8 +12,6 @@ import threading
 import time
 from typing import Any
 
-from fastapi import FastAPI
-
 from a2a.helpers import (
     get_message_text,
     new_task_from_user_message,
@@ -25,10 +23,17 @@ from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
-from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, TaskState
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    AgentInterface,
+    AgentSkill,
+    TaskState,
+)
+from fastapi import FastAPI
 
 from core.automation import AutomationService
-
+from core.runtimes import durable_runtime_ids
 
 TERMINAL_RUN_STATES = {
     "complete",
@@ -45,7 +50,7 @@ def select_agent(message: str, default_agent: str = "hermes") -> tuple[str, str]
 
     stripped = message.strip()
     lowered = stripped.lower()
-    for agent_id in ("hermes", "jaeger"):
+    for agent_id in durable_runtime_ids():
         for prefix in (f"@{agent_id} ", f"[{agent_id}] ", f"{agent_id}: "):
             if lowered.startswith(prefix):
                 return agent_id, stripped[len(prefix) :].strip()
@@ -148,25 +153,46 @@ def build_agent_card() -> AgentCard:
         name="ARES System",
         description=(
             "A deterministic coordination surface that delegates work to independent "
-            "Hermes and JaegerAI runtimes and records goals, runs, approvals, and evidence."
+            "durable agent runtimes and records goals, runs, approvals, and evidence."
         ),
         version="1.0.0",
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
         capabilities=AgentCapabilities(streaming=True),
         supported_interfaces=[
-            AgentInterface(protocol_binding="JSONRPC", url=public_url, protocol_version="1.0")
+            AgentInterface(protocol_binding="JSONRPC", url=public_url, protocol_version="0.3")
         ],
         skills=[
             AgentSkill(
                 id="delegate_task",
                 name="Delegate task",
-                description="Run a durable task through Hermes or JaegerAI. Prefix with @jaeger or @hermes to select explicitly.",
+                description="Run a durable task through a registered agent. Prefix with @hermes, @jaeger, or @openclaw to select explicitly.",
                 input_modes=["text/plain"],
                 output_modes=["text/plain"],
                 tags=["coordination", "delegation", "audit"],
-                examples=["Research this topic", "@jaeger inspect the local project"],
-            )
+                examples=["Research this topic", "@jaeger inspect the local project", "@openclaw summarize runtime status"],
+            ),
+            AgentSkill(
+                id="code_review", name="Code review",
+                description="Delegate an evidence-backed code review to an explicitly selected independent agent.",
+                input_modes=["text/plain"], output_modes=["text/plain"],
+                tags=["engineering", "review", "audit"],
+                examples=["@hermes review the current diff", "@jaeger independently review this change"],
+            ),
+            AgentSkill(
+                id="research", name="Research",
+                description="Delegate bounded research while ARES retains the run lease and audit trail.",
+                input_modes=["text/plain"], output_modes=["text/plain"],
+                tags=["research", "delegation", "provenance"],
+                examples=["Research this question and cite evidence"],
+            ),
+            AgentSkill(
+                id="workflow_run", name="Workflow run",
+                description="Run a durable multi-step objective with cancellation, pause, and approval checkpoints.",
+                input_modes=["text/plain"], output_modes=["text/plain"],
+                tags=["workflow", "approval", "durable"],
+                examples=["@jaeger inspect, test, and report without publishing"],
+            ),
         ],
     )
 

@@ -31,6 +31,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from api.contracts import (
+    PROTOCOL_VERSION,
+    validate_contract_compatibility,
+)
 from api.providers.jaeger.paths import (
     jaeger_home as resolve_jaeger_home,
 )
@@ -40,19 +44,15 @@ from api.providers.jaeger.paths import (
 from api.providers.jaeger.paths import (
     jaeger_launcher as resolve_jaeger_launcher,
 )
-from api.contracts import (
-    CURRENT_INTEGRATION_CONTRACT_VERSION as INTEGRATION_CONTRACT_VERSION,
-    MIN_SUPPORTED_INTEGRATION_CONTRACT_VERSION,
-    PROTOCOL_VERSION,
-    has_capability,
-    validate_contract_compatibility,
-)
 
 _BRIDGE_ENVIRONMENT_NAMES = {
     "HOME", "LANG", "LC_ALL", "LOGNAME", "PATH", "SHELL",
     "SSL_CERT_DIR", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "TMPDIR",
     "USER", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
 }
+
+_QUERY_TIMEOUT_SECONDS = 5.0
+_COMMAND_TIMEOUT_SECONDS = 30.0
 
 
 def minimal_bridge_environment(source: dict[str, str] | None = None) -> dict[str, str]:
@@ -223,6 +223,7 @@ class JaegerClient:
     def _try_attach(self) -> dict[str, Any] | None:
         """Connect to a live ``jaeger bridge`` socket if one is listening."""
         import socket as _socket
+
         from api.providers.jaeger.paths import jaeger_bridge_socket_candidates
 
         home = self._jaeger_home
@@ -440,13 +441,25 @@ class JaegerClient:
             raise JaegerError("not started")
         self._write({"op": "steer", "text": str(text or "")})
 
-    def query(self, what: str, args: dict[str, Any] | None = None) -> Any:
+    def query(
+        self,
+        what: str,
+        args: dict[str, Any] | None = None,
+        *,
+        timeout: float = _QUERY_TIMEOUT_SECONDS,
+    ) -> Any:
         """Read Jaeger-owned state through the versioned bridge contract."""
-        return self._request({"op": "query", "what": what, "args": args or {}})
+        return self._request(
+            {"op": "query", "what": what, "args": args or {}},
+            timeout=timeout,
+        )
 
     def command(self, cmd: str, args: dict[str, Any] | None = None) -> Any:
         """Ask Jaeger to mutate its own state through a validated command."""
-        return self._request({"op": "command", "cmd": cmd, "args": args or {}})
+        return self._request(
+            {"op": "command", "cmd": cmd, "args": args or {}},
+            timeout=_COMMAND_TIMEOUT_SECONDS,
+        )
 
     def integration_contract(self) -> dict[str, Any]:
         """Return and validate Jaeger's self-described product capabilities."""
@@ -456,7 +469,7 @@ class JaegerClient:
             raise JaegerError(err_msg)
         return contract
 
-    def _request(self, frame: dict[str, Any]) -> Any:
+    def _request(self, frame: dict[str, Any], *, timeout: float) -> Any:
         if getattr(self, "_reader_thread", None) is not None:
             if self._rx is None:
                 raise JaegerError("not started")
@@ -468,9 +481,11 @@ class JaegerClient:
             try:
                 self._write({**frame, "id": request_id})
                 try:
-                    reply = inbox.get(timeout=30.0)
+                    reply = inbox.get(timeout=max(0.01, float(timeout)))
                 except queue.Empty as exc:
-                    raise JaegerError("Jaeger request timed out after 30 seconds") from exc
+                    raise JaegerError(
+                        f"Jaeger request timed out after {float(timeout):g} seconds"
+                    ) from exc
                 if reply.get("type") == "fatal":
                     raise JaegerError(str(reply.get("error") or "bridge failed"))
                 if reply.get("type") == "_eof":

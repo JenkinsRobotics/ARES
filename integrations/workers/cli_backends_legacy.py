@@ -9,18 +9,49 @@ ClaudeCloudBackend, OllamaLocalBackend) instead of these.
 """
 from __future__ import annotations
 
-import importlib.util
 import logging
 import os
 import re
 import shutil
 import subprocess
 import time
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any
 
 from api.providers.agentic_backend import AgenticBackend
 
 logger = logging.getLogger(__name__)
+
+
+def _host_tool_dirs() -> tuple[str, ...]:
+    """Return explicit, user-scoped executable roots for launchd services.
+
+    macOS launchd jobs normally inherit only ``/usr/bin:/bin:/usr/sbin:/sbin``.
+    Relying on that PATH made installed Homebrew tools appear missing when ARES
+    ran as a service even though the same adapters worked in an interactive
+    terminal.  Keep the search bounded to conventional executable directories;
+    never scan the home directory or accept a workspace-relative binary.
+    """
+
+    home = Path.home()
+    return (
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        str(home / ".local" / "bin"),
+        str(home / "bin"),
+        str(home / ".grok" / "bin"),
+    )
+
+
+def _resolve_host_tool(name: str) -> str:
+    resolved = shutil.which(name)
+    if resolved:
+        return resolved
+    for directory in _host_tool_dirs():
+        candidate = Path(directory) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return ""
 
 
 def _minimal_host_environment(credential_names: tuple[str, ...] = ()) -> dict[str, str]:
@@ -34,6 +65,12 @@ def _minimal_host_environment(credential_names: tuple[str, ...] = ()) -> dict[st
         for key, value in os.environ.items()
         if key in safe_names or key.startswith("LC_")
     }
+    # The executable itself is resolved to an absolute path, but Homebrew CLI
+    # launchers commonly use ``/usr/bin/env node`` and may invoke git or other
+    # companion binaries.  Give them the same bounded tool roots used above.
+    inherited_path = str(env.get("PATH") or "")
+    path_entries = [*_host_tool_dirs(), *inherited_path.split(os.pathsep)]
+    env["PATH"] = os.pathsep.join(dict.fromkeys(item for item in path_entries if item))
     for key in credential_names:
         try:
             from api.config import _thread_local_env_value
@@ -89,8 +126,7 @@ class CliBackend(AgenticBackend):
     credential_env_vars: tuple[str, ...] = ()
 
     def _cli_path(self) -> str:
-        path = shutil.which(self.cli_name)
-        return path or ""
+        return _resolve_host_tool(self.cli_name)
 
     def _probe(self) -> tuple[bool, str | None]:
         now = time.time()
@@ -106,6 +142,7 @@ class CliBackend(AgenticBackend):
             result = subprocess.run(
                 [cli, "--version"],
                 capture_output=True, text=True, timeout=5,
+                env=self._runtime_environment(),
             )
             if result.returncode == 0:
                 version = (result.stdout.strip() or "").split("\n")[-1].strip()
@@ -127,7 +164,7 @@ class CliBackend(AgenticBackend):
     def get_backend_name(self) -> str:
         return self.display_label or self.name
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         available, version = self._probe()
         if available:
             return {"status": "ok", "latency_ms": 0.0, "message": f"{self.display_label} {version or ''} is available.", "version": version}
@@ -148,7 +185,7 @@ class CliBackend(AgenticBackend):
             args.extend(["-m", model])
         return args
 
-    def run_turn(self, message: str, session_id: str, **kwargs) -> Dict[str, Any]:
+    def run_turn(self, message: str, session_id: str, **kwargs) -> dict[str, Any]:
         cli = self._cli_path()
         if not cli:
             return {"text": "", "error": f"{self.display_label} CLI not found.", "tool_activity": []}
@@ -237,6 +274,9 @@ class ClaudeLocalBackend(CliBackend):
     display_label = "Claude Code"
     supports_tools = True
     prompt_flag = "-p"
+    # A chat-turn connection may analyze the workspace, but mutations must go
+    # through an ARES durable run with an informed approval.
+    extra_args = ["--permission-mode", "plan", "--tools", ""]
     credential_env_vars = ("ANTHROPIC_API_KEY",)
 
     def inventory(self) -> dict[str, Any] | None:
@@ -250,7 +290,7 @@ class CodexLocalBackend(CliBackend):
     cli_name = "codex"
     display_label = "OpenAI Codex"
     supports_tools = True
-    extra_args = ["exec", "--skip-git-repo-check"]
+    extra_args = ["exec", "--skip-git-repo-check", "--sandbox", "read-only"]
     credential_env_vars = ("OPENAI_API_KEY",)
 
     def inventory(self) -> dict[str, Any] | None:
@@ -265,7 +305,7 @@ class GeminiLocalBackend(CliBackend):
     display_label = "Google Gemini"
     supports_tools = True
     prompt_flag = "-p"
-    extra_args = ["--skip-trust"]
+    extra_args = ["--skip-trust", "--approval-mode", "plan"]
     credential_env_vars = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
 
     def inventory(self) -> dict[str, Any] | None:
@@ -279,7 +319,12 @@ class GrokLocalBackend(CliBackend):
     cli_name = "grok"
     display_label = "xAI Grok"
     supports_tools = True
-    needs_tty = True
+    prompt_flag = "-p"
+    extra_args = [
+        "--permission-mode", "plan",
+        "--no-subagents",
+        "--disable-web-search",
+    ]
     credential_env_vars = ("XAI_API_KEY",)
 
     def inventory(self) -> dict[str, Any] | None:
@@ -325,9 +370,21 @@ class PiLocalBackend(CliBackend):
     prompt_flag = "-p"
 
     def _build_args(self, cli: str, message: str, model: str) -> list[str]:
-        args = [cli, "-p"]
+        if not model:
+            from .model_discovery import list_ollama_local_models
+
+            installed = list_ollama_local_models()
+            model = str((installed[0] if installed else {}).get("id") or "")
+        args = [
+            cli,
+            "--provider", "ollama",
+            "--thinking", "off",
+            "--no-tools",
+            "--no-session",
+            "-p",
+        ]
         if model:
-            args.extend(["--provider", "ollama", "--model", model])
+            args.extend(["--model", model])
         args.append(message)
         return args
 
@@ -352,13 +409,19 @@ def run_ollama_streaming(
     import json as _json
     import threading
     import time
+
     import requests
+    from api.run_journal import RunJournalWriter
     from api.streaming import (
-        CANCEL_FLAGS, STREAM_LAST_EVENT_ID, STREAM_PARTIAL_TEXT,
-        STREAMS, STREAMS_LOCK, register_active_run, unregister_active_run,
+        CANCEL_FLAGS,
+        STREAM_LAST_EVENT_ID,
+        STREAM_PARTIAL_TEXT,
+        STREAMS,
+        STREAMS_LOCK,
+        register_active_run,
+        unregister_active_run,
         unregister_stream_owner,
     )
-    from api.run_journal import RunJournalWriter
 
     q = STREAMS.get(stream_id)
     if q is None:

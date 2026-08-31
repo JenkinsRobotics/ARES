@@ -12,9 +12,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import subprocess
+import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,6 +29,112 @@ logger = logging.getLogger(__name__)
 _CACHE_TTL_SECONDS = 1.0
 _cached_stats: dict[str, Any] | None = None
 _cached_time: float = 0.0
+
+
+def _bytes_view(value: int) -> dict[str, Any]:
+    amount = max(0, int(value or 0))
+    return {"bytes": amount, "gb": round(amount / (1024**3), 2)}
+
+
+def _macos_memory_details() -> dict[str, Any]:
+    """Return read-only VM counters that Stats also derives from macOS.
+
+    Stats has no supported local API or AppleScript dictionary.  Reading the
+    OS counters directly avoids coupling ARES to the app's private privileged
+    helper while producing the same class of telemetry.
+    """
+    if sys.platform != "darwin":
+        return {}
+    try:
+        completed = subprocess.run(
+            ["/usr/bin/vm_stat"], stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=2, check=False,
+        )
+        if completed.returncode != 0:
+            return {}
+        lines = completed.stdout.splitlines()
+        page_match = re.search(r"page size of (\d+) bytes", lines[0] if lines else "")
+        if not page_match:
+            return {}
+        page_size = int(page_match.group(1))
+        pages: dict[str, int] = {}
+        for line in lines[1:]:
+            key, marker, raw = line.partition(":")
+            if not marker:
+                continue
+            digits = re.sub(r"[^0-9]", "", raw)
+            if digits:
+                pages[key.strip()] = int(digits)
+        return {
+            "compressed": _bytes_view(pages.get("Pages occupied by compressor", 0) * page_size),
+            "wired": _bytes_view(pages.get("Pages wired down", 0) * page_size),
+            "free": _bytes_view(
+                (pages.get("Pages free", 0) + pages.get("Pages speculative", 0)) * page_size
+            ),
+        }
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+
+
+def _host_resource_details() -> dict[str, Any]:
+    try:
+        import psutil
+
+        vm = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+    except Exception:
+        return {}
+    memory = {
+        "available": _bytes_view(getattr(vm, "available", 0)),
+        "free": _bytes_view(getattr(vm, "free", 0)),
+        "active": _bytes_view(getattr(vm, "active", 0)),
+        "inactive": _bytes_view(getattr(vm, "inactive", 0)),
+        "wired": _bytes_view(getattr(vm, "wired", 0)),
+    }
+    memory.update(_macos_memory_details())
+    try:
+        load_average = [round(float(value), 2) for value in os.getloadavg()]
+    except (AttributeError, OSError):
+        load_average = []
+    return {
+        "memory_breakdown": memory,
+        "swap": {
+            **_bytes_view(getattr(swap, "used", 0)),
+            "total": _bytes_view(getattr(swap, "total", 0)),
+            "free": _bytes_view(getattr(swap, "free", 0)),
+            "percent": round(float(getattr(swap, "percent", 0.0) or 0.0), 1),
+        },
+        "cpu_count": int(psutil.cpu_count(logical=True) or 0),
+        "load_average": load_average,
+        "metrics_source": "macos-native+psutil" if sys.platform == "darwin" else "os-native+psutil",
+    }
+
+
+def _top_processes(limit: int) -> list[dict[str, Any]]:
+    """Rank processes by resident memory without exposing arguments or users."""
+    try:
+        import psutil
+    except Exception:
+        return []
+    total = int(getattr(psutil.virtual_memory(), "total", 0) or 0)
+    rows: list[dict[str, Any]] = []
+    for process in psutil.process_iter(["pid", "name", "memory_info"]):
+        try:
+            info = process.info
+            rss = int(getattr(info.get("memory_info"), "rss", 0) or 0)
+            if rss <= 0:
+                continue
+            rows.append({
+                "pid": int(info.get("pid") or 0),
+                "name": str(info.get("name") or "unknown")[:200],
+                "memory_bytes": rss,
+                "memory_gb": round(rss / (1024**3), 2),
+                "memory_percent": round((rss / total) * 100.0, 1) if total else 0.0,
+            })
+        except (psutil.Error, OSError, ValueError):
+            continue
+    rows.sort(key=lambda row: (-row["memory_bytes"], row["pid"]))
+    return rows[: max(1, min(int(limit), 25))]
 
 
 def _query_ollama_ps(host: str = "http://127.0.0.1:11434") -> dict[str, Any]:
@@ -98,13 +208,22 @@ def _query_jaeger_status() -> dict[str, Any]:
         }
 
 
-def get_system_stats(profile_name: str | None = None, force_refresh: bool = False) -> dict[str, Any]:
+def get_system_stats(
+    profile_name: str | None = None,
+    force_refresh: bool = False,
+    *,
+    include_processes: bool = False,
+    process_limit: int = 10,
+) -> dict[str, Any]:
     """Return enriched telemetry payload with host metrics and AI runtimes."""
     global _cached_stats, _cached_time
 
     now = time.time()
     if not force_refresh and _cached_stats is not None and (now - _cached_time) < _CACHE_TTL_SECONDS:
-        return _cached_stats
+        payload = deepcopy(_cached_stats)
+        if include_processes:
+            payload["host"]["top_processes"] = _top_processes(process_limit)
+        return payload
 
     health_payload = build_system_health_payload()
     ollama_info = _query_ollama_ps()
@@ -122,22 +241,24 @@ def get_system_stats(profile_name: str | None = None, force_refresh: bool = Fals
     # Active persona / profile
     active_profile = profile_name or os.getenv("ARES_ACTIVE_PROFILE", "Jarvis")
 
+    host = {
+        "cpu_percent": cpu_percent,
+        "memory": {
+            "percent": mem_percent,
+            "used_gb": round(mem_used / (1024**3), 2),
+            "total_gb": round(mem_total / (1024**3), 2),
+            "used_bytes": mem_used,
+            "total_bytes": mem_total,
+            "formatted": f"{round(mem_used / (1024**3), 1)} / {round(mem_total / (1024**3), 1)} GB",
+        },
+        "disk": health_payload.get("disk"),
+        **_host_resource_details(),
+    }
     payload = {
         "ok": True,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "profile": active_profile,
-        "host": {
-            "cpu_percent": cpu_percent,
-            "memory": {
-                "percent": mem_percent,
-                "used_gb": round(mem_used / (1024**3), 2),
-                "total_gb": round(mem_total / (1024**3), 2),
-                "used_bytes": mem_used,
-                "total_bytes": mem_total,
-                "formatted": f"{round(mem_used / (1024**3), 1)} / {round(mem_total / (1024**3), 1)} GB",
-            },
-            "disk": health_payload.get("disk"),
-        },
+        "host": host,
         "ai_runtimes": {
             "ollama": ollama_info,
             "jaeger": jaeger_info,
@@ -148,4 +269,7 @@ def get_system_stats(profile_name: str | None = None, force_refresh: bool = Fals
 
     _cached_stats = payload
     _cached_time = now
-    return payload
+    result = deepcopy(payload)
+    if include_processes:
+        result["host"]["top_processes"] = _top_processes(process_limit)
+    return result

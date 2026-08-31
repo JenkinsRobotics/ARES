@@ -41,6 +41,19 @@ a fresh owner session.
   generated bearer key.
 - The official A2A Python SDK publishes an A2A v1 Agent Card and JSON-RPC handler.
 
+## Integration strategy
+
+ARES publishes one canonical, secret-free integration catalog. Installed MCP
+clients (Claude Code/Desktop, Codex, Gemini/Antigravity, and VS Code) connect to
+the same `ares-system` boundary. Agentgateway is the only network MCP gateway;
+Docker MCP remains disabled to avoid a second policy and credential plane.
+
+Remote OAuth services are discoverable but disabled until a user approves the
+specific account and scope. Tool execution remains default-deny, host tools are
+identity-scoped, approvals expire after 15 minutes, and every run carries a
+trace ID through its evidence events. `scripts/configure-mcp-clients.py`
+idempotently synchronizes supported local client configurations.
+
 ## Closed loop
 
 1. A wake creates an immutable run record with agent, goal, policy version,
@@ -59,5 +72,14 @@ declared Apple-container mounts. n8n receives its state directory and
 `~/workspace`, not the user's home folder or credential stores. Jaeger stays
 native because audio, Metal, Accessibility, and other macOS capabilities cannot
 be delegated safely to a Linux container.
+
+## External worker source boundary
+
+ARES may discover an external worker installation and invoke its supported
+contract, but it does not import or copy the worker's execution loop. Source
+checkout discovery is a compatibility mechanism, not ownership: external stores
+remain read-only and source mounts can be removed once an equivalent installed
+client/contract is available. The detailed compatibility inventory remains in
+[`rfcs/agent-source-boundary.md`](rfcs/agent-source-boundary.md).
 
 See `system-fabric.md` for ports, installation, and protocol details.

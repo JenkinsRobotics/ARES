@@ -4,26 +4,25 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from ..request_context import profile_scope
 from .base import AdapterError, BaseConnectionAdapter, BaseLLMAdapter, BaseToolAdapter
 from .frameworks import (
     ClaudeLocalAdapter,
     CodexLocalAdapter,
     CursorLocalAdapter,
-    GeminiLocalAdapter,
-    GeminiCloudAdapter,
     GeminiAntigravityAdapter,
+    GeminiCloudAdapter,
+    GeminiLocalAdapter,
     GrokLocalAdapter,
     JaegerAdapter,
     OllamaLocalAdapter,
     OpenAICloudAdapter,
     OpenCodeLocalAdapter,
     PiLocalAdapter,
-    XAICloudAdapter,
     TurnStarter,
+    XAICloudAdapter,
 )
 from .mcp import McpToolAdapter
-from ..request_context import profile_scope
-
 
 _ALIASES = {}
 
@@ -41,6 +40,7 @@ class AdapterRegistry:
         if execution_adapters is None:
             execution_adapters = (
                 JaegerAdapter(turn_starter=turn_starter),
+                ClaudeLocalAdapter(turn_starter=turn_starter),
                 CodexLocalAdapter(turn_starter=turn_starter),
                 GeminiLocalAdapter(turn_starter=turn_starter),
                 GeminiCloudAdapter(turn_starter=turn_starter),

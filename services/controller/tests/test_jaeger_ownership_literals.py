@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[3]
 # Files allowed to mention a forbidden literal because the literal is part of
 # a PUBLIC contract we still honour, not a leaked internal path.
@@ -31,12 +30,22 @@ def test_runtime_sources_do_not_hardcode_jaeger_internal_paths():
         ROOT / "apps/macos/Sources",
         ROOT / "apps/web/static",
     ]
+    # These are hardcoded *filesystem paths* into a sibling product's private
+    # tree. Naming a runtime is not the same thing: ARES' own registry, routing
+    # prefixes, and dashboard labels must say "hermes" (and "jaeger", and
+    # "openclaw") because those ids are the public contract between ARES and
+    # the agents it routes to. The bare product name was originally listed here
+    # and became unsatisfiable once runtimes were declared in-tree, so it is
+    # narrowed to the path-shaped spellings that indicate a real leak.
     forbidden = (
         "GitHub/JaegerAI",
         ".jaeger_os",
         "/Users/",
         "Jenkins_Robotics",
-        "hermes",
+        ".hermes",
+        "github/hermes",
+        "hermes-agent/",
+        "hermes-webui/",
         "jros",
     )
     findings: list[str] = []

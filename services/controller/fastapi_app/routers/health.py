@@ -1,17 +1,19 @@
 """Process and agent health endpoints."""
 
 import os
-
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from ..dependencies import get_core_service
-from ..request_context import RequestIdentity, require_identity, require_mutation_identity
+from ..request_context import (
+    RequestIdentity,
+    require_identity,
+    require_mutation_identity,
+)
 from ..schemas import AgentHealthResponse, HealthResponse
 from ..services import AresCoreService
-
 
 router = APIRouter(tags=["health"])
 
@@ -48,11 +50,19 @@ def agent_health(
 def system_stats(
     request: Request,
     _identity: Annotated[RequestIdentity, Depends(require_identity)],
+    include_processes: bool = Query(default=False),
+    process_limit: int = Query(default=10, ge=1, le=25),
+    force_refresh: bool = Query(default=False),
 ):
     from api.system_stats import get_system_stats
 
     profile = getattr(_identity, "profile", None)
-    return get_system_stats(profile_name=profile)
+    return get_system_stats(
+        profile_name=profile,
+        force_refresh=force_refresh,
+        include_processes=include_processes,
+        process_limit=process_limit,
+    )
 
 
 @router.post("/api/health/restart")

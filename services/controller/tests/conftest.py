@@ -13,8 +13,8 @@ PATH DISCOVERY:
     3. Common install paths (~/.ares/ares-agent)
     4. System python3 as a last resort
 """
-import json
 import inspect
+import json
 import logging
 import multiprocessing
 import os
@@ -23,8 +23,9 @@ import shutil
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
+
 import pytest
 
 
@@ -159,6 +160,7 @@ TEST_BASE      = f"http://127.0.0.1:{TEST_PORT}"
 # profile home). We now anchor the default under the OS temp dir, in a dedicated
 # `ares-webui-tests/` namespace, fully outside any production tree.
 import tempfile as _tempfile
+
 _TEST_STATE_ROOT = pathlib.Path(
     os.getenv('ARES_WEBUI_TEST_STATE_ROOT', _tempfile.gettempdir())
 ) / 'ares-webui-tests'
@@ -492,6 +494,7 @@ os.execv = _pytest_session_safe_execv
 # A test that opts in via the `allow_outbound_network` fixture sees the real
 # socket.create_connection.
 import socket as _ares_test_socket
+
 _REAL_CREATE_CONNECTION = _ares_test_socket.create_connection
 _REAL_SOCKET_CONNECT = _ares_test_socket.socket.connect
 
@@ -924,6 +927,10 @@ def test_server():
     # Without this, the subprocess can make outbound requests that the
     # pytest-side block can't see.
     env["ARES_WEBUI_TEST_NETWORK_BLOCK"] = "1"
+    # External runtimes are not part of the isolated HTTP fixture.  Blocking
+    # network alone is insufficient for stdio/Unix-socket integrations, which
+    # could otherwise attach to the operator's live Jaeger instance.
+    env["ARES_NO_JAEGER"] = "1"
     env.update({
         "ARES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE": "1",
         # Small archive-extraction cap so the zip-bomb guard is exercisable

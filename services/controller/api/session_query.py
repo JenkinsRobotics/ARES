@@ -84,7 +84,7 @@ def search_sessions(
     jaeger_rows = [
         row
         for row in sessions
-        if backend_for_session(row) == JAEGER_BACKEND_ID and runtime_owns_transcript(row)
+        if runtime_owns_transcript(row) and backend_for_session(row) == JAEGER_BACKEND_ID
     ]
     jaeger_matches: set[str] = set()
     if content_search and jaeger_rows:
@@ -100,8 +100,8 @@ def search_sessions(
             item = dict(row, match_type="title")
         elif (
             content_search
-            and backend_for_session(row) == JAEGER_BACKEND_ID
             and runtime_owns_transcript(row)
+            and backend_for_session(row) == JAEGER_BACKEND_ID
         ):
             session_id = str(row.get("session_id") or "")
             if session_id not in jaeger_matches:
@@ -183,6 +183,14 @@ def search_sessions(
             })
             collapsed.append(merged)
         results = collapsed
+
+    # Lineage collapsing deliberately rebuilds each result from its canonical
+    # representative row.  That source row is not presentation-sanitized, so
+    # enforce title redaction again at the final projection boundary instead
+    # of relying on a pre-collapse transformation that can be overwritten.
+    for item in results:
+        if isinstance(item.get("title"), str):
+            item["title"] = _redact_text(item["title"])
 
     delegated_matches = []
     if lineage:

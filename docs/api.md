@@ -42,7 +42,9 @@ transcripts, memory contents, and credential values are not System API data.
 ### Protocol edges
 
 - MCP: `http://127.0.0.1:8811/mcp`, strict bearer token from
-  `~/.ares/gateway/client.token`.
+  `~/.ares/gateway/client.token`. The complete tool inventory is documented in
+  [mcp-catalog.md](mcp-catalog.md).
+- MCP Controller Endpoints: `GET /api/mcp/catalog` (full server & tool catalog), `GET /api/mcp/tools` (active runtime tools), `GET /api/mcp/servers`, `POST /api/mcp/reload`.
 - A2A Agent Card: `http://127.0.0.1:8812/.well-known/agent-card.json`.
 - A2A JSON-RPC: `http://127.0.0.1:8812/a2a`, bearer token plus
   `A2A-Version: 1.0`.

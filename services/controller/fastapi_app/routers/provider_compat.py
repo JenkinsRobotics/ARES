@@ -11,14 +11,16 @@ from __future__ import annotations
 import json
 import logging
 import urllib.request
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
-from typing import Annotated
-
-from ..request_context import RequestIdentity, require_identity, require_mutation_identity
+from ..request_context import (
+    RequestIdentity,
+    require_identity,
+    require_mutation_identity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,14 +64,14 @@ def _ollama_local_models() -> list[dict[str, Any]]:
 
 
 def _jaeger_models() -> list[dict[str, Any]]:
-    """Return the model Jaeger reports as serving through its bridge."""
+    """Return Jaeger's model from the shared bounded health snapshot."""
     try:
-        from api.providers.jaeger.streaming import query_local_companion
+        from api.providers.jaeger.status import check_status
 
-        status = query_local_companion("serving_model", {})
-        selection = status.get("serving") or status.get("configured") if isinstance(status, dict) else None
-        if not isinstance(selection, dict):
+        status = check_status()
+        if not status.available:
             return []
+        selection = dict(status.details or {})
         model = str(selection.get("model") or "").strip()
         if not model:
             return []
@@ -78,7 +80,8 @@ def _jaeger_models() -> list[dict[str, Any]]:
             "id": model,
             "label": model,
             "provider": provider,
-            "location": "local" if provider in {"local", "in-process"} else "cloud",
+            "location": str(selection.get("model_location") or "").strip()
+            or ("local" if provider in {"local", "in-process"} else "cloud"),
             "role": "primary",
         }]
     except Exception:
@@ -374,7 +377,10 @@ async def save_provider_key(
         return JSONResponse({"ok": False, "error": f"Unknown provider: {provider_id}"}, status_code=400)
 
     try:
-        from api.runtime_credentials import delete_runtime_credential, set_runtime_credential
+        from api.runtime_credentials import (
+            delete_runtime_credential,
+            set_runtime_credential,
+        )
 
         if api_key is None or str(api_key).strip() == "":
             delete_runtime_credential(cred_name)

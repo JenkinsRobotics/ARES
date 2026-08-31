@@ -19,9 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
-import time
-from typing import Any, Dict, List
+from typing import Any
 
 from api.providers.agentic_backend import AgenticBackend
 
@@ -115,15 +113,15 @@ class OpenAICloudBackend(AgenticBackend):
     def get_backend_name(self) -> str:
         return "OpenAI"
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         if self.is_available():
             return {"status": "ok", "latency_ms": 0.0, "message": "OpenAI API key configured."}
         return {"status": "error", "latency_ms": 0.0, "message": "OPENAI_API_KEY not found."}
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {"available": self.is_available(), "label": "OpenAI"}
 
-    def run_turn(self, message: str, session_id: str, **kwargs) -> Dict[str, Any]:
+    def run_turn(self, message: str, session_id: str, **kwargs) -> dict[str, Any]:
         if not self.is_available():
             return {"text": "", "error": "OpenAI API key not configured.", "tool_activity": []}
 
@@ -185,15 +183,15 @@ class XAICloudBackend(AgenticBackend):
     def get_backend_name(self) -> str:
         return "xAI Grok"
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         if self.is_available():
             return {"status": "ok", "latency_ms": 0.0, "message": "xAI API key configured."}
         return {"status": "error", "latency_ms": 0.0, "message": "XAI_API_KEY not found."}
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {"available": self.is_available(), "label": "xAI Grok"}
 
-    def run_turn(self, message: str, session_id: str, **kwargs) -> Dict[str, Any]:
+    def run_turn(self, message: str, session_id: str, **kwargs) -> dict[str, Any]:
         if not self.is_available():
             return {"text": "", "error": "xAI API key not configured.", "tool_activity": []}
 
@@ -262,15 +260,15 @@ class ClaudeCloudBackend(AgenticBackend):
     def get_backend_name(self) -> str:
         return "Claude"
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         if self.is_available():
             return {"status": "ok", "latency_ms": 0.0, "message": "Anthropic API key configured."}
         return {"status": "error", "latency_ms": 0.0, "message": "ANTHROPIC_API_KEY not found."}
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {"available": self.is_available(), "label": "Claude"}
 
-    def run_turn(self, message: str, session_id: str, **kwargs) -> Dict[str, Any]:
+    def run_turn(self, message: str, session_id: str, **kwargs) -> dict[str, Any]:
         if not self.is_available():
             return {"text": "", "error": "Anthropic API key not configured.", "tool_activity": []}
 
@@ -321,7 +319,7 @@ BackendRegistry.register(ClaudeCloudBackend)
 
 # Imported below to avoid circular dependency. The class is defined in
 # gemini_cloud.py and registered there.
-from .gemini_cloud import GeminiCloudBackend  # noqa: E402, F811
+from .gemini_cloud import GeminiCloudBackend  # noqa: E402,F401,I001
 
 
 # ---------------------------------------------------------------------------
@@ -350,20 +348,52 @@ class OllamaLocalBackend(AgenticBackend):
     def get_backend_name(self) -> str:
         return "Ollama"
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         if self.is_available():
             return {"status": "ok", "latency_ms": 0.0, "message": "Ollama is running."}
         return {"status": "error", "latency_ms": 0.0, "message": f"Ollama not reachable at {_ollama_base_url()}."}
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {"available": self.is_available(), "label": "Ollama"}
 
-    def inventory(self) -> Dict[str, Any] | None:
-        """Installed Ollama models via /api/tags."""
-        from .model_discovery import list_ollama_local_models
-        from .catalog import finalize_inventory
+    def inventory(self) -> dict[str, Any] | None:
+        """Every Ollama model this host can run: local weights + cloud.
 
-        models = list_ollama_local_models()
+        Local models are what is installed; cloud models are the full
+        ollama.com catalog, each listed under its ``:cloud``/``-cloud`` id
+        because that is the spelling that runs remotely instead of downloading
+        weights. Entries carry ``location`` so callers can group them.
+
+        Cloud lookup is cached and fails open -- being offline drops the cloud
+        half rather than emptying the picker.
+        """
+        from .catalog import finalize_inventory
+        from .model_discovery import (
+            list_ollama_cloud_models,
+            list_ollama_local_models,
+            list_ollama_registered_cloud_models,
+        )
+
+        models = list(list_ollama_local_models())
+        seen = {str(row.get("id") or "") for row in models}
+
+        # Already-registered cloud ids first: they need no pull at all.
+        for row in list_ollama_registered_cloud_models():
+            model_id = str(row.get("id") or "")
+            if model_id and model_id not in seen:
+                seen.add(model_id)
+                models.append(row)
+
+        try:
+            catalog = list_ollama_cloud_models()
+        except Exception:
+            catalog = []
+        for row in catalog:
+            model_id = str(row.get("id") or "")
+            if model_id and model_id not in seen:
+                seen.add(model_id)
+                models.append(row)
+
         if not models:
             return None
         return finalize_inventory({"models": models})
@@ -384,7 +414,7 @@ class OllamaLocalBackend(AgenticBackend):
             return None
         return models[0].get("id")
 
-    def run_turn(self, message: str, session_id: str, **kwargs) -> Dict[str, Any]:
+    def run_turn(self, message: str, session_id: str, **kwargs) -> dict[str, Any]:
         if not self.is_available():
             return {"text": "", "error": "Ollama not running.", "tool_activity": []}
 
@@ -457,7 +487,6 @@ class OllamaLocalBackend(AgenticBackend):
 
     def get_worker_target(self):
         """Return the Ollama direct-streaming worker target."""
-        from .cli_backends_legacy import run_ollama_streaming
         return run_ollama_streaming, False, False
 
 
@@ -570,17 +599,17 @@ BackendRegistry.register(OpenCodeAppBackend)
 
 # Re-export the old names so existing code that imports them still works.
 # These will be removed in a future cleanup pass.
-from .cli_backends_legacy import (  # noqa: E402, F811
+from .cli_backends_legacy import (  # noqa: E402,F401
     ClaudeLocalBackend,
+    CliBackend,
     CodexLocalBackend,
+    CursorLocalBackend,
     GeminiLocalBackend,
     GrokLocalBackend,
     OpenCodeLocalBackend,
-    CursorLocalBackend,
     PiLocalBackend,
-    CliBackend,
-    _minimal_host_environment,
     _credential_value,
+    _minimal_host_environment,
     _ollama_base_url,
     run_ollama_streaming,
 )

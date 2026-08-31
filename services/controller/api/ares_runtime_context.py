@@ -16,36 +16,17 @@ This is backend-agnostic and never treats ARES itself as an inference runtime.
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-# Lazy import — avoids circular dependency at module level.
-# backend_selector.is_jaeger_available() is the canonical probe.
-_IS_JaegerAI_AVAILABLE_FUNC: Optional[Any] = None
-
-
-def _get_jaeger_available_func():
-    """Lazy-load the JaegerAI availability check from backend_selector."""
-    global _IS_JaegerAI_AVAILABLE_FUNC
-    if _IS_JaegerAI_AVAILABLE_FUNC is not None:
-        return _IS_JaegerAI_AVAILABLE_FUNC
-    try:
-        from api.backend_selector import is_jaeger_available
-        _IS_JaegerAI_AVAILABLE_FUNC = is_jaeger_available
-    except ImportError:
-        logging.getLogger(__name__).debug(
-            "backend_selector not available — JaegerAI assumed down"
-        )
-        _IS_JaegerAI_AVAILABLE_FUNC = lambda: False
-    return _IS_JaegerAI_AVAILABLE_FUNC
-
 
 def is_jaeger_available() -> bool:
-    """Check if JaegerAI daemon is reachable. Delegates to backend_selector."""
-    func = _get_jaeger_available_func()
+    """Return recent fleet health without probing Jaeger on the turn hot path."""
     try:
-        return bool(func())
+        from api.providers.jaeger.status import cached_status
+
+        snapshot = cached_status()
+        return bool(snapshot and snapshot.available)
     except Exception:
         return False
 
@@ -76,11 +57,12 @@ def build_runtime_context(
         def should_inject_self_persistence(config):
             return True
 
-    jaeger_up = is_jaeger_available()
-
     from api.backend_selector import normalize_backend
 
     effective_backend = normalize_backend(backend)
+    # Jaeger embodiment is distinct from the selected inference runtime, but
+    # this accessor reads only the fleet monitor's non-blocking snapshot.
+    jaeger_up = is_jaeger_available()
 
     # Capability map — what each backend provides
     capabilities = {
@@ -135,18 +117,24 @@ def build_runtime_context(
 
     device_summary: dict[str, Any] = {}
     try:
-        from api.ares_devices import device_status
+        from api.ares_devices import device_config
         from api.config import get_config
 
-        status = device_status(get_config())
-        device = status.get("device") if isinstance(status, dict) else {}
+        # Prompt construction needs stable identity only. ``device_status`` is
+        # intentionally a health endpoint and performs Tailscale, LAN, primary
+        # reachability, and backend probes; calling it here turned every model
+        # turn into a full fleet audit.
+        device = device_config(get_config())
         device_summary = {
-            "ai_id": status.get("ai_id", ""),
-            "role": status.get("role", ""),
-            "is_primary": bool(status.get("is_primary")),
+            "ai_id": device.get("ai_id", ""),
+            "role": device.get("role", ""),
+            "is_primary": device.get("role") == "primary",
             "device_id": device.get("device_id", "") if isinstance(device, dict) else "",
             "device_name": device.get("device_name", "") if isinstance(device, dict) else "",
-            "primary": status.get("primary", {}),
+            "primary": {
+                "device_id": device.get("primary_device_id", ""),
+                "url": device.get("primary_url", ""),
+            },
         }
     except Exception:
         device_summary = {}

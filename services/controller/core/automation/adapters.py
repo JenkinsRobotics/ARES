@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import re
+import shlex
 import shutil
+import signal
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +41,26 @@ class AgentAdapter(ABC):
 
     def resume_run(self, agent: Agent, prompt: str, session_id: str, emit: EventSink, cancel: threading.Event) -> AdapterResult:
         return self.start_run(agent, prompt, session_id, emit, cancel)
+
+    def continue_runtime_run(
+        self,
+        agent: Agent,
+        owner_run_id: str,
+        owner_approval_id: str,
+        owner_cursor: str,
+        decision: str,
+        session_id: str,
+        emit: EventSink,
+        cancel: threading.Event,
+    ) -> AdapterResult:
+        """Resume an owner-held run after an ARES approval decision.
+
+        Runtimes that can pause for an external decision must implement this
+        method. Starting the prompt again is deliberately not the default: it
+        could repeat the consequential action that was awaiting approval.
+        """
+
+        raise RuntimeError("runtime does not support approval continuation")
 
     @abstractmethod
     def cancel_run(self, session_id: str) -> None: ...
@@ -163,19 +186,30 @@ class HermesAdapter(AgentAdapter):
         return after
 
     def start_run(self, agent: Agent, prompt: str, session_id: str, emit: EventSink, cancel: threading.Event) -> AdapterResult:
-        args = [self.command, "--in", agent.workspace, "chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", str(agent.max_turns)]
+        # Use Hermes' stdin transport so substantial context is not constrained
+        # by macOS' per-process command-line argument limit. ``--query-file -``
+        # also preserves arbitrary quotes, backticks, and shell-like text.
+        args = [self.command, "--in", agent.workspace, "chat", "--query-file", "-", "-Q", "--source", "tool", "--max-turns", str(agent.max_turns)]
         if agent.model:
             args.extend(["-m", agent.model])
         if agent.toolsets:
             args.extend(["-t", ",".join(agent.toolsets)])
         if session_id:
             args.extend(["--resume", session_id])
-        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=agent.workspace if Path(agent.workspace).is_dir() else None)
+        proc = subprocess.Popen(
+            args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=agent.workspace if Path(agent.workspace).is_dir() else None,
+            start_new_session=True,
+        )
         self._active = proc
         try:
-            stdout, stderr = proc.communicate(timeout=agent.timeout_seconds)
+            stdout, stderr = proc.communicate(input=prompt, timeout=agent.timeout_seconds)
         except subprocess.TimeoutExpired:
-            proc.terminate()
+            self._terminate_process_tree(proc)
             stdout, stderr = proc.communicate(timeout=10)
             return AdapterResult("", session_id, "Hermes run timed out")
         finally:
@@ -200,7 +234,17 @@ class HermesAdapter(AgentAdapter):
 
     def cancel_run(self, _session_id: str) -> None:
         if self._active is not None:
-            self._active.terminate()
+            self._terminate_process_tree(self._active)
+
+    @staticmethod
+    def _terminate_process_tree(proc: subprocess.Popen[str]) -> None:
+        """Terminate a CLI wrapper and descendants such as `container exec`."""
+        if getattr(proc, "poll", lambda: None)() is not None:
+            return
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (AttributeError, ProcessLookupError, PermissionError):
+            proc.terminate()
 
 
 class JaegerAdapter(AgentAdapter):
@@ -241,8 +285,79 @@ class JaegerAdapter(AgentAdapter):
         except Exception as exc:
             return {"available": False, "owner": "jaeger", "error": str(exc)}
 
+    def _collect_run(
+        self,
+        agent: Agent,
+        run_id: str,
+        durable_session: str,
+        emit: EventSink,
+        cancel: threading.Event,
+        *,
+        cursor: str = "",
+    ) -> AdapterResult:
+        text_parts: list[str] = []
+        error = ""
+        deadline = time.monotonic() + agent.timeout_seconds
+        encoded_run = urllib.parse.quote(run_id, safe="")
+        while time.monotonic() < deadline:
+            if cancel.is_set():
+                self._request("POST", f"/v1/runs/{encoded_run}/cancel", {})
+                return AdapterResult("".join(text_parts), durable_session, "cancelled")
+            suffix = f"?cursor={urllib.parse.quote(cursor, safe='')}" if cursor else ""
+            batch = self._request("GET", f"/v1/runs/{encoded_run}/events{suffix}")
+            pending_approval: dict[str, Any] | None = None
+            for event in batch.get("events") or []:
+                if not isinstance(event, dict):
+                    continue
+                kind = str(event.get("event") or "")
+                data = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+                if kind == "token":
+                    delta = str(data.get("text") or "")
+                    text_parts.append(delta)
+                    if delta:
+                        emit("text_delta", {"text": delta})
+                elif kind == "reasoning":
+                    # Hidden model reasoning is neither a stable protocol nor
+                    # safe audit evidence. Record only that the runtime made
+                    # progress; decisions, tools, and results remain visible.
+                    emit("checkpoint", {"reason": "runtime_reasoning_activity"})
+                elif kind in {"tool", "tool_complete"}:
+                    emit("tool_result", dict(data))
+                elif kind == "approval":
+                    pending_approval = dict(data)
+                elif kind == "apperror":
+                    error = str(data.get("message") or "Jaeger run failed")
+            cursor = str(batch.get("cursor") or cursor)
+            if pending_approval is not None:
+                owner_approval_id = str(pending_approval.get("approval_id") or "")
+                if not owner_approval_id:
+                    return AdapterResult(
+                        "".join(text_parts).strip(), durable_session,
+                        "Jaeger requested approval without an approval_id",
+                    )
+                emit("approval_required", {
+                    **pending_approval,
+                    "owner": "jaeger",
+                    "owner_run_id": run_id,
+                    "owner_approval_id": owner_approval_id,
+                    "owner_cursor": cursor,
+                })
+                # Jaeger retains the paused run. ARES must relay the eventual
+                # decision and continue this exact run, never replay the prompt.
+                return AdapterResult("".join(text_parts).strip(), durable_session)
+            status = self._request("GET", f"/v1/runs/{encoded_run}")
+            if status.get("terminal_state") or status.get("status") in {"completed", "failed", "cancelled"}:
+                if status.get("status") != "completed" and not error:
+                    error = str(status.get("error") or f"Jaeger run {status.get('status')}")
+                return AdapterResult("".join(text_parts).strip(), durable_session, error)
+            time.sleep(0.25)
+        self._request("POST", f"/v1/runs/{encoded_run}/cancel", {})
+        return AdapterResult("".join(text_parts).strip(), durable_session, "Jaeger run timed out")
+
     def start_run(self, agent: Agent, prompt: str, session_id: str, emit: EventSink, cancel: threading.Event) -> AdapterResult:
-        durable_session = session_id or f"ares-{agent.id}"
+        # A new ARES goal gets a new Jaeger-owned session. Continuations pass
+        # the owner-issued id back explicitly through ``session_id``.
+        durable_session = session_id or f"ares-{agent.id}-{uuid.uuid4().hex}"
         payload: dict[str, Any] = {"message": prompt, "session_id": durable_session}
         if agent.model:
             payload["model"] = agent.model
@@ -252,47 +367,36 @@ class JaegerAdapter(AgentAdapter):
             if not run_id:
                 raise RuntimeError("Jaeger did not return a run_id")
             self._active_run_id = run_id
-            cursor = ""
-            text_parts: list[str] = []
-            error = ""
-            deadline = time.monotonic() + agent.timeout_seconds
-            encoded_run = urllib.parse.quote(run_id, safe="")
-            while time.monotonic() < deadline:
-                if cancel.is_set():
-                    self._request("POST", f"/v1/runs/{encoded_run}/cancel", {})
-                    return AdapterResult("".join(text_parts), durable_session, "cancelled")
-                suffix = f"?cursor={urllib.parse.quote(cursor, safe='')}" if cursor else ""
-                batch = self._request("GET", f"/v1/runs/{encoded_run}/events{suffix}")
-                for event in batch.get("events") or []:
-                    if not isinstance(event, dict):
-                        continue
-                    kind = str(event.get("event") or "")
-                    data = event.get("payload") if isinstance(event.get("payload"), dict) else {}
-                    if kind == "token":
-                        delta = str(data.get("text") or "")
-                        text_parts.append(delta)
-                        if delta:
-                            emit("text_delta", {"text": delta})
-                    elif kind == "reasoning":
-                        emit("reasoning_delta", {"text": str(data.get("text") or "")})
-                    elif kind in {"tool", "tool_complete"}:
-                        emit("tool_result", dict(data))
-                    elif kind == "approval":
-                        emit("approval_required", dict(data))
-                        self._request("POST", f"/v1/runs/{encoded_run}/approval", {
-                            "approval_id": str(data.get("approval_id") or ""), "choice": "deny",
-                        })
-                    elif kind == "apperror":
-                        error = str(data.get("message") or "Jaeger run failed")
-                cursor = str(batch.get("cursor") or cursor)
-                status = self._request("GET", f"/v1/runs/{encoded_run}")
-                if status.get("terminal_state") or status.get("status") in {"completed", "failed", "cancelled"}:
-                    if status.get("status") != "completed" and not error:
-                        error = str(status.get("error") or f"Jaeger run {status.get('status')}")
-                    return AdapterResult("".join(text_parts).strip(), durable_session, error)
-                time.sleep(0.25)
-            self._request("POST", f"/v1/runs/{encoded_run}/cancel", {})
-            return AdapterResult("".join(text_parts).strip(), durable_session, "Jaeger run timed out")
+            return self._collect_run(agent, run_id, durable_session, emit, cancel)
+        except Exception as exc:
+            return AdapterResult("", session_id, str(exc))
+        finally:
+            self._active_run_id = ""
+
+    def continue_runtime_run(
+        self,
+        agent: Agent,
+        owner_run_id: str,
+        owner_approval_id: str,
+        owner_cursor: str,
+        decision: str,
+        session_id: str,
+        emit: EventSink,
+        cancel: threading.Event,
+    ) -> AdapterResult:
+        if not owner_run_id or not owner_approval_id:
+            return AdapterResult("", session_id, "Jaeger approval continuation is missing owner identifiers")
+        encoded_run = urllib.parse.quote(owner_run_id, safe="")
+        choice = "once" if decision == "approved" else "deny"
+        try:
+            self._active_run_id = owner_run_id
+            self._request("POST", f"/v1/runs/{encoded_run}/approval", {
+                "approval_id": owner_approval_id,
+                "choice": choice,
+            })
+            return self._collect_run(
+                agent, owner_run_id, session_id, emit, cancel, cursor=owner_cursor,
+            )
         except Exception as exc:
             return AdapterResult("", session_id, str(exc))
         finally:
@@ -302,3 +406,237 @@ class JaegerAdapter(AgentAdapter):
         if self._active_run_id:
             encoded = urllib.parse.quote(self._active_run_id, safe="")
             self._request("POST", f"/v1/runs/{encoded}/cancel", {})
+
+
+class OpenClawAdapter(AgentAdapter):
+    """Drive the ARES-managed OpenClaw container through its own CLI.
+
+    OpenClaw runs as a container here, so unlike Hermes there is no host
+    command to spawn: every turn goes through ``container exec`` into the
+    running gateway. That is deliberate rather than incidental -- the container
+    boundary is the isolation story, and reaching in through the published HTTP
+    port instead would mean handling the gateway token in ARES' process.
+
+    The host binary from Homebrew is intentionally left alone. It is the user's
+    own interactive install with its own state directory, and ARES neither
+    manages nor routes to it.
+    """
+
+    _session = re.compile(r"(?im)^\s*session(?:[ _-]?id)?:\s*([A-Za-z0-9_.:-]+)\s*$")
+
+    def __init__(
+        self,
+        container: str | None = None,
+        container_cli: str | None = None,
+        agent_name: str | None = None,
+    ) -> None:
+        self.container = container or os.environ.get("ARES_OPENCLAW_CONTAINER") or "ares-openclaw"
+        self.container_cli = (
+            container_cli
+            or os.environ.get("ARES_CONTAINER_CLI")
+            or shutil.which("container")
+            or "/opt/homebrew/bin/container"
+        )
+        # OpenClaw's default agent id; a run may override it per Agent record.
+        self.agent_name = agent_name or os.environ.get("ARES_OPENCLAW_AGENT") or "main"
+        self._active: subprocess.Popen[str] | None = None
+
+    def _exec(self, inner: str, *, stdin: bool = False) -> list[str]:
+        # `container exec` closes stdin unless --interactive is passed, which
+        # turns --message-file /dev/stdin into "Message file is empty".
+        flags = ["--interactive"] if stdin else []
+        # The gateway credential is deliberately not a persisted container
+        # environment value (``container inspect`` would reveal it). Load the
+        # private runtime file only inside the exec process.
+        command = (
+            'export OPENCLAW_GATEWAY_TOKEN="$(cat '
+            '/home/node/.openclaw/gateway.token)"; ' + inner
+        )
+        return [self.container_cli, "exec", *flags, self.container, "sh", "-lc", command]
+
+    def _is_running(self) -> bool:
+        try:
+            completed = subprocess.run(
+                [self.container_cli, "list", "--quiet"],
+                capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        names = {line.strip() for line in completed.stdout.splitlines()}
+        return self.container in names
+
+    def probe(self, _agent: Agent) -> dict[str, Any]:
+        running = self._is_running()
+        result: dict[str, Any] = {
+            "available": running,
+            "command": f"{self.container_cli} exec {self.container}",
+            "owner": "openclaw",
+            "container": self.container,
+            "running": running,
+        }
+        if not running:
+            result["error"] = (
+                f"container {self.container!r} is not running; "
+                "run scripts/install-openclaw-container.sh"
+            )
+            return result
+        try:
+            completed = subprocess.run(
+                self._exec('node dist/index.js gateway health --token "$OPENCLAW_GATEWAY_TOKEN"'),
+                capture_output=True, text=True, timeout=30,
+            )
+            healthy = completed.returncode == 0 and "OK" in completed.stdout
+            result["gateway"] = {
+                "healthy": healthy,
+                "detail": (completed.stdout or completed.stderr).strip()[:500],
+            }
+            result["available"] = healthy
+        except (OSError, subprocess.SubprocessError) as exc:
+            result["available"] = False
+            result["gateway"] = {"healthy": False, "detail": str(exc)}
+        return result
+
+    def start_run(
+        self,
+        agent: Agent,
+        prompt: str,
+        session_id: str,
+        emit: EventSink,
+        cancel: threading.Event,
+    ) -> AdapterResult:
+        # The message is passed on stdin via --message-file so that prompt text
+        # never has to survive a shell quoting round-trip through `sh -lc`.
+        # ``runtime_instance`` names the agent *inside* OpenClaw. It defaults to
+        # the ARES agent id, so an operator must either create a matching
+        # OpenClaw agent or point this at an existing one such as "main".
+        target_agent = agent.runtime_instance or self.agent_name
+        # --json is not a convenience here: the human-readable output carries
+        # neither a session id nor a reliable reply boundary, so scraping it
+        # silently loses run continuity between turns.
+        # The message goes in on stdin via --message-file so prompt text never
+        # has to survive a shell quoting round-trip through `sh -lc`.
+        parts = [
+            "node dist/index.js agent",
+            f"--agent {shlex.quote(target_agent)}",
+            "--message-file /dev/stdin",
+            "--json",
+        ]
+        if agent.model:
+            parts.append(f"--model {shlex.quote(agent.model)}")
+        if session_id:
+            parts.append(f"--session-id {shlex.quote(session_id)}")
+        proc = subprocess.Popen(
+            self._exec(" ".join(parts), stdin=True),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        self._active = proc
+        try:
+            stdout, stderr = proc.communicate(input=prompt, timeout=agent.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            self._terminate_process_tree(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=10)
+            except subprocess.SubprocessError:
+                stdout, stderr = "", ""
+            return AdapterResult("", session_id, "OpenClaw run timed out")
+        finally:
+            self._active = None
+        if cancel.is_set():
+            return AdapterResult("", session_id, "cancelled")
+
+        payload = self._parse_json(stdout)
+        if payload is None:
+            error = stderr.strip() or stdout.strip() or f"OpenClaw exited {proc.returncode}"
+            return AdapterResult("", session_id, error)
+
+        result = payload.get("result") or {}
+        meta = (result.get("meta") or {}).get("agentMeta") or {}
+        next_session = str(meta.get("sessionId") or "") or session_id
+        text = "\n".join(
+            str(row.get("text") or "").strip()
+            for row in (result.get("payloads") or [])
+            if isinstance(row, dict) and str(row.get("text") or "").strip()
+        ).strip()
+
+        error = ""
+        if str(payload.get("status") or "").lower() not in {"ok", "success", ""}:
+            error = str(payload.get("summary") or "").strip() or "OpenClaw run failed"
+        elif proc.returncode != 0:
+            error = stderr.strip() or f"OpenClaw exited {proc.returncode}"
+
+        if text:
+            emit("text_delta", {"text": text})
+        return AdapterResult(text, next_session, error)
+
+    @staticmethod
+    def _parse_json(stdout: str) -> dict[str, Any] | None:
+        """Pull the JSON document out of stdout.
+
+        The CLI may print banner or log lines before the document, so locate
+        the first balanced object rather than assuming stdout is pure JSON.
+        """
+        start = stdout.find("{")
+        while start != -1:
+            try:
+                value = json.loads(stdout[start:])
+            except json.JSONDecodeError:
+                decoder = json.JSONDecoder()
+                try:
+                    value, _ = decoder.raw_decode(stdout[start:])
+                except ValueError:
+                    start = stdout.find("{", start + 1)
+                    continue
+            return value if isinstance(value, dict) else None
+        return None
+
+    def cancel_run(self, _session_id: str) -> None:
+        if self._active is not None:
+            self._terminate_process_tree(self._active)
+
+    @staticmethod
+    def _terminate_process_tree(proc: "subprocess.Popen[str]") -> None:
+        if getattr(proc, "poll", lambda: None)() is not None:
+            return
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (AttributeError, ProcessLookupError, PermissionError):
+            proc.terminate()
+
+
+#: Adapter class per runtime id. A runtime is promotable to ``durable=True`` in
+#: ``core.runtimes`` only once it has an entry here -- ``default_adapters()``
+#: enforces that pairing so a half-finished promotion fails at construction
+#: with a clear message instead of at dispatch with a KeyError.
+ADAPTER_TYPES: dict[str, type[AgentAdapter]] = {
+    "hermes": HermesAdapter,
+    "jaeger": JaegerAdapter,
+    "openclaw": OpenClawAdapter,
+}
+
+
+def default_adapters() -> dict[str, AgentAdapter]:
+    """Instantiate one adapter per durable runtime in the registry."""
+
+    from ..runtimes import RUNTIME_BY_ID, durable_runtime_ids
+
+    adapters: dict[str, AgentAdapter] = {}
+    missing: list[str] = []
+    for runtime_id in durable_runtime_ids():
+        adapter_type = ADAPTER_TYPES.get(runtime_id)
+        if adapter_type is None:
+            missing.append(runtime_id)
+            continue
+        adapters[runtime_id] = adapter_type()
+    if missing:
+        labels = ", ".join(
+            f"{rid} ({RUNTIME_BY_ID[rid].label})" for rid in missing
+        )
+        raise RuntimeError(
+            "runtimes are marked durable in core.runtimes but have no adapter "
+            f"in ADAPTER_TYPES: {labels}"
+        )
+    return adapters

@@ -592,6 +592,22 @@ main {
   color: var(--muted);
 }
 
+.tier-control {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.tier-control select {
+  background: #0a0c10;
+  color: #ddd;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0.28rem 0.45rem;
+}
+
 .hub-hint kbd {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid var(--line);

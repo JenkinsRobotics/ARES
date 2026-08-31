@@ -30,7 +30,8 @@ strips client-supplied identity headers before adding its own.
 | Jaeger owner UI | `https://<tailnet-host>:8443/` |
 
 Use the ARES portal for the unified path. Its agent selector is populated from
-the live `/api/agents` inventory and can message Hermes, Jaeger, or OpenClaw.
+the live `/api/agents` inventory. New conversations address the configurable
+ARES dispatcher; `@hermes`, `@jaeger`, and `@openclaw` are direct overrides.
 OpenClaw stays loopback-only; ARES reaches its authenticated container CLI, so
 there is no second public/token-bearing browser endpoint to maintain.
 
@@ -98,9 +99,10 @@ JSON-RPC endpoint:
 http://127.0.0.1:8812/a2a
 ```
 
-Send the bearer token and `A2A-Version: 0.3`. Prefix text with a registered
+Send the bearer token and `A2A-Version: 0.3`, the version negotiated by the
+pinned A2A Python handler. Prefix text with a registered
 durable agent id, including `@hermes`, `@jaeger`, or `@openclaw`, to select a
-runtime explicitly.
+runtime explicitly. Unprefixed messages use the configured ARES dispatcher.
 
 ## External dependencies
 

@@ -31,6 +31,13 @@ file.
 - Two simultaneous sessions do not cross transcripts, approvals, or tools.
 - Sleep/wake and provider timeout recover without duplicate user-visible turns.
 - A bounded 50-turn soak finishes without leaked processes or unbounded memory.
+- The dispatcher benchmark records three of three successful attempts for at
+  least one local execution engine. Each attempt must prove A2A-shaped
+  capability registration, read-only tool use, same-session recall, bounded
+  ARES RAG context, and clean completion.
+- After the local-model keep-alive expires, Ollama reports no loaded model and
+  system memory pressure is stable. Historical swap alone is not a failure;
+  growing swap or an orphaned model process is.
 
 Mail and other personal connectors remain read-only during release
 qualification unless a separate destructive-action test environment is

@@ -28,6 +28,12 @@ The only supported production calls into an agent are its documented CLI,
 HTTP API, MCP server, or A2A endpoint. ARES may store an opaque owner-issued
 session ID, but it must not import agent source or directly read owner state.
 
+ARES owns the persistent dispatcher conversation. Hermes, JaegerAI, and
+OpenClaw remain configurable execution engines rather than competing control
+planes. Automatic routing may select only an engine whose latest local-tool
+qualification passed every attempt; an explicit `@agent` route remains an
+operator override.
+
 ## Repository and configuration policy
 
 ### Public agent repositories
@@ -136,9 +142,18 @@ Deliverables:
 - Model choice is an operator setting; installers fall back to the first live
   suitable model rather than embedding a private preference.
 - Context and artifact transfer is bounded, resumable, and reports truncation.
+- Dispatcher qualification uses the same versioned prompt for every runtime and
+  proves capability registration, a real read-only tool result, owner-session
+  continuity, ARES RAG retrieval, and clean completion. Three of three attempts
+  must pass; latency is scored separately for fast, balanced, and accurate
+  policies.
+- Local inference is globally serialized. Ollama loads at most one model with
+  one parallel request and a bounded keep-alive so idle model weights are
+  released instead of competing with containers and portal services.
 
 Exit gate: each agent completes and resumes a unique acceptance conversation
-without ARES reading its transcript store.
+without ARES reading its transcript store, and at least one dispatcher engine
+has current three-attempt evidence with a 100% success rate.
 
 ### Phase 4 — Remote production acceptance
 
@@ -179,6 +194,10 @@ Exit gate: a documented restore drill meets the recovery objectives below.
 | Control API health response | p95 under 500 ms |
 | Read-only MCP tool response excluding owner work | p95 under 2 s |
 | Run dispatch acknowledgement | p95 under 2 s |
+| Fast dispatcher qualification | Median end-to-end turn pair under 90 s |
+| Balanced dispatcher qualification | Median end-to-end turn pair under 180 s |
+| Accurate dispatcher qualification | 100% correctness; latency reported, not hidden |
+| Idle local-model residency | Released within 2 minutes of the last turn |
 | Stale active-run reconciliation | under 5 minutes |
 | Approval expiry | 15 minutes unless policy explicitly shortens it |
 | Recovery point objective | 24 hours |

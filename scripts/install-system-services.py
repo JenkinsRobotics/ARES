@@ -143,6 +143,13 @@ def main() -> int:
                 "OLLAMA_HOST": "127.0.0.1:11434",
                 "OLLAMA_FLASH_ATTENTION": "1",
                 "OLLAMA_KV_CACHE_TYPE": "q8_0",
+                # Unified memory is the scarce resource on this Mac. Keep one
+                # model resident briefly for conversational follow-ups, but do
+                # not let concurrent frameworks load competing model weights.
+                "OLLAMA_KEEP_ALIVE": os.environ.get("ARES_OLLAMA_KEEP_ALIVE", "90s"),
+                "OLLAMA_MAX_LOADED_MODELS": os.environ.get("ARES_OLLAMA_MAX_LOADED_MODELS", "1"),
+                "OLLAMA_NUM_PARALLEL": os.environ.get("ARES_OLLAMA_NUM_PARALLEL", "1"),
+                "OLLAMA_MAX_QUEUE": os.environ.get("ARES_OLLAMA_MAX_QUEUE", "32"),
             },
         )
     return 0

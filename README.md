@@ -78,7 +78,7 @@ publishes an official A2A v1 Agent Card at:
 http://127.0.0.1:8812/.well-known/agent-card.json
 ```
 
-A2A calls require the same bearer token and `A2A-Version: 1.0`. Prefix a request
+A2A calls require the same bearer token and `A2A-Version: 0.3`. Prefix a request
 with `@hermes` or `@jaeger` to choose explicitly; otherwise the configured
 default is Hermes.
 

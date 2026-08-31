@@ -47,6 +47,8 @@ class AutomationStore:
             "events": [],
             "approvals": [],
             "configuration_changes": [],
+            "dispatcher": {},
+            "dispatcher_benchmarks": [],
         }
 
     def _write(self, value: dict[str, Any]) -> None:

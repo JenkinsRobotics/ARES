@@ -118,6 +118,8 @@ class SystemThread:
     created_at: float
     updated_at: float
     status: str = "active"
+    routing_mode: str = "direct"
+    dispatcher_tier: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

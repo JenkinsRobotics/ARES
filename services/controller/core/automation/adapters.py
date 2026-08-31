@@ -242,7 +242,16 @@ class HermesAdapter(AgentAdapter):
         if getattr(proc, "poll", lambda: None)() is not None:
             return
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            process_group = os.getpgid(proc.pid)
+            os.killpg(process_group, signal.SIGTERM)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Apple's `container exec` can ignore TERM while its remote
+                # process is in a model/tool turn. Leaving it alive retains
+                # Ollama weights and the ARES local-model lease indefinitely.
+                os.killpg(process_group, signal.SIGKILL)
+                proc.wait(timeout=3)
         except (AttributeError, ProcessLookupError, PermissionError):
             proc.terminate()
 
@@ -522,7 +531,16 @@ class OpenClawAdapter(AgentAdapter):
             "--json",
         ]
         if agent.model:
-            parts.append(f"--model {shlex.quote(agent.model)}")
+            model_ref = agent.model
+            # OpenClaw names custom Ollama lanes as providers. ARES stores the
+            # provider and model separately so the common model catalog stays
+            # consistent across runtimes; qualify only at this adapter edge.
+            if "/" not in model_ref:
+                if agent.model_provider == "ollama-local":
+                    model_ref = f"ollama-local/{model_ref}"
+                elif agent.model_provider == "ollama-cloud":
+                    model_ref = f"ollama-cloud-via-host/{model_ref}"
+            parts.append(f"--model {shlex.quote(model_ref)}")
         if session_id:
             parts.append(f"--session-id {shlex.quote(session_id)}")
         proc = subprocess.Popen(
@@ -602,7 +620,13 @@ class OpenClawAdapter(AgentAdapter):
         if getattr(proc, "poll", lambda: None)() is not None:
             return
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            process_group = os.getpgid(proc.pid)
+            os.killpg(process_group, signal.SIGTERM)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(process_group, signal.SIGKILL)
+                proc.wait(timeout=3)
         except (AttributeError, ProcessLookupError, PermissionError):
             proc.terminate()
 

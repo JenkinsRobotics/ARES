@@ -33,6 +33,7 @@ from a2a.types import (
 from fastapi import FastAPI
 
 from core.automation import AutomationService
+from core.automation.dispatcher import A2A_PROTOCOL_VERSION
 from core.runtimes import durable_runtime_ids
 
 TERMINAL_RUN_STATES = {
@@ -40,12 +41,13 @@ TERMINAL_RUN_STATES = {
     "blocked",
     "approval_required",
     "failed",
+    "timed_out",
     "paused",
     "cancelled",
 }
 
 
-def select_agent(message: str, default_agent: str = "hermes") -> tuple[str, str]:
+def select_agent(message: str, default_agent: str = "dispatcher") -> tuple[str, str]:
     """Resolve an explicit ``@agent`` prefix, otherwise use policy default."""
 
     stripped = message.strip()
@@ -72,7 +74,9 @@ class SystemAgentExecutor(AgentExecutor):
         updater = TaskUpdater(event_queue=event_queue, task_id=task.id, context_id=task.context_id)
 
         message = get_message_text(context.message) or ""
-        default_agent = os.environ.get("ARES_SYSTEM_DEFAULT_AGENT", "hermes").strip() or "hermes"
+        # The default is the ARES dispatcher role.  An operator may still pin
+        # the A2A surface or use an explicit @agent prefix for a direct route.
+        default_agent = os.environ.get("ARES_SYSTEM_DEFAULT_AGENT", "dispatcher").strip() or "dispatcher"
         agent_id, objective = select_agent(message, default_agent)
         if not objective:
             await updater.update_status(
@@ -82,6 +86,9 @@ class SystemAgentExecutor(AgentExecutor):
             return
 
         try:
+            dispatch: dict[str, Any] = {"reason": "explicit_a2a_route", "qualified": None}
+            if agent_id == "dispatcher":
+                agent_id, dispatch = self.service.select_dispatcher()
             goal = self.service.create_goal({"agent_id": agent_id, "objective": objective})
             run = self.service.wake(
                 agent_id,
@@ -100,7 +107,10 @@ class SystemAgentExecutor(AgentExecutor):
             self._task_runs[task.id] = run["id"]
         await updater.update_status(
             state=TaskState.TASK_STATE_WORKING,
-            message=new_text_message(f"Delegated to {agent_id}; ARES run {run['id']} is active."),
+            message=new_text_message(
+                f"ARES dispatcher delegated to {agent_id}; run {run['id']} is active "
+                f"({dispatch.get('reason', 'explicit route')})."
+            ),
         )
 
         configured_timeout = max(10, int(os.environ.get("ARES_A2A_TASK_TIMEOUT", "900")))
@@ -160,13 +170,17 @@ def build_agent_card() -> AgentCard:
         default_output_modes=["text/plain"],
         capabilities=AgentCapabilities(streaming=True),
         supported_interfaces=[
-            AgentInterface(protocol_binding="JSONRPC", url=public_url, protocol_version="0.3")
+            AgentInterface(
+                protocol_binding="JSONRPC",
+                url=public_url,
+                protocol_version=A2A_PROTOCOL_VERSION,
+            )
         ],
         skills=[
             AgentSkill(
                 id="delegate_task",
                 name="Delegate task",
-                description="Run a durable task through a registered agent. Prefix with @hermes, @jaeger, or @openclaw to select explicitly.",
+                description="Let the configurable ARES dispatcher select a qualified runtime, or prefix with a registered @agent id to select explicitly.",
                 input_modes=["text/plain"],
                 output_modes=["text/plain"],
                 tags=["coordination", "delegation", "audit"],

@@ -59,6 +59,21 @@ def test_attach_candidates_follow_the_sticky_default_instance(tmp_path):
     assert sock in jaeger_bridge_socket_candidates(str(home), None)
 
 
+def test_attach_candidates_include_current_user_state_layout(tmp_path, monkeypatch):
+    """A product checkout and Jaeger's user-owned state are separate roots."""
+    from api.providers.jaeger.paths import jaeger_bridge_socket_candidates
+
+    product = tmp_path / "product" / "JaegerAI"
+    product.mkdir(parents=True)
+    user_home = tmp_path / "user"
+    (user_home / ".jaeger_ai").mkdir(parents=True)
+    (user_home / ".jaeger_ai" / "active_instance").write_text("jaeger\n", encoding="utf-8")
+    socket_path = user_home / ".jaeger_ai" / "instances" / "jaeger" / "run" / "bridge.sock"
+    monkeypatch.setenv("HOME", str(user_home))
+
+    assert socket_path in jaeger_bridge_socket_candidates(str(product), None)
+
+
 def test_a_stale_socket_file_is_not_mistaken_for_a_live_bridge(tmp_path):
     """A leftover socket path must fail connect rather than read as attached.
 

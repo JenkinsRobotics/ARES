@@ -22,8 +22,8 @@ class _Adapter(AgentAdapter):
         return None
 
 
-def test_system_selector_is_explicit_and_defaults_to_hermes():
-    assert select_agent("do the work") == ("hermes", "do the work")
+def test_system_selector_is_explicit_and_defaults_to_dispatcher():
+    assert select_agent("do the work") == ("dispatcher", "do the work")
     assert select_agent("@jaeger inspect this") == ("jaeger", "inspect this")
     assert select_agent("@openclaw inspect this") == ("openclaw", "inspect this")
     assert select_agent("Hermes: answer") == ("hermes", "answer")
@@ -33,7 +33,7 @@ def test_agent_card_declares_router_not_model_runtime():
     card = build_agent_card()
     assert card.name == "ARES System"
     assert "delegates" in card.description
-    assert "@openclaw" in card.skills[0].description
+    assert "dispatcher" in card.skills[0].description.lower()
     assert card.supported_interfaces[0].url.endswith("/a2a")
 
 
@@ -65,5 +65,6 @@ def test_worker_card_and_integration_catalog_routes(tmp_path):
         worker = client.get("/api/agents/hermes/agent-card.json")
         catalog = client.get("/api/integrations")
     assert worker.status_code == 200
-    assert worker.json()["runtimeOwner"] == "hermes"
+    assert worker.json()["metadata"]["runtimeOwner"] == "hermes"
+    assert worker.json()["protocolVersion"] == "0.3"
     assert catalog.json()["network_gateway"] == "agentgateway"

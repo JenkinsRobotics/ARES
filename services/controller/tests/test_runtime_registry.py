@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from core.automation.adapters import ADAPTER_TYPES, OpenClawAdapter, default_adapters
+from core.automation.adapters import ADAPTER_TYPES, HermesAdapter, OpenClawAdapter, default_adapters
 from core.automation.models import Agent
 from core.control_plane.definitions import AgentDefinition
 from core.runtimes import (
@@ -171,6 +171,67 @@ def test_openclaw_exec_loads_gateway_secret_from_runtime_file():
     assert "/home/node/.openclaw/gateway.token" in rendered
     assert "OPENCLAW_GATEWAY_TOKEN=" in rendered
     assert "node --version" in rendered
+
+
+def test_openclaw_adapter_qualifies_ares_ollama_model_routes(monkeypatch):
+    captured = {}
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, input, timeout):
+            return ('{"result":{"meta":{"agentMeta":{"sessionId":"s1"}},"payloads":[{"text":"ok"}]}}', "")
+
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        return Process()
+
+    monkeypatch.setattr("core.automation.adapters.subprocess.Popen", fake_popen)
+    runtime = OpenClawAdapter(container_cli="container")
+    payload = _agent_payload("openclaw") | {
+        "id": "openclaw",
+        "model": "gemma4:latest",
+        "model_provider": "ollama-local",
+        "model_location": "local",
+        "runtime_instance": "main",
+    }
+    result = runtime.start_run(
+        Agent.from_dict(payload), "hello", "", lambda *_: None, __import__("threading").Event(),
+    )
+    assert result.error == ""
+    assert "--model ollama-local/gemma4:latest" in " ".join(captured["args"])
+
+
+@pytest.mark.parametrize("adapter_type", [HermesAdapter, OpenClawAdapter])
+def test_container_cli_cancellation_escalates_when_exec_ignores_term(monkeypatch, adapter_type):
+    import signal
+    import subprocess
+
+    calls = []
+
+    class Process:
+        pid = 123
+        waits = 0
+
+        def poll(self):
+            return None
+
+        def wait(self, timeout):
+            self.waits += 1
+            if self.waits == 1:
+                raise subprocess.TimeoutExpired("container", timeout)
+            return 0
+
+        def terminate(self):
+            raise AssertionError("process-group escalation should be used")
+
+    monkeypatch.setattr("core.automation.adapters.os.getpgid", lambda _pid: 123)
+    monkeypatch.setattr(
+        "core.automation.adapters.os.killpg",
+        lambda pgid, sig: calls.append((pgid, sig)),
+    )
+    adapter_type._terminate_process_tree(Process())
+    assert calls == [(123, signal.SIGTERM), (123, signal.SIGKILL)]
 
 
 def test_openclaw_installer_pins_image_and_uses_stable_private_host_route():

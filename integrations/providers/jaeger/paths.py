@@ -91,11 +91,17 @@ def jaeger_bridge_socket_candidates(
         except OSError:
             pass
     if not name:
-        active = Path.home() / ".jaeger" / "active_instance"
-        try:
-            name = active.read_text(encoding="utf-8").strip()
-        except OSError:
-            pass
+        # Current JaegerAI installs own state under ~/.jaeger_ai. Keep the
+        # historical ~/.jaeger candidate after it, but never spawn a second
+        # bridge merely because ARES looked in the retired directory first.
+        for state_name in (".jaeger_ai", ".jaeger"):
+            active = Path.home() / state_name / "active_instance"
+            try:
+                name = active.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if name:
+                break
     name = name or "default"
     out: list[Path] = []
     env_dir = str(os.environ.get("JAEGER_INSTANCE_DIR") or "").strip()
@@ -104,6 +110,7 @@ def jaeger_bridge_socket_candidates(
     if home:
         root = expand_path(home)
         out.append(root / ".jaeger_ai" / "instances" / name / "run" / "bridge.sock")
+    out.append(Path.home() / ".jaeger_ai" / "instances" / name / "run" / "bridge.sock")
     out.append(Path.home() / ".jaeger" / "instances" / name / "run" / "bridge.sock")
     seen: set[str] = set()
     unique: list[Path] = []
@@ -132,11 +139,20 @@ def jaeger_update_repo() -> Path | None:
 
 
 __all__ = [
-    "ARES_JAEGER_HOME_ENV", "ARES_JAEGER_INSTANCE_ENV", "ARES_JAEGER_SOURCE_DIR_ENV",
-    "ARES_NO_JAEGER_ENV", "JAEGER_HOME_ENV", "configured_root_override",
+    "ARES_JAEGER_HOME_ENV",
+    "ARES_JAEGER_INSTANCE_ENV",
+    "ARES_JAEGER_SOURCE_DIR_ENV",
+    "ARES_NO_JAEGER_ENV",
+    "JAEGER_HOME_ENV",
+    "configured_root_override",
     "discover_jaeger_ai_source_root",
-    "discover_jaeger_source_root", "expand_path", "is_jaeger_ai_root", "jaeger_home",
+    "discover_jaeger_source_root",
+    "expand_path",
+    "is_jaeger_ai_root",
     "jaeger_bridge_socket_candidates",
-    "jaeger_instance_name", "jaeger_integration_disabled", "jaeger_launcher",
+    "jaeger_home",
+    "jaeger_instance_name",
+    "jaeger_integration_disabled",
+    "jaeger_launcher",
     "jaeger_update_repo",
 ]

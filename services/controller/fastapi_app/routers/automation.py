@@ -45,6 +45,46 @@ def agent_models(request: Request) -> dict[str, Any]:
     return service(request).model_catalog()
 
 
+@router.get("/dispatcher")
+def dispatcher(request: Request) -> dict[str, Any]:
+    return service(request).dispatcher_status()
+
+
+@router.put("/dispatcher")
+def configure_dispatcher(
+    payload: dict[str, Any], request: Request,
+    _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
+) -> dict[str, Any]:
+    try:
+        return service(request).configure_dispatcher(payload)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise fail(exc) from exc
+
+
+@router.get("/dispatcher/capabilities")
+def dispatcher_capabilities(request: Request) -> dict[str, Any]:
+    return service(request).capability_registry(str(request.base_url).rstrip("/"))
+
+
+@router.get("/dispatcher/benchmarks/{agent_id}/prompt")
+def dispatcher_benchmark_prompt(agent_id: str, nonce: str, request: Request) -> dict[str, Any]:
+    try:
+        return service(request).dispatcher_benchmark_prompt(agent_id, nonce)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise fail(exc) from exc
+
+
+@router.post("/dispatcher/benchmarks/{agent_id}")
+def record_dispatcher_benchmark(
+    agent_id: str, payload: dict[str, Any], request: Request,
+    _identity: Annotated[RequestIdentity, Depends(require_mutation_identity)],
+) -> dict[str, Any]:
+    try:
+        return service(request).record_dispatcher_benchmark(agent_id, payload)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise fail(exc) from exc
+
+
 @router.get("/threads")
 def threads(request: Request) -> list[dict[str, Any]]:
     return service(request).list_threads()
@@ -86,16 +126,8 @@ def agent_card(agent_id: str, request: Request) -> dict[str, Any]:
         agent = next(row for row in service(request).list_agents() if row["id"] == agent_id)
     except StopIteration as exc:
         raise CoreApiError(404, "agent not found") from exc
-    return {
-        "name": agent["name"],
-        "description": agent["identity"],
-        "version": "1.0.0",
-        "runtimeOwner": agent["runtime"],
-        "aresManaged": ["goals", "leases", "budgets", "approvals", "audit"],
-        "inputModes": ["text/plain"],
-        "outputModes": ["text/plain"],
-        "skills": [{"id": "delegated_task", "name": "Delegated task", "tags": [agent["runtime"], "ares-governed"]}],
-    }
+    registry = service(request).capability_registry(str(request.base_url).rstrip("/"))
+    return next(row for row in registry["agents"] if row["metadata"]["agentId"] == agent["id"])
 
 
 @router.put("/agents")

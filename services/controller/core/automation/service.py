@@ -15,6 +15,13 @@ from typing import Any
 
 from ..runtimes import is_actor_identity
 from .adapters import AgentAdapter, default_adapters
+from .dispatcher import (
+    benchmark_prompt,
+    build_benchmark_record,
+    capability_manifest,
+    normalize_dispatcher_config,
+    select_agent as select_dispatcher_agent,
+)
 from .integrations import integration_catalog
 from .models import (
     Agent,
@@ -42,6 +49,10 @@ class AutomationService:
         self.adapters = adapters or default_adapters()
         self._guard = threading.RLock()
         self._agent_locks: dict[str, threading.Lock] = {}
+        # Apple Silicon uses unified memory.  Serializing *all* local-model
+        # leases prevents two different agents from loading separate model
+        # weights and pushing the host into compression/swap.
+        self._local_model_lock = threading.Lock()
         self._cancellations: dict[str, threading.Event] = {}
         self._scheduler_stop = threading.Event()
         self._scheduler_thread: threading.Thread | None = None
@@ -61,6 +72,74 @@ class AutomationService:
 
     def list_integrations(self) -> dict[str, Any]:
         return integration_catalog()
+
+    def dispatcher_config(self) -> dict[str, Any]:
+        state = self.snapshot()
+        return normalize_dispatcher_config(state.get("dispatcher") or {}, state["agents"])
+
+    def configure_dispatcher(self, raw: dict[str, Any]) -> dict[str, Any]:
+        config = normalize_dispatcher_config(raw, self.list_agents())
+        self.store.update(lambda state: state.__setitem__("dispatcher", config))
+        return config
+
+    def dispatcher_status(self) -> dict[str, Any]:
+        state = self.snapshot()
+        config = normalize_dispatcher_config(state.get("dispatcher") or {}, state["agents"])
+        agent_id, decision = select_dispatcher_agent(
+            config, state["agents"], state.get("dispatcher_benchmarks") or [],
+        )
+        return {
+            "role": "ares",
+            "selected_agent_id": agent_id,
+            "decision": decision,
+            "config": config,
+            "benchmarks": list(reversed(state.get("dispatcher_benchmarks") or [])),
+            "resource_policy": self.local_model_policy(),
+        }
+
+    def select_dispatcher(self) -> tuple[str, dict[str, Any]]:
+        state = self.snapshot()
+        return select_dispatcher_agent(
+            state.get("dispatcher") or {}, state["agents"],
+            state.get("dispatcher_benchmarks") or [],
+        )
+
+    def capability_registry(self, base_url: str = "") -> dict[str, Any]:
+        return {
+            "authority": "ares",
+            "discovery": "A2A Agent Cards plus MCP initialize/tools/list; model claims are not authoritative.",
+            "agents": [
+                capability_manifest(Agent.from_dict(row), base_url)
+                for row in sorted(self.list_agents(), key=lambda item: str(item.get("id") or ""))
+            ],
+        }
+
+    def record_dispatcher_benchmark(self, agent_id: str, raw: dict[str, Any]) -> dict[str, Any]:
+        agent = self._agent(agent_id)
+        record = build_benchmark_record(agent_id, {
+            **raw,
+            "model": raw.get("model") or agent.model,
+            "model_location": raw.get("model_location") or agent.model_location,
+        })
+        self.store.update(lambda state: state["dispatcher_benchmarks"].append(record))
+        return record
+
+    def dispatcher_benchmark_prompt(self, agent_id: str, nonce: str) -> dict[str, Any]:
+        agent = self._agent(agent_id)
+        clean_nonce = re.sub(r"[^A-Za-z0-9_.-]", "", str(nonce or ""))[:128]
+        if not clean_nonce:
+            raise ValueError("benchmark nonce is required")
+        return {"contract_version": "1.0", "prompt": benchmark_prompt(agent, clean_nonce)}
+
+    @staticmethod
+    def local_model_policy() -> dict[str, Any]:
+        return {
+            "serialized": True,
+            "max_loaded_models": int(os.environ.get("ARES_OLLAMA_MAX_LOADED_MODELS", "1")),
+            "parallel_requests": int(os.environ.get("ARES_OLLAMA_NUM_PARALLEL", "1")),
+            "keep_alive": os.environ.get("ARES_OLLAMA_KEEP_ALIVE", "90s"),
+            "rag_policy": "Local models receive bounded ARES RAG context; cloud models do not receive private RAG excerpts.",
+        }
 
     def model_catalog(self) -> dict[str, Any]:
         """Return only immediately usable Ollama local/cloud model routes."""
@@ -102,9 +181,13 @@ class AutomationService:
 
     def create_thread(self, raw: dict[str, Any]) -> dict[str, Any]:
         agent_id = str(raw.get("agent_id") or "").strip()
-        if not agent_id:
-            agents = self.list_agents()
-            agent_id = str(agents[0]["id"] if agents else "")
+        routing_mode = str(raw.get("routing_mode") or ("dispatcher" if not agent_id or agent_id == "dispatcher" else "direct")).strip().lower()
+        if routing_mode not in {"dispatcher", "direct"}:
+            raise ValueError("routing_mode must be dispatcher or direct")
+        dispatcher_tier = ""
+        if routing_mode == "dispatcher":
+            agent_id, decision = self.select_dispatcher()
+            dispatcher_tier = str(decision.get("tier") or "")
         self._agent(agent_id)
         title = str(raw.get("title") or "New conversation").strip()[:160]
         now = time.time()
@@ -114,6 +197,8 @@ class AutomationService:
             selected_agent_id=agent_id,
             created_at=now,
             updated_at=now,
+            routing_mode=routing_mode,
+            dispatcher_tier=dispatcher_tier,
         )
         self.store.update(lambda state: state["threads"].append(thread.as_dict()))
         return thread.as_dict()
@@ -143,7 +228,15 @@ class AutomationService:
             thread = next((row for row in state["threads"] if row["id"] == thread_id), None)
             if thread is None:
                 raise ValueError("thread not found")
-            agent_id = str(raw.get("agent_id") or thread.get("selected_agent_id") or "").strip()
+            requested_agent = str(raw.get("agent_id") or "").strip()
+            use_dispatcher = requested_agent == "dispatcher" or (
+                not requested_agent and thread.get("routing_mode") == "dispatcher"
+            )
+            dispatch_decision: dict[str, Any] = {"reason": "direct_by_operator", "qualified": None}
+            if use_dispatcher:
+                agent_id, dispatch_decision = self.select_dispatcher()
+            else:
+                agent_id = requested_agent or str(thread.get("selected_agent_id") or "").strip()
             self._agent(agent_id, state)
             goal = self.create_goal({
                 "agent_id": agent_id,
@@ -159,6 +252,8 @@ class AutomationService:
                 current["messages"].append(message.as_dict()),
                 [row.update(
                     selected_agent_id=agent_id,
+                    routing_mode=("dispatcher" if use_dispatcher else "direct"),
+                    dispatcher_tier=(str(dispatch_decision.get("tier") or "") if use_dispatcher else ""),
                     title=(text[:80] if row.get("title") == "New conversation" else row.get("title")),
                     updated_at=time.time(),
                 ) for row in current["threads"] if row["id"] == thread_id],
@@ -171,7 +266,18 @@ class AutomationService:
                 row.update(run_id=run["id"])
                 for row in current["messages"] if row["id"] == message.id
             ])
-        return {"thread_id": thread_id, "message": {**message.as_dict(), "run_id": run["id"]}, "goal": goal, "run": run}
+            self._event(run["id"], "checkpoint", {
+                "kind": "dispatcher_selection",
+                "selected_agent_id": agent_id,
+                **dispatch_decision,
+            })
+        return {
+            "thread_id": thread_id,
+            "message": {**message.as_dict(), "run_id": run["id"]},
+            "goal": goal,
+            "run": run,
+            "dispatch": {"selected_agent_id": agent_id, **dispatch_decision},
+        }
 
     def close_goal(self, goal_id: str, *, status: str, reason: str) -> dict[str, Any]:
         if status not in {"complete", "blocked", "cancelled", "failed", "timed_out"}:
@@ -1039,10 +1145,29 @@ class AutomationService:
             self._patch_run(run_id, status="failed", error="another run is active for this agent", finished_at=time.time())
             self._event(run_id, "run_failed", {"error": "agent lease unavailable"})
             return
+        local_model_acquired = False
         try:
             self._patch_run(run_id, status="running", started_at=time.time())
             self._event(run_id, "run_started", {"trigger": run["trigger"], "policy_version": run["policy_version"], "trace_id": run.get("trace_id", "")})
             agent = self._agent(run["agent_id"])
+            if agent.model_location == "local":
+                self._event(run_id, "checkpoint", {
+                    "kind": "local_model_slot",
+                    "status": "waiting",
+                    "policy": self.local_model_policy(),
+                })
+                while not cancel.is_set():
+                    if self._local_model_lock.acquire(blocking=False):
+                        local_model_acquired = True
+                        break
+                    cancel.wait(0.1)
+                if not local_model_acquired:
+                    self._patch_run(run_id, status="cancelled", error="cancelled while waiting for local model memory", finished_at=time.time())
+                    self._event(run_id, "run_failed", {"error": "cancelled while waiting for local model memory"})
+                    return
+                self._event(run_id, "checkpoint", {
+                    "kind": "local_model_slot", "status": "acquired",
+                })
             goal = self._goal(run["goal_id"])
             # Runtime sessions belong to a goal. Reusing the last session from
             # an unrelated goal leaks context and can wedge runtimes that no
@@ -1157,6 +1282,8 @@ class AutomationService:
             self._event(run_id, "run_failed", {"error": str(exc)})
         finally:
             self._cancellations.pop(run_id, None)
+            if local_model_acquired:
+                self._local_model_lock.release()
             lock.release()
 
     def _prompt(self, agent: Agent, goal: dict[str, Any], run: dict[str, Any]) -> str:

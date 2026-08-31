@@ -47,7 +47,7 @@ transcripts, memory contents, and credential values are not System API data.
 - MCP Controller Endpoints: `GET /api/mcp/catalog` (full server & tool catalog), `GET /api/mcp/tools` (active runtime tools), `GET /api/mcp/servers`, `POST /api/mcp/reload`.
 - A2A Agent Card: `http://127.0.0.1:8812/.well-known/agent-card.json`.
 - A2A JSON-RPC: `http://127.0.0.1:8812/a2a`, bearer token plus
-  `A2A-Version: 1.0`.
+  `A2A-Version: 0.3` (the version negotiated by the pinned Python handler).
 
 `GET /api/ares/backend` returns the profile/session selection plus a `status`
 map derived from the canonical framework-adapter registry. It must not report

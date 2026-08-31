@@ -89,8 +89,8 @@
       <div id="chatStream" class="chat-stream">
         <div class="chat-empty" id="chatEmpty">
           <div class="empty-icon">⚡</div>
-          <h3>Direct or Autonomous Agent Workspace</h3>
-          <p class="muted">Send a message below. Select any registered agent, or prefix the message with its agent ID.</p>
+          <h3>Message the ARES Dispatcher</h3>
+          <p class="muted">ARES keeps this conversation and selects a qualified engine. Use an @agent prefix only when you want a direct route.</p>
           <div class="quick-prompts">
             <button class="quick-prompt" data-agent="jaeger" data-prompt="@jaeger Inspect git status and list uncommitted changes in ARES">"Inspect git status in ARES"</button>
             <button class="quick-prompt" data-agent="hermes" data-prompt="@hermes Run pytest on services/controller/tests and report the test summary">"Run test suite in Hermes"</button>
@@ -104,22 +104,31 @@
       <div class="agent-pill-bar">
         <span class="pill-label">Route to:</span>
         <div class="pill-group" id="agentPills">
-          <button type="button" class="agent-pill active" data-agent="hermes">⚡ Auto · Hermes</button>
+          <button type="button" class="agent-pill active" data-agent="dispatcher">⚡ Dispatcher</button>
+          <button type="button" class="agent-pill" data-agent="hermes">Hermes</button>
           <button type="button" class="agent-pill" data-agent="jaeger">🐺 JaegerAI</button>
           <button type="button" class="agent-pill" data-agent="openclaw">🦞 OpenClaw</button>
         </div>
-        <span class="hub-hint" id="hubHint">Press <kbd>⌘</kbd>+<kbd>Enter</kbd> to dispatch</span>
+        <label class="tier-control">Profile
+          <select id="dispatcherTier" aria-label="Dispatcher performance profile">
+            <option value="fast">Fast</option>
+            <option value="balanced" selected>Balanced</option>
+            <option value="accurate">Accurate</option>
+          </select>
+        </label>
+        <span class="hub-hint" id="hubHint">ARES is loading its routing evidence…</span>
       </div>
 
       <!-- Interactive Composer -->
       <div class="composer">
         <!-- Kept for backward compatibility and form bindings -->
         <select id="systemAgent" style="display:none;">
-          <option value="hermes">Auto · Hermes</option>
+          <option value="dispatcher">Dispatcher</option>
+          <option value="hermes">Hermes</option>
           <option value="jaeger">JaegerAI</option>
           <option value="openclaw">OpenClaw</option>
         </select>
-        <textarea id="systemMessage" placeholder="Message the system… Select an agent or prefix with @hermes, @jaeger, or @openclaw."></textarea>
+        <textarea id="systemMessage" placeholder="Message the ARES dispatcher… Prefix with @hermes, @jaeger, or @openclaw only to override routing."></textarea>
         <div class="composer-buttons">
           <button id="sendSystem" class="primary">Send</button>
           <button id="cancelSystem" class="danger-outline" style="display:none;">Cancel run</button>

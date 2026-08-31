@@ -4,7 +4,7 @@ const esc = value => String(value ?? '').replace(
   char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]),
 );
 
-let snapshot = {agents: [], threads: [], goals: [], runs: [], approvals: [], integrations: [], models: [], paused: false, stats: null, probes: {}};
+let snapshot = {agents: [], threads: [], goals: [], runs: [], approvals: [], integrations: [], models: [], paused: false, stats: null, probes: {}, dispatcher: null};
 let configurationAgent = '';
 let activeRunId = null;
 let activeRunPoll = null;
@@ -27,6 +27,7 @@ function serviceUrl(service) {
 
 function agentDisplay(agent) {
   return {
+    dispatcher: '⚡ ARES Dispatcher',
     hermes: '⚡ Hermes',
     jaeger: '🐺 JaegerAI',
     openclaw: '🦞 OpenClaw',
@@ -111,10 +112,11 @@ async function api(path, options = {}) {
 }
 
 async function load() {
-  const [agents, threads, goals, runs, approvals, integrations, models, stats] = await Promise.all([
+  const [agents, threads, goals, runs, approvals, integrations, models, stats, dispatcher] = await Promise.all([
     api('/api/agents'), api('/api/threads'), api('/api/goals'), api('/api/runs'), api('/api/approvals'), api('/api/integrations'),
     api('/api/agent-models').catch(() => ({providers: []})),
     api('/api/system/stats?include_processes=true&process_limit=8').catch(() => null),
+    api('/api/dispatcher').catch(() => null),
   ]);
   const probes = Object.fromEntries(await Promise.all((agents.agents || []).map(async agent => [
     agent.id,
@@ -131,6 +133,7 @@ async function load() {
     models: models.providers || [],
     stats,
     probes,
+    dispatcher,
   };
   if (!snapshot.threads.some(row => row.id === activeThreadId)) {
     activeThreadId = snapshot.threads[0]?.id || '';
@@ -138,7 +141,7 @@ async function load() {
   if (!activeThreadId && snapshot.agents.length) {
     const created = await api('/api/threads', {
       method: 'POST',
-      body: JSON.stringify({agent_id: snapshot.agents[0].id, title: 'New conversation'}),
+      body: JSON.stringify({agent_id: 'dispatcher', routing_mode: 'dispatcher', title: 'New conversation'}),
     });
     activeThreadId = created.id;
     snapshot.threads.unshift(created);
@@ -414,18 +417,29 @@ function render() {
   renderFleet();
   renderCapacity();
 
-  const previousAgent = $('systemAgent').value;
-  $('systemAgent').innerHTML = snapshot.agents.map(agent =>
+  const previousAgent = $('systemAgent').value || 'dispatcher';
+  $('systemAgent').innerHTML = `<option value="dispatcher">ARES Dispatcher</option>` + snapshot.agents.map(agent =>
     `<option value="${esc(agent.id)}">${esc(agent.name)}</option>`
   ).join('');
-  const selectedAgent = snapshot.agents.some(agent => agent.id === previousAgent)
+  const selectedAgent = previousAgent === 'dispatcher' || snapshot.agents.some(agent => agent.id === previousAgent)
     ? previousAgent
-    : (snapshot.agents.some(agent => agent.id === 'hermes') ? 'hermes' : snapshot.agents[0]?.id || '');
+    : 'dispatcher';
   $('systemAgent').value = selectedAgent;
-  $('agentPills').innerHTML = snapshot.agents.map(agent => `
+  $('agentPills').innerHTML = `
+    <button type="button" class="agent-pill ${selectedAgent === 'dispatcher' ? 'active' : ''}"
+      data-agent="dispatcher">${esc(agentDisplay('dispatcher'))}</button>
+  ` + snapshot.agents.map(agent => `
     <button type="button" class="agent-pill ${agent.id === selectedAgent ? 'active' : ''}"
       data-agent="${esc(agent.id)}">${esc(agentDisplay(agent.id))}</button>
   `).join('');
+  if ($('dispatcherTier') && snapshot.dispatcher?.config) {
+    $('dispatcherTier').value = snapshot.dispatcher.config.tier || 'balanced';
+  }
+  if ($('hubHint') && snapshot.dispatcher) {
+    const chosen = snapshot.dispatcher.selected_agent_id || 'none';
+    const qualified = snapshot.dispatcher.decision?.qualified ? 'qualified' : 'provisional';
+    $('hubHint').textContent = `Current ${snapshot.dispatcher.config?.tier || 'balanced'} route: ${chosen} · ${qualified}`;
+  }
 
   $('agents').innerHTML = snapshot.agents.map(agent => {
     const directUrl = serviceUrl(agent.runtime);
@@ -572,8 +586,13 @@ async function sendSystemMessage() {
       body: JSON.stringify({agent_id: agent, content: objective, idempotency_key: crypto.randomUUID()}),
     });
     const run = dispatched.run;
+    const routedAgent = dispatched.dispatch?.selected_agent_id || run.agent_id || agent;
 
     activeRunId = run.id;
+    assistantMsg.agent = routedAgent;
+    assistantMsg.thoughts = agent === 'dispatcher'
+      ? `ARES selected ${routedAgent}: ${dispatched.dispatch?.reason || 'dispatcher policy'}. Profile: ${dispatched.dispatch?.tier || snapshot.dispatcher?.config?.tier || 'balanced'}.`
+      : 'Direct route selected by the operator.';
     assistantMsg.runId = run.id;
     assistantMsg.status = run.status;
     renderChat();
@@ -717,7 +736,7 @@ $('refresh').onclick = load;
 $('sendSystem').onclick = sendSystemMessage;
 if ($('cancelSystem')) $('cancelSystem').onclick = cancelActiveRun;
 if ($('newThread')) $('newThread').onclick = async () => {
-  const agent = $('systemAgent').value || snapshot.agents[0]?.id;
+  const agent = $('systemAgent').value || 'dispatcher';
   if (!agent) return;
   const created = await api('/api/threads', {
     method: 'POST', body: JSON.stringify({agent_id: agent, title: 'New conversation'}),
@@ -726,6 +745,20 @@ if ($('newThread')) $('newThread').onclick = async () => {
   window.localStorage.setItem('ares.activeThreadId', activeThreadId);
   chatMessages = [];
   await load();
+};
+
+if ($('dispatcherTier')) $('dispatcherTier').onchange = async () => {
+  const config = snapshot.dispatcher?.config || {};
+  try {
+    await api('/api/dispatcher', {
+      method: 'PUT',
+      body: JSON.stringify({...config, mode: 'automatic', tier: $('dispatcherTier').value}),
+    });
+    selectAgentPill('dispatcher');
+    await load();
+  } catch (error) {
+    alert(error.message);
+  }
 };
 
 $('systemMessage').addEventListener('keydown', event => {

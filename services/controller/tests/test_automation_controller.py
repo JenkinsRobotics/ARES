@@ -174,7 +174,11 @@ def test_public_api_and_lightweight_dashboard(tmp_path):
     app.state.automation_service = controller
     with TestClient(app, client=("127.0.0.1", 50000)) as client:
         assert client.get("/").status_code == 200
-        assert "Independent agents" in client.get("/").text
+        home = client.get("/").text
+        assert "si-shell" in home
+        assert "One persistent SI" in home
+        assert "id=\"chatStream\"" in home
+        assert "/static/app.js" in home
         put = client.put("/api/agents", json={"id": "jaeger", "runtime": "jaeger", "name": "Jaeger", "identity": "native worker", "model": "local", "workspace": "/tmp"})
         assert put.status_code == 200
         goal = client.post("/api/goals", json={"agent_id": "jaeger", "objective": "test"})

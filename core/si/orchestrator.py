@@ -17,7 +17,7 @@ from typing import Any
 from .types import Plan, Step, PlanStatus, StepStatus, ContextBriefing, WorkerResult
 from .planner import create_plan, assign_workers, get_next_step, advance_plan
 from .context_compiler import compile_context, classify_intent
-from .trust_engine import filter_briefing, log_disclosure, check_approval_required
+from .trust_engine import classify_data, filter_briefing, log_disclosure, check_approval_required
 from .worker_registry import get_registry
 
 
@@ -135,8 +135,8 @@ def orchestrate_request(
     user_message: str,
     conversation_id: str | None = None,
     local_only_mode: bool = False,
-    si_name: str = "Assistant",
-    owner_name: str = "User",
+    si_name: str | None = None,
+    owner_name: str | None = None,
 ) -> dict:
     """Main orchestration entry point.
 
@@ -150,8 +150,19 @@ def orchestrate_request(
     structured briefing and worker assignment that the caller can
     dispatch to the appropriate adapter.
     """
-    # 1. Classify intent
+    # 1. Classify intent and load identity.json (empty owner is preserved)
     intent, confidence = classify_intent(user_message)
+    try:
+        from .identity import load_identity
+
+        cfg = load_identity()
+        si_name = cfg.name
+        owner_name = cfg.owner_name
+    except Exception:
+        if si_name is None:
+            si_name = "ARES"
+        if owner_name is None:
+            owner_name = ""
 
     # 2. Determine if this needs a plan (simple vs complex)
     is_simple = intent in ("conversation",) and confidence >= 0.5
@@ -193,16 +204,20 @@ def orchestrate_request(
         si_identity=SIIdentity(name=si_name, owner_name=owner_name),
     )
 
-    # 7. Check if approval is required
-    needs_approval = check_approval_required(intent, "personal")
+    # 7. Check if approval is required — never skip gates silently.
+    sensitivity = classify_data(user_message)
+    sensitivity_value = sensitivity.value if hasattr(sensitivity, "value") else str(sensitivity)
+    needs_approval = check_approval_required(intent, sensitivity_value, user_message)
     if next_step.requires_approval:
         needs_approval = True
 
     if needs_approval:
+        next_step.requires_approval = True
         next_step.status = StepStatus.AWAITING_APPROVAL
         save_plan(plan)
         return {
             "plan_id": plan.plan_id,
+            "step_id": next_step.step_id,
             "intent": intent,
             "confidence": confidence,
             "status": "awaiting_approval",
@@ -222,6 +237,7 @@ def orchestrate_request(
 
     return {
         "plan_id": plan.plan_id,
+        "step_id": next_step.step_id,
         "intent": intent,
         "confidence": confidence,
         "status": "ready",

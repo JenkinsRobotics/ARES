@@ -113,7 +113,7 @@ RUNTIMES: tuple[RuntimeDefinition, ...] = (
         deployment="host",
         transport="cli",
         command="claude",
-        durable=False,
+        durable=True,
         backend_id="claude_local",
     ),
     RuntimeDefinition(
@@ -122,7 +122,7 @@ RUNTIMES: tuple[RuntimeDefinition, ...] = (
         deployment="host",
         transport="cli",
         command="codex",
-        durable=False,
+        durable=True,
         backend_id="codex_local",
     ),
     RuntimeDefinition(
@@ -131,7 +131,7 @@ RUNTIMES: tuple[RuntimeDefinition, ...] = (
         deployment="host",
         transport="cli",
         command="gemini",
-        durable=False,
+        durable=True,
         backend_id="gemini_local",
     ),
     RuntimeDefinition(
@@ -140,7 +140,7 @@ RUNTIMES: tuple[RuntimeDefinition, ...] = (
         deployment="host",
         transport="cli",
         command="grok",
-        durable=False,
+        durable=True,
         backend_id="grok_local",
     ),
     RuntimeDefinition(

@@ -118,7 +118,7 @@ def integrations_list() -> dict[str, Any]:
 
 @mcp.tool(annotations=CONTROL_WRITE)
 def system_message(message: str, agent_id: str = "hermes", wait_seconds: int = 0) -> dict[str, Any]:
-    """Create a durable goal and delegate it to Hermes or JaegerAI.
+    """Create a durable goal and delegate it to an active registered agent (e.g. Hermes or OpenClaw).
 
     Set ``wait_seconds`` to a small positive number to collect a short result;
     otherwise use ``run_status`` with the returned run ID.
@@ -146,6 +146,22 @@ def system_message(message: str, agent_id: str = "hermes", wait_seconds: int = 0
             break
         time.sleep(0.25)
     return {"goal": goal, "run": run}
+
+
+@mcp.tool(annotations=CONTROL_WRITE)
+def a2a_delegate(agent_id: str, message: str, wait_seconds: int = 15) -> dict[str, Any]:
+    """Explicitly delegate an objective or task to a peer agent via A2A protocol.
+
+    Available target agents:
+    - 'claude': Claude Code CLI on macOS host (complex refactoring, architecture, multi-file code)
+    - 'codex': OpenAI Codex CLI on macOS host (test execution, automation scripts, code tasks)
+    - 'grok': xAI Grok CLI on macOS host (deep research, reasoning, code review)
+    - 'hermes': Hermes Agent in container (conversational reasoning, general tasks)
+    - 'openclaw': OpenClaw in container (multi-channel messaging, web operations)
+
+    Use this when you choose to delegate a subtask to a specialist agent runtime.
+    """
+    return system_message(message=message, agent_id=agent_id, wait_seconds=wait_seconds)
 
 
 @mcp.tool(annotations=READ_ONLY)

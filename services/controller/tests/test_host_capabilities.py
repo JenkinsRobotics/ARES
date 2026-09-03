@@ -175,3 +175,17 @@ def test_camera_capabilities_gating_and_audit(tmp_path, monkeypatch):
     assert info["device"] == "Insta360 Link 2"
     audit = host.AUDIT_PATH.read_text()
     assert "camera.status" in audit
+
+
+def test_host_capability_server_has_no_ungated_shell_or_cli_bypass():
+    """Arbitrary shell/CLI wrappers must not skip the one-shot ARES lease."""
+    assert not hasattr(host, "host_command_run")
+    assert not hasattr(host, "applescript_execute")
+    assert not hasattr(host, "run_claude_code")
+    assert not hasattr(host, "run_codex")
+    assert not hasattr(host, "run_grok")
+    assert not hasattr(host, "terminal_execute")
+    assert hasattr(host, "_authorize_effect")
+    assert hasattr(host, "calendar_create")
+    assert hasattr(host, "shortcuts_run")
+    assert hasattr(host, "camera_snapshot")

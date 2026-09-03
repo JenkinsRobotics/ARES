@@ -1617,7 +1617,7 @@ def _aiagent_import_error_detail() -> str:
     lines.append("")
     lines.append("  Then restart the WebUI.")
     lines.append("")
-    lines.append('  Full troubleshooting: docs/DEVELOPMENT.md ("AIAgent not available")')
+    lines.append('  Full troubleshooting: README.md ("Agent Environment & Troubleshooting")')
     return "\n".join(lines)
 from api.models import get_session, title_from
 
@@ -6636,6 +6636,152 @@ def _refresh_cached_agent_primary_runtime_snapshot(agent) -> None:
             rt['is_anthropic_oauth'] = agent._is_anthropic_oauth
 
 
+def _run_si_owned_live_turn(
+    session_id,
+    msg_text,
+    model,
+    workspace,
+    stream_id,
+    attachments=None,
+    *,
+    model_provider=None,
+    goal_related=False,
+    user_message=None,
+    user_text=None,
+    original_message=None,
+    **_ignored,
+):
+    """Default live chat path: si_prepare_message / si_turn. Not wake-agent."""
+    del workspace, attachments, goal_related
+    persisted_user_message = next(
+        (value for value in (user_text, user_message, original_message) if value is not None),
+        msg_text,
+    )
+    channel = STREAMS.get(stream_id)
+    if channel is None:
+        unregister_stream_owner(stream_id)
+        return
+
+    cancel_event = threading.Event()
+    with STREAMS_LOCK:
+        CANCEL_FLAGS[stream_id] = cancel_event
+        STREAM_PARTIAL_TEXT[stream_id] = ""
+    register_active_run(stream_id, session_id=session_id, started_at=time.time(), phase="si")
+    try:
+        journal = RunJournalWriter(session_id, stream_id)
+    except Exception:
+        journal = None
+        logger.debug("Could not initialize SI journal for %s", stream_id, exc_info=True)
+
+    def publish(event, data):
+        event_id = None
+        if journal is not None:
+            try:
+                entry = journal.append_sse_event(event, data)
+                event_id = str((entry or {}).get("event_id") or "") or None
+            except Exception:
+                logger.debug("Could not journal SI event %s", event, exc_info=True)
+        if event_id:
+            STREAM_LAST_EVENT_ID[stream_id] = event_id
+        try:
+            channel.put_nowait((event, data, event_id) if event_id else (event, data))
+        except Exception:
+            logger.debug("Could not publish SI event %s", event, exc_info=True)
+
+    try:
+        from api.si.bridge import si_prepare_message, si_turn
+
+        prepared = si_prepare_message(str(persisted_user_message or msg_text))
+        if prepared.get("status") == "awaiting_approval":
+            payload = {
+                "status": "awaiting_approval",
+                "plan_id": prepared.get("plan_id"),
+                "step_id": prepared.get("step_id") or (prepared.get("step") or {}).get("step_id"),
+                "message": prepared.get("approval_reason") or "This action requires approval.",
+            }
+            publish("awaiting_approval", payload)
+            publish("stream_end", payload)
+            try:
+                channel.put_nowait(("done", {"session_id": session_id, "stream_id": stream_id}))
+            except Exception:
+                logger.debug("Could not publish SI approval completion", exc_info=True)
+            return
+
+        result = si_turn(
+            str(persisted_user_message or msg_text),
+            str(session_id),
+            model=model or "",
+            model_provider=model_provider,
+            cancel_event=cancel_event,
+        )
+        if result.get("status") == "awaiting_approval":
+            payload = {
+                "status": "awaiting_approval",
+                "plan_id": result.get("plan_id"),
+                "step_id": result.get("step_id") or (result.get("step") or {}).get("step_id"),
+                "message": result.get("approval_reason") or "This action requires approval.",
+            }
+            publish("awaiting_approval", payload)
+            publish("stream_end", payload)
+            try:
+                channel.put_nowait(("done", {"session_id": session_id, "stream_id": stream_id}))
+            except Exception:
+                logger.debug("Could not publish SI approval completion", exc_info=True)
+            return
+        if cancel_event.is_set():
+            publish("cancel", {"message": "Cancelled by user"})
+            return
+        error = result.get("error")
+        if error:
+            publish("error", {"message": str(error)})
+            return
+        text = str(result.get("text") or result.get("output") or "")
+        if text:
+            STREAM_PARTIAL_TEXT[stream_id] = text
+            publish("token", {"text": text})
+            try:
+                from api.models import get_session
+
+                session = get_session(session_id)
+                session.messages.append({
+                    "role": "assistant",
+                    "content": text.strip(),
+                    "timestamp": int(time.time()),
+                })
+                session.save()
+            except Exception:
+                logger.debug("Could not persist SI assistant turn", exc_info=True)
+        publish("stream_end", {"text": text})
+        try:
+            channel.put_nowait(("done", {"session_id": session_id, "stream_id": stream_id}))
+        except Exception:
+            logger.debug("Could not publish SI completion marker", exc_info=True)
+    except Exception:
+        logger.exception("SI-owned live turn failed")
+        publish("error", {"message": "The Companion SI request failed."})
+    finally:
+        try:
+            from api.models import get_session
+
+            final_session = get_session(session_id)
+            if getattr(final_session, "active_stream_id", None) == stream_id:
+                final_session.active_stream_id = None
+                final_session.pending_user_message = None
+                final_session.pending_attachments = []
+                final_session.pending_started_at = None
+                final_session.pending_user_source = None
+                final_session.save(touch_updated_at=False)
+        except Exception:
+            logger.exception("Could not clear SI stream state for %s", session_id)
+        with STREAMS_LOCK:
+            STREAMS.pop(stream_id, None)
+            CANCEL_FLAGS.pop(stream_id, None)
+            STREAM_PARTIAL_TEXT.pop(stream_id, None)
+            STREAM_LAST_EVENT_ID.pop(stream_id, None)
+        unregister_active_run(stream_id)
+        unregister_stream_owner(stream_id)
+
+
 def _run_agent_streaming(
     session_id,
     msg_text,
@@ -6648,6 +6794,9 @@ def _run_agent_streaming(
     model_provider=None,
     goal_related=False,
     moa_config=None,
+    user_message=None,
+    user_text=None,
+    original_message=None,
 ):
     """Run agent in background thread, writing SSE events to STREAMS[stream_id].
 
@@ -6663,6 +6812,27 @@ def _run_agent_streaming(
         # leaking a STREAM_SESSION_OWNERS entry that the teardown finally never sees.
         unregister_stream_owner(stream_id)
         return
+    try:
+        from api.si.bridge import si_enabled as _si_live_enabled
+        _si_on = bool(_si_live_enabled())
+    except Exception:
+        _si_on = False
+    if _si_on and not ephemeral:
+        # Companion SI owns the live turn. wake-agent / native AIAgent is not
+        # the default chat path while SI is enabled.
+        return _run_si_owned_live_turn(
+            session_id,
+            msg_text,
+            model,
+            workspace,
+            stream_id,
+            attachments,
+            model_provider=model_provider,
+            goal_related=goal_related,
+            user_message=user_message,
+            user_text=user_text,
+            original_message=original_message,
+        )
     register_active_run(
         stream_id,
         session_id=session_id,

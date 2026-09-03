@@ -1,83 +1,141 @@
-"""Canonical inventory and catalog of all ARES MCP servers, tools, and capabilities."""
+"""Dynamic inventory and catalog of all ARES MCP servers, tools, and capabilities."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
+import yaml
 
-def get_mcp_catalog() -> dict[str, Any]:
-    """Return the authoritative, up-to-date catalog of all MCP servers, tools, and capabilities."""
-    servers: list[dict[str, Any]] = []
 
-    # 1. ares-system
-    system_tools = [
-        {
-            "name": "system_status",
-            "description": "Return the safe ARES control-plane status and recent run summary.",
-            "parameters": {},
-            "capability": None,
-        },
-        {
-            "name": "system_metrics",
-            "description": "Read current CPU, RAM, swap, disk, Ollama, and Jaeger telemetry.",
-            "parameters": {
-                "include_processes": {"type": "boolean", "default": True},
-                "process_limit": {"type": "integer", "default": 10},
-            },
-            "capability": None,
-        },
-        {
-            "name": "agents_list",
-            "description": "List independently owned agents registered with ARES.",
-            "parameters": {},
-            "capability": None,
-        },
-        {
-            "name": "integrations_list",
-            "description": "Return ARES' canonical integration catalog and activation state.",
-            "parameters": {},
-            "capability": None,
-        },
-        {
-            "name": "system_message",
-            "description": "Create a durable goal and delegate it to Hermes or JaegerAI.",
-            "parameters": {
-                "message": {"type": "string", "required": True},
-                "agent_id": {"type": "string", "default": "hermes"},
-                "wait_seconds": {"type": "integer", "default": 0},
-            },
-            "capability": None,
-        },
-        {
-            "name": "run_status",
-            "description": "Return one ARES run and its immutable evidence events.",
-            "parameters": {"run_id": {"type": "string", "required": True}},
-            "capability": None,
-        },
-        {
-            "name": "run_cancel",
-            "description": "Safely request cancellation of an active ARES run.",
-            "parameters": {"run_id": {"type": "string", "required": True}},
-            "capability": None,
-        },
-        {
-            "name": "approval_respond",
-            "description": "Approve or deny one pending consequential action.",
-            "parameters": {
-                "approval_id": {"type": "string", "required": True},
-                "decision": {"type": "string", "enum": ["approved", "denied"], "required": True},
-            },
-            "capability": None,
-        },
-        {
-            "name": "approval_preview",
-            "description": "Dry-run one approval request without granting or executing anything.",
-            "parameters": {"approval_id": {"type": "string", "required": True}},
-            "capability": None,
-        },
+def _extract_schema(tool_obj: Any) -> dict[str, Any]:
+    raw = getattr(tool_obj, "input_schema", getattr(tool_obj, "parameters", None))
+    if isinstance(raw, dict):
+        return raw
+    if hasattr(raw, "model_dump"):
+        return raw.model_dump()
+    return {}
+
+
+def _get_system_tools() -> list[dict[str, Any]]:
+    try:
+        import system_mcp_server
+        tools = system_mcp_server.mcp._tool_manager._tools.values()
+        return [
+            {
+                "name": t.name,
+                "description": (t.description or "").strip(),
+                "parameters": _extract_schema(t),
+                "capability": None,
+            }
+            for t in tools
+        ]
+    except Exception:
+        return []
+
+
+def _get_host_tools() -> list[dict[str, Any]]:
+    try:
+        import host_capability_mcp_server
+        tools = host_capability_mcp_server.mcp._tool_manager._tools.values()
+        return [
+            {
+                "name": t.name,
+                "description": (t.description or "").strip(),
+                "parameters": _extract_schema(t),
+                "capability": getattr(t, "capability", None) or f"host.{t.name}",
+            }
+            for t in tools
+        ]
+    except Exception:
+        return []
+
+
+def _get_webui_tools() -> list[dict[str, Any]]:
+    try:
+        import mcp_server
+        return [
+            {
+                "name": t.name,
+                "description": (t.description or "").strip(),
+                "parameters": _extract_schema(t),
+                "capability": None,
+            }
+            for t in mcp_server.TOOLS
+        ]
+    except Exception:
+        return []
+
+
+def _get_native_tools() -> list[dict[str, Any]]:
+    try:
+        from fastapi_app.adapters.mcp import McpToolAdapter
+        tools = McpToolAdapter._native_tools()
+        if tools:
+            return tools
+    except Exception:
+        pass
+
+    # Standard macOS helper capabilities manifest
+    return [
+        {"name": "calendar_query", "description": "Query EventKit calendar entries."},
+        {"name": "calendar_create", "description": "Create calendar events in macOS Calendar."},
+        {"name": "contacts_search", "description": "Search macOS AddressBook contacts."},
+        {"name": "notes_query", "description": "Query Apple Notes database."},
+        {"name": "notes_create", "description": "Create new notes in Apple Notes."},
+        {"name": "screencapture", "description": "ScreenCaptureKit window and display capture."},
+        {"name": "spotlight_search", "description": "Search macOS files and metadata via Spotlight."},
+        {"name": "todo_operations", "description": "macOS Reminders integration."},
+        {"name": "user_collaboration", "description": "macOS Notification and collaboration."},
+        {"name": "weather", "description": "macOS WeatherKit live weather information."},
     ]
 
+
+def _get_gateway_info() -> dict[str, Any]:
+    gateway_file = Path(os.environ.get("ARES_HOME") or Path.home() / ".ares") / "gateway" / "config.yaml"
+    targets: list[dict[str, Any]] = []
+    port = 8811
+
+    if gateway_file.is_file():
+        try:
+            cfg = yaml.safe_load(gateway_file.read_text(encoding="utf-8")) or {}
+            mcp_cfg = cfg.get("mcp", {})
+            port = mcp_cfg.get("port", 8811)
+            raw_targets = mcp_cfg.get("targets", [])
+            for target in raw_targets:
+                name = target.get("name")
+                if name:
+                    targets.append({
+                        "target": name,
+                        "server_id": f"ares-{name}" if not name.startswith("ares-") else name,
+                        "prefix": f"{name}_*",
+                    })
+        except Exception:
+            pass
+
+    if not targets:
+        targets = [
+            {"target": "system", "server_id": "ares-system", "prefix": "system_*"},
+            {"target": "host-hermes", "server_id": "ares-host", "prefix": "host-hermes_*"},
+        ]
+
+    return {
+        "name": "agentgateway",
+        "port": port,
+        "endpoint": f"http://127.0.0.1:{port}/mcp",
+        "auth_mode": "strict-bearer",
+        "client_token_path": str(Path.home() / ".ares" / "gateway" / "client.token"),
+        "federated_targets": targets,
+    }
+
+
+def get_mcp_catalog() -> dict[str, Any]:
+    """Return the authoritative, dynamically introspected catalog of all MCP servers and tools."""
+    servers: list[dict[str, Any]] = []
+
+    # 1. ares-system (introspected from system_mcp_server.mcp)
+    system_tools = _get_system_tools()
     servers.append({
         "id": "ares-system",
         "name": "ARES System Control Plane",
@@ -91,97 +149,38 @@ def get_mcp_catalog() -> dict[str, Any]:
         "tools": system_tools,
     })
 
-    # 2. ares-host
-    host_tools = [
-        {"name": "capabilities_inspect", "capability": "capabilities.inspect", "description": "Show this caller's identity, approved roots, and granted capabilities."},
-        {"name": "capability_request", "capability": "capability.request", "description": "Ask ARES to create a human-reviewed, informed capability approval."},
-        {"name": "workspace_list", "capability": "workspace.list", "description": "List one approved workspace directory without reading file contents."},
-        {"name": "workspace_read", "capability": "workspace.read", "description": "Read one UTF-8 text file under an approved root (maximum 1 MB)."},
-        {"name": "workspace_write", "capability": "workspace.write", "description": "Atomically write UTF-8 text under an approved root (requires SHA-256 for overwrites)."},
-        {"name": "workspace_mkdir", "capability": "workspace.mkdir", "description": "Create one directory below an approved root; parents must exist."},
-        {"name": "workspace_move", "capability": "workspace.move", "description": "Preview or atomically move one item within approved roots."},
-        {"name": "calendar_list", "capability": "calendar.list", "description": "List upcoming Apple Calendar events using injection-safe JXA."},
-        {"name": "calendar_create", "capability": "calendar.create", "description": "Preview or create exactly one Calendar event after one-shot ARES approval."},
-        {"name": "notes_list", "capability": "notes.list", "description": "List Apple Notes titles and metadata without returning note bodies."},
-        {"name": "notes_read", "capability": "notes.read", "description": "Read one Apple Note by exact title or owner-issued id."},
-        {"name": "notes_create", "capability": "notes.create", "description": "Preview or create one Apple Note after one-shot ARES approval."},
-        {"name": "reminders_list", "capability": "reminders.list", "description": "List reminders from Apple Reminders."},
-        {"name": "reminders_create", "capability": "reminders.create", "description": "Preview or create one reminder after one-shot ARES approval."},
-        {"name": "shortcuts_list", "capability": "shortcuts.list", "description": "List installed Apple Shortcuts without running them."},
-        {"name": "shortcuts_run", "capability": "shortcuts.run", "description": "Preview or run one named Apple Shortcut after one-shot ARES approval."},
-        {"name": "git_status", "capability": "git.status", "description": "Run a hook-disabled, read-only Git status in an approved workspace."},
-        {"name": "git_diff", "capability": "git.diff", "description": "Read the working-tree Git diff without external diff drivers."},
-        {"name": "service_status", "capability": "service.status", "description": "Probe public health endpoints of ARES, Jaeger, Ollama, and n8n."},
-        {"name": "camera_status", "capability": "camera.status", "description": "Inspect connected camera status, AVFoundation indices, and gimbal orientation."},
-        {"name": "camera_snapshot", "capability": "camera.snapshot", "description": "Capture a single frame (1080p/4K) from the camera as visual input."},
-        {"name": "camera_listen", "capability": "camera.listen", "description": "Record audio (48 kHz mono WAV) from the camera beamforming microphone."},
-        {"name": "camera_ptz", "capability": "camera.ptz", "description": "Control camera motorized gimbal: 'center', 'deskview', 'aim', or 'status'."},
-    ]
-
+    # 2. ares-host (introspected from host_capability_mcp_server.mcp)
+    host_tools = _get_host_tools()
     servers.append({
         "id": "ares-host",
-        "name": "ARES Host Capability & Perception Plane",
+        "name": "ARES Host Capabilities & Perception",
         "transport": "stdio",
         "entrypoint": "services/controller/host_capability_mcp_server.py",
         "gateway_target": "host-hermes",
         "gateway_url": "http://127.0.0.1:8811/mcp",
-        "description": "Identity-scoped host workspace confinement, Apple ecosystem tools, and hardware perception (camera, mic, gimbal).",
-        "auth": "Identity-scoped grants in ~/.ares/capabilities/grants.json; immutable JSONL audit",
+        "description": "Capability-gated host integration plane (workspace, camera, notes, reminders, git).",
+        "auth": "Identity token scoped per agent",
         "tool_count": len(host_tools),
         "tools": host_tools,
     })
 
-    # 3. ares-webui
-    webui_tools = [
-        {"name": "list_projects", "description": "List session projects (scoped to active profile)."},
-        {"name": "create_project", "description": "Create a new project for organizing sessions."},
-        {"name": "rename_project", "description": "Rename a project and change its color."},
-        {"name": "delete_project", "description": "Delete a project and unassign all its sessions."},
-        {"name": "rename_session", "description": "Rename a session in the WebUI sidebar."},
-        {"name": "move_session", "description": "Assign a session to a project or unassign."},
-        {"name": "list_sessions", "description": "List sessions filtered by project or unassigned."},
-        {"name": "ares_get_runtime_context", "description": "Get active backend, capabilities, open tasks, and embodiment state."},
-        {"name": "ares_create_task", "description": "Create a new ARES task in the canonical task store."},
-        {"name": "ares_update_task", "description": "Update task status (open, in_progress, blocked, done)."},
-        {"name": "ares_start_research", "description": "Start an ARES deep-research job using selected runtime."},
-        {"name": "ares_get_research", "description": "Read status, sources, and result of an ARES deep-research job."},
-        {"name": "ares_extract_pdf", "description": "Extract text and form-field names from a PDF."},
-        {"name": "ares_fill_pdf_form", "description": "Fill known fields in a workspace PDF and save artifact."},
-        {"name": "ares_ingest_youtube", "description": "Acquire YouTube transcript and save in workspace."},
-        {"name": "ares_edit_image", "description": "Apply image operations and save output artifact."},
-        {"name": "ares_create_visual_report", "description": "Create self-contained HTML visual report."},
-        {"name": "ares_list_artifacts", "description": "List generated artifacts for an ARES session workspace."},
-    ]
-
+    # 3. ares-webui (introspected from mcp_server.TOOLS)
+    webui_tools = _get_webui_tools()
     servers.append({
         "id": "ares-webui",
-        "name": "ARES WebUI Session & Task Tools",
+        "name": "ARES WebUI Workspace & Session Management",
         "transport": "stdio",
         "entrypoint": "services/controller/mcp_server.py",
         "gateway_target": None,
         "gateway_url": None,
-        "description": "Session/project management, deep research, PDF form filling, media ingest, and canonical task operations.",
-        "auth": "Loopback / WebUI session",
+        "description": "Project, session, and context management tools for interactive WebUI sessions.",
+        "auth": "Session password / local process boundary",
         "tool_count": len(webui_tools),
         "tools": webui_tools,
     })
 
     # 4. ares-native-mcp
-    native_tools = [
-        {"name": "calendar", "description": "macOS EventKit calendar event management."},
-        {"name": "contacts", "description": "macOS Contacts framework integration."},
-        {"name": "file_operations", "description": "Local filesystem operations."},
-        {"name": "image_generation", "description": "CoreImage / ML image generation."},
-        {"name": "math_operations", "description": "Numerical computation and evaluation."},
-        {"name": "memory_operations", "description": "Long-term episodic/semantic memory store."},
-        {"name": "notes", "description": "macOS Apple Notes integration."},
-        {"name": "screen_read", "description": "macOS ScreenCaptureKit display capture."},
-        {"name": "spotlight", "description": "macOS CoreSpotlight search indexing."},
-        {"name": "todo_operations", "description": "macOS Reminders integration."},
-        {"name": "user_collaboration", "description": "macOS Notification and collaboration."},
-        {"name": "weather", "description": "macOS WeatherKit live weather information."},
-    ]
-
+    native_tools = _get_native_tools()
     servers.append({
         "id": "ares-native-mcp",
         "name": "ARES Native macOS Helper",
@@ -195,7 +194,7 @@ def get_mcp_catalog() -> dict[str, Any]:
         "tools": native_tools,
     })
 
-    # 5. jaeger-mcp-proxy
+    # 5. jaeger-mcp-proxy (mirrors host tools over loopback companion)
     servers.append({
         "id": "jaeger-mcp-proxy",
         "name": "Jaeger MCP Proxy",
@@ -217,15 +216,5 @@ def get_mcp_catalog() -> dict[str, Any]:
         "total_servers": len(servers),
         "total_tools": total_tools,
         "servers": servers,
-        "gateway": {
-            "name": "agentgateway",
-            "port": 8811,
-            "endpoint": "http://127.0.0.1:8811/mcp",
-            "auth_mode": "strict-bearer",
-            "client_token_path": str(Path.home() / ".ares" / "gateway" / "client.token"),
-            "federated_targets": [
-                {"target": "system", "server_id": "ares-system", "prefix": "system_*"},
-                {"target": "host-hermes", "server_id": "ares-host", "prefix": "host-hermes_*"},
-            ],
-        },
+        "gateway": _get_gateway_info(),
     }

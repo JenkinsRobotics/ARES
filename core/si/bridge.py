@@ -13,6 +13,7 @@ No new adapters. The existing backends ARE the workers.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -45,8 +46,7 @@ def si_enabled() -> bool:
     Priority:
     1. ``ARES_SI_ENABLED`` env (1/true/yes/on enables; 0/false/no/off disables)
     2. ``settings.json`` key ``si_enabled`` (bool)
-    3. Default: disabled (direct backend path) so tests and plain installs stay
-       predictable until production enables SI via launchd or settings.
+    3. Default: enabled — the Companion SI owns every live chat turn.
     """
     raw = os.environ.get(_ENV_SI_ENABLED)
     if raw is not None and str(raw).strip() != "":
@@ -59,7 +59,9 @@ def si_enabled() -> bool:
             return bool(settings.get("si_enabled"))
     except Exception:
         logger.debug("si_enabled settings lookup failed", exc_info=True)
-    return False
+    # Companion SI owns chat turns by default. Direct backend / wake-agent is
+    # the opt-out path (ARES_SI_ENABLED=0 or settings.si_enabled=false).
+    return True
 
 
 def compose_prompt_from_briefing(briefing: ContextBriefing, message: str) -> str:
@@ -72,15 +74,36 @@ def compose_prompt_from_briefing(briefing: ContextBriefing, message: str) -> str
     # 1. Identity — Companion speaks; workers are tools (do not brand-switch)
     if briefing.si_identity:
         ident = briefing.si_identity
-        name = ident.name or "ARES"
-        owner = ident.owner_name or "the owner"
+        try:
+            from .identity import SIIdentityConfig, identity_prompt_fields
+
+            fields = identity_prompt_fields(
+                SIIdentityConfig(name=ident.name, owner_name=ident.owner_name)
+            )
+        except Exception:
+            fields = {
+                "name": "" if ident.name is None else str(ident.name),
+                "owner": "" if ident.owner_name is None else str(ident.owner_name),
+            }
+        name = "" if fields.get("name") is None else str(fields.get("name"))
+        owner = "" if fields.get("owner") is None else str(fields.get("owner"))
+        # Empty owner stays empty — never substitute "the owner".
+        identity_json = json.dumps({"name": name, "owner": owner}, ensure_ascii=False)
+        display_name = name or "ARES"
+        if owner:
+            spoken = (
+                f"You are {display_name}, the Companion SI for {owner}. "
+                f"You work only for {owner}. "
+            )
+        else:
+            spoken = f"You are {display_name}, the Companion SI for {owner}. "
         parts.append(
             f"[Identity]\n"
-            f"You are {name}, the Companion SI for {owner}. "
-            f"You work only for {owner}. "
+            f"{identity_json}\n"
+            f"{spoken}"
             f"You are NOT Claude, GPT, Grok, Gemini, Ollama, or any other worker brand. "
             f"Workers execute tools for you; they are not your identity. "
-            f"When asked who you are, answer as {name}."
+            f"When asked who you are, answer as {display_name}."
         )
         if ident.mission:
             parts.append(f"[Mission]\n{ident.mission}")
@@ -166,12 +189,30 @@ def si_prepare_message(
     can be injected without forcing a non-streaming ``run_turn`` path.
     """
     from api.si.context_compiler import classify_intent, compile_context
-    from api.si.trust_engine import classify_data, filter_briefing
+    from api.si.identity import load_identity
+    from api.si.trust_engine import check_approval_required, classify_data, filter_briefing
     from api.si.router import route_task
+    from api.si.types import SIIdentity
 
     intent, confidence = classify_intent(user_message)
     briefing = compile_context(user_message)
     sensitivity = classify_data(user_message)
+
+    # identity.json is the source of truth every turn — keep empty owner.
+    try:
+        from api.si.identity import identity_prompt_fields
+
+        cfg = load_identity()
+        fields = identity_prompt_fields(cfg)
+        briefing.si_identity = SIIdentity(
+            name=fields["name"],
+            owner_name=fields["owner"],
+            mission=cfg.mission or "",
+            principles=list(cfg.principles or []),
+            loyalty=cfg.loyalty or "user",
+        )
+    except Exception:
+        logger.debug("identity.json overlay failed", exc_info=True)
 
     if target_worker:
         backend_name = target_worker
@@ -189,7 +230,7 @@ def si_prepare_message(
     privacy_class = _backend_name_to_privacy_class(backend_name)
     filtered_briefing = filter_briefing(briefing, privacy_class)
     prompt = compose_prompt_from_briefing(filtered_briefing, user_message)
-    return {
+    prepared = {
         "prompt": prompt,
         "intent": intent,
         "confidence": confidence,
@@ -200,6 +241,28 @@ def si_prepare_message(
         # the raw briefing may hold context this worker's privacy class denies.
         "si_identity": filtered_briefing.si_identity,
     }
+
+    # Trust gates must surface to the WebUI — never skip them silently.
+    if check_approval_required(
+        intent,
+        sensitivity.value if sensitivity else "personal",
+        user_message,
+    ):
+        from api.si.orchestrator import orchestrate_request
+
+        orch = orchestrate_request(user_message)
+        step = orch.get("step") or {}
+        step_id = orch.get("step_id") or step.get("step_id")
+        prepared.update({
+            "status": "awaiting_approval",
+            "plan_id": orch.get("plan_id"),
+            "step_id": step_id,
+            "step": step,
+            "needs_approval": True,
+            "approval_reason": orch.get("approval_reason")
+            or f"Action '{intent}' requires user approval",
+        })
+    return prepared
 
 
 def si_turn(
@@ -229,6 +292,21 @@ def si_turn(
     confidence = float(prepared.get("confidence") or 0.0)
     backend_name = str(prepared.get("worker") or "jaeger_local")
     prompt = str(prepared.get("prompt") or user_message)
+
+    if prepared.get("status") == "awaiting_approval":
+        return {
+            "text": "",
+            "error": None,
+            "status": "awaiting_approval",
+            "plan_id": prepared.get("plan_id"),
+            "step_id": prepared.get("step_id"),
+            "step": prepared.get("step"),
+            "needs_approval": True,
+            "approval_reason": prepared.get("approval_reason"),
+            "intent": intent,
+            "worker": backend_name,
+            "evaluation": {"verdict": "needs_review"},
+        }
 
     # Execute via existing AgenticBackend
     backend_router = get_backend_router()

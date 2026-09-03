@@ -236,7 +236,7 @@ def write_memory(section: str, content: str) -> dict[str, Any]:
     targets = {
         "memory": memory_dir / "MEMORY.md",
         "user": memory_dir / "USER.md",
-        "soul": home / "SOUL.md",
+        "soul": home / "SOUL.md",  # one file; not canonical identity (si/identity.json)
     }
     target = targets.get(section)
     if target is None:

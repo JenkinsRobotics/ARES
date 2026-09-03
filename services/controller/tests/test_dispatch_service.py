@@ -72,7 +72,12 @@ def test_dispatch_turn_simple_conversation(tmp_path, monkeypatch):
 
     assert res["status"] == "step_completed"
     assert res["assigned_worker"] == "jaeger_local"
-    assert "Mock response for: Hello Leo" in res["output"]
+    # Worker receives SI briefing, not raw user_message.
+    assert "[Identity]" in res["output"]
+    assert '"name"' in res["output"]
+    assert '"owner"' in res["output"]
+    assert "[User message]" in res["output"]
+    assert "Hello Leo, how are you?" in res["output"]
     assert res["evaluation"]["passed"] is True
 
 
@@ -88,7 +93,14 @@ def test_dispatch_turn_uses_canonical_adapter_without_legacy_registry(tmp_path, 
     )
 
     assert res["status"] == "step_completed"
-    assert res["output"] == "Adapter response for: Hello"
+    prompt = adapters.adapter.calls[0][0]
+    assert "[Identity]" in prompt
+    assert '"name"' in prompt
+    assert '"owner"' in prompt
+    assert "[User message]" in prompt
+    assert "Hello" in prompt
+    assert res["output"].startswith("Adapter response for:")
+    assert "[Identity]" in res["output"]
     assert adapters.adapter.calls[0][2] == "profile-a"
     legacy.get_available.assert_not_called()
 

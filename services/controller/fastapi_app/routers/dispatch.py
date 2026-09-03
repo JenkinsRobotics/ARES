@@ -1,8 +1,9 @@
 """Master-Worker Dispatch endpoints.
 
 Exposes the ``DispatchService`` orchestration loop through HTTP without touching
-the existing chat runtime.  The old ``/api/chat/start`` flow is untouched and
-acts as the production fallback.
+the existing chat runtime.  ``POST /api/dispatch/turn`` is the default SI live
+turn path (with ``si_prepare_message`` / ``si_turn``). wake-agent is not the
+chat default.
 
 Routes
 ------
@@ -43,8 +44,8 @@ class DispatchTurnRequest(BaseModel):
     message: str = Field(min_length=1, max_length=100_000)
     conversation_id: str = Field(min_length=1, max_length=256)
     local_only_mode: bool = False
-    si_name: str = "Leo"
-    owner_name: str = "User"
+    si_name: str = ""
+    owner_name: str = ""
 
 
 class DispatchApprovalRequest(BaseModel):
@@ -82,17 +83,31 @@ def dispatch_turn(
     ``/api/dispatch/approve`` is called.
     """
     from api.dispatch_service import get_dispatch_service
+    from api.si.identity import load_identity
 
     svc = get_dispatch_service()
+    # identity.json owns name/owner. Request Leo/User defaults must not beat disk.
+    try:
+        cfg = load_identity()
+        si_name = cfg.name
+        owner_name = cfg.owner_name
+    except Exception:
+        si_name = ""
+        owner_name = ""
 
     with profile_scope(identity.profile):
         result = svc.dispatch_turn(
             user_message=payload.message,
             conversation_id=payload.conversation_id,
             local_only_mode=payload.local_only_mode,
-            si_name=payload.si_name,
-            owner_name=payload.owner_name,
+            si_name=si_name,
+            owner_name=owner_name,
         )
+
+    if not result.get("step_id"):
+        step = result.get("step") or {}
+        if step.get("step_id"):
+            result["step_id"] = step["step_id"]
 
     if result.get("error"):
         raise CoreApiError(

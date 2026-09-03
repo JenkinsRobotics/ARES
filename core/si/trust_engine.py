@@ -215,20 +215,23 @@ def _eligibility_reason(
     )
 
 
-def check_approval_required(action: str, data_sensitivity: str) -> bool:
+def check_approval_required(action: str, data_sensitivity: str, content: str = "") -> bool:
     """Check if an action requires explicit user approval.
 
     Approval is ALWAYS required for:
     - Sending sensitive data to any worker
-    - Shell command execution
+    - Shell command execution / action-intent execution
     - File deletion
     - External API calls that modify state
     - Spending above cost threshold
+
+    Gates must not be skipped silently — callers return awaiting_approval.
     """
     approval_always = {
         "shell_execute": True,
         "file_delete": True,
         "external_api_write": True,
+        "action": True,
     }
 
     # Action-based approval
@@ -237,6 +240,19 @@ def check_approval_required(action: str, data_sensitivity: str) -> bool:
 
     # Sensitivity-based approval
     if data_sensitivity in ("sensitive", "secret"):
+        return True
+
+    try:
+        from .identity import load_identity
+
+        cfg = load_identity()
+        if action in (cfg.approval_conditions or []):
+            return True
+    except Exception:
+        pass
+
+    blob = f"{action} {content}".lower()
+    if any(token in blob for token in ("rm -", "sudo ", "shell_execute", "file_delete")):
         return True
 
     return False

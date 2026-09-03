@@ -135,6 +135,9 @@ def _local_lan_ip() -> str:
 
 
 def _webui_url() -> str:
+    public_url = _clean(os.environ.get("ARES_PUBLIC_URL"))
+    if public_url:
+        return public_url.rstrip("/")
     port = os.environ.get("ARES_WEBUI_PORT") or os.environ.get("PORT") or "8788"
     try:
         from api.config import HOST, PORT

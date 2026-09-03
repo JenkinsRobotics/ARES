@@ -902,5 +902,20 @@ def camera_ptz(action: str = "status", pan: int = 0, tilt: int = 0, approval_id:
         raise
 
 
+
+# --- Knowledge Base tools ---
+try:
+    import sys as _sys, os as _os
+    _ctrl_dir = _os.path.dirname(_os.path.abspath(__file__))
+    if _ctrl_dir not in _sys.path:
+        _sys.path.insert(0, _ctrl_dir)
+    from core.knowledge.tools import register_all_kb_tools
+    register_all_kb_tools(mcp, _require, _audit, _resolve)
+except Exception as _kb_exc:
+    import logging
+    logging.getLogger(__name__).warning("Knowledge base tools not registered: %s", _kb_exc)
+
+
+
 if __name__ == "__main__":
     mcp.run()

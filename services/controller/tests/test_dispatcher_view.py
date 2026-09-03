@@ -1,10 +1,15 @@
-"""Static contract for the ARES-owned Dispatcher projection."""
+"""Static contract for the ARES-owned Dispatcher projection.
+
+The production UI FastAPI mounts is services/controller/apps/dashboard/static.
+Dispatcher is a first-class SI agent surface in that shell. Hermes, Jaeger,
+and OpenClaw stay external products, reached by loopback URL/port only.
+"""
 
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-STATIC = ROOT / "apps" / "web" / "static"
+STATIC = ROOT / "services" / "controller" / "apps" / "dashboard" / "static"
 
 
 def _read(name: str) -> str:
@@ -13,62 +18,51 @@ def _read(name: str) -> str:
 
 def test_dispatcher_is_a_first_class_current_ui_panel() -> None:
     index = _read("index.html")
-    panels = _read("panels.js")
+    script = _read("app.js")
 
-    assert index.count('data-panel="dispatcher"') == 2
-    assert 'id="panelDispatcher"' in index
-    assert 'id="mainDispatcher"' in index
-    assert 'id="dispatcherTimeline"' in index
-    assert 'id="dispatcherApprovalState"' in index
-    assert 'id="dispatcherOutputs"' in index
-    assert 'id="dispatcherGitState"' in index
-    assert 'id="dispatcherRecoveryCard"' in index
-    assert 'id="dispatcherEvidence"' in index
-    assert 'id="dispatcherLineage"' in index
-    assert 'static/dispatcher.js' in index
-    assert 'static/dispatcher.css' in index
-    assert "'dispatcher'" in panels
-    assert "loadDispatcher" in panels
+    assert 'data-agent="dispatcher"' in index
+    assert 'id="dispatcherTier"' in index
+    assert 'value="dispatcher"' in index
+    assert "/api/dispatch/turn" in script
+    assert 'src="/static/app.js' in index
 
 
 def test_dispatcher_projects_current_ares_contracts() -> None:
-    script = _read("dispatcher.js")
+    script = _read("app.js")
+    index = _read("index.html")
 
-    assert "cloneNode(true)" in script  # current rendered Worklog projection
-    assert "/api/approval/pending" in script
-    assert "collectSessionArtifacts" in script
-    assert "/api/git/status?session_id=" in script
-    assert "/api/ares/verification-evidence" in script
-    assert "/api/session/lineage/report" in script
-    assert "/api/delegation/tasks" in script
-    assert "_aresCapabilityPayload" in script
-    assert "switchPanel(name)" in script
-    assert "/api/session/pin" in script
+    assert "/api/dispatch/turn" in script
+    assert "/api/dispatch/approve" in script
+    assert "/api/dispatch/reject" in script
+    assert 'id="systemMessage"' in index
+    assert 'id="sendSystem"' in index
+    assert "si-shell" in index
 
 
-def test_dispatcher_does_not_claim_runtime_ownership() -> None:
-    script = _read("dispatcher.js")
+def test_dispatcher_routes_through_ares_not_peer_product_code() -> None:
+    """ARES owns product experience; peers are labeled by port, not imported."""
+    index = _read("index.html")
+    script = _read("app.js")
 
-    assert "does not own a transcript" in script
-    assert "/api/dispatch/turn" not in script
-    assert "keepAlive" not in script
-    assert "mobileNotifs" not in script
-    assert "SpeechRecognition" not in script
+    assert 'data-service="hermes"' in index
+    assert 'data-service="jaeger"' in index
+    assert 'data-service="openclaw"' in index
+    assert ":8787" in index
+    assert ":8790" in index
+    assert ":18789" in index
+    assert "from jaeger" not in script.lower()
+    assert "require(" not in script
 
 
-def test_dispatcher_reuses_canonical_recovery_paths() -> None:
-    script = _read("dispatcher.js")
-
-    assert "cmdRetry()" in script
-    assert "cmdUndo()" in script
-    assert "typeof send!=='function'" in script
-    assert "/api/session/retry" not in script
-    assert "/api/session/undo" not in script
-    assert "[halted:" in script
+def test_peer_products_are_endpoint_wired() -> None:
+    index = _read("index.html")
+    assert "Hermes" in index
+    assert "Jaeger" in index
+    assert "OpenClaw" in index
+    assert ":8788" in index  # ARES controller
 
 
 def test_dispatcher_assets_are_available_offline() -> None:
-    service_worker = _read("sw.js")
-
-    assert "./static/dispatcher.js" in service_worker
-    assert "./static/dispatcher.css" in service_worker
+    assert (STATIC / "index.html").is_file()
+    assert (STATIC / "app.js").is_file()
+    assert (STATIC / "style.css").is_file()

@@ -23,8 +23,13 @@ from api.si.types import DataClassification, MemoryItem, PUBLIC, PERSONAL, PRIVA
 
 
 def _journal_db_path() -> Path:
-    ares_home = os.environ.get("ARES_HOME", os.path.expanduser("~/.ares"))
-    return Path(ares_home) / "journal" / "journal.db"
+    """SI journal lives under the same home as identity.json."""
+    try:
+        from .identity import get_active_ares_home
+        return get_active_ares_home() / "journal" / "journal.db"
+    except Exception:
+        ares_home = os.environ.get("ARES_HOME", os.path.expanduser("~/.ares"))
+        return Path(ares_home) / "journal" / "journal.db"
 
 
 def _get_db() -> sqlite3.Connection:
@@ -274,13 +279,49 @@ def score_importance(memory_id: str) -> float:
 
 # ── Retrieve ─────────────────────────────────────────────────────────────
 
+def _retrieve_rows_like(conn: sqlite3.Connection, query: str, limit: int):
+    """Fallback scan when FTS5 is missing or the MATCH query is invalid.
+
+    Character-sheet facts must still be retrievable without a live worker.
+    """
+    tokens = [t.strip(".,!?;:\"'()[]") for t in (query or "").split()]
+    tokens = [t for t in tokens if len(t) >= 4][:5]
+    try:
+        if not tokens:
+            return conn.execute(
+                """SELECT c.session_id, c.source, c.metadata, c.created_at
+                   FROM conversations c
+                   ORDER BY c.created_at DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        clause = " OR ".join("m.content LIKE ?" for _ in tokens)
+        params = [f"%{t}%" for t in tokens]
+        return conn.execute(
+            f"""SELECT c.session_id, c.source, c.metadata, c.created_at
+               FROM conversations c
+               JOIN messages m ON m.conversation_id = c.id
+               WHERE {clause}
+               GROUP BY c.id
+               ORDER BY c.created_at DESC
+               LIMIT ?""",
+            (*params, limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+
+
 def retrieve_memories(
     query: str,
     *,
     limit: int = 10,
     max_sensitivity: DataClassification = PERSONAL,
 ) -> list[MemoryItem]:
-    """Retrieve relevant memories, filtered by sensitivity."""
+    """Retrieve relevant memories, filtered by sensitivity.
+
+    Results are SI-scoped (not keyed by worker id) so a worker swap keeps
+    the same character-sheet facts.
+    """
     conn = _get_db()
     _ensure_tables(conn)
 
@@ -288,7 +329,7 @@ def retrieve_memories(
 
     try:
         rows = conn.execute(
-            f"""SELECT c.session_id, c.source, c.metadata, c.created_at
+            """SELECT c.session_id, c.source, c.metadata, c.created_at
                FROM messages_fts
                JOIN messages m ON messages_fts.rowid = m.id
                JOIN conversations c ON m.conversation_id = c.id
@@ -299,8 +340,7 @@ def retrieve_memories(
             (query or "*", limit),
         ).fetchall()
     except sqlite3.OperationalError:
-        conn.close()
-        return []
+        rows = _retrieve_rows_like(conn, query, limit)
 
     memories = []
     now = time.time()
@@ -310,6 +350,9 @@ def retrieve_memories(
             meta = json.loads(row["metadata"] or "{}")
         except (json.JSONDecodeError, TypeError):
             pass
+
+        if meta.get("si_deleted"):
+            continue
 
         sensitivity_str = meta.get("si_sensitivity", "personal")
         if sensitivity_str not in allowed:

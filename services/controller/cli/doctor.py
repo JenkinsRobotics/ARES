@@ -141,14 +141,15 @@ def probe_jaeger(jaeger_home: Path) -> None:
     except Exception as exc:
         check_warn(f"jaeger doctor failed: {exc}")
 
-    # Gateway health (default ARES jaeger URL)
-    ok, status = _http_ok("http://127.0.0.1:8643/v1/health", timeout=1.5)
+    # ARES wires Jaeger at its product endpoint, not an in-process import.
+    jaeger_url = os.environ.get("ARES_JAEGER_WEBUI_URL", "http://127.0.0.1:8790").rstrip("/")
+    ok, status = _http_ok(jaeger_url, timeout=1.5)
     if ok:
-        check_pass(f"Jaeger gateway healthy on :8643 (HTTP {status})")
+        check_pass(f"Jaeger endpoint healthy at {jaeger_url} (HTTP {status})")
     else:
         check_warn(
-            "Jaeger gateway not responding on 127.0.0.1:8643",
-            "Start with: jaeger gateway   (or let ARES onboarding/WebUI start it)",
+            f"Jaeger is not responding at {jaeger_url}",
+            "Start the JaegerAI peer product (ARES integrates via this endpoint only).",
         )
 
 
@@ -174,20 +175,122 @@ def webui_port() -> int:
         return DEFAULT_WEBUI_PORT
 
 
+# FastAPI mounts this tree (see fastapi_app.frontend.DEFAULT_FRONTEND_ROOT).
+PRODUCTION_UI_RELATIVE = Path("services") / "controller" / "apps" / "dashboard" / "static"
+PRODUCTION_UI_LABEL = "services/controller/apps/dashboard/static"
+
+# External products ARES reaches by loopback URL/port only — never by editing
+# those repos. Defaults match services/controller/core/runtimes.py.
+PEER_PRODUCT_ENDPOINTS = (
+    ("Hermes", "ARES_HERMES_WEBUI_URL", "http://127.0.0.1:8787"),
+    ("Jaeger", "ARES_JAEGER_WEBUI_URL", "http://127.0.0.1:8790"),
+    ("OpenClaw", "ARES_OPENCLAW_WEBUI_URL", "http://127.0.0.1:18789"),
+)
+
+
+def _xcode_clt_present() -> bool:
+    """True when Xcode or Command Line Tools are actually usable on Darwin."""
+    binary = shutil.which("xcode-select")
+    if not binary:
+        return False
+    try:
+        completed = subprocess.run(
+            [binary, "-p"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if completed.returncode != 0:
+        return False
+    developer_dir = (completed.stdout or "").strip()
+    return bool(developer_dir) and Path(developer_dir).is_dir()
+
+
+def host_dependencies_report() -> list[tuple[str, str, str | None]]:
+    """Required host tools. Missing Ollama or (on Darwin) Xcode/CLT is a fail.
+
+    Tests mock ``shutil.which`` / ``_xcode_clt_present`` so this is deterministic
+    even on a machine that already has the tools.
+    """
+    findings: list[tuple[str, str, str | None]] = []
+    ollama = shutil.which("ollama")
+    if ollama:
+        findings.append(("pass", f"Ollama found: {ollama}", None))
+    else:
+        findings.append((
+            "fail",
+            "Ollama is missing.",
+            "Install Ollama from https://ollama.com and ensure `ollama` is on PATH.",
+        ))
+    if platform.system() == "Darwin":
+        if _xcode_clt_present():
+            findings.append(("pass", "Xcode Command Line Tools are present.", None))
+        else:
+            findings.append((
+                "fail",
+                "Xcode Command Line Tools are missing.",
+                "Install them with: xcode-select --install",
+            ))
+    return findings
+
+
+def peer_product_endpoints() -> list[tuple[str, str]]:
+    """Hermes / Jaeger / OpenClaw URLs ARES is wired to on this host."""
+    endpoints: list[tuple[str, str]] = []
+    for name, env_key, default in PEER_PRODUCT_ENDPOINTS:
+        raw = os.environ.get(env_key, default).strip() or default
+        endpoints.append((name, raw.rstrip("/")))
+    return endpoints
+
+
+def peer_endpoints_report() -> list[tuple[str, str, str | None]]:
+    """Probe peer products at their ARES-wired loopback URLs.
+
+    Down peers are warnings, not hard failures: they are external products.
+    The wiring itself (which URL/port ARES uses) is what doctor must name.
+    """
+    findings: list[tuple[str, str, str | None]] = []
+    for name, url in peer_product_endpoints():
+        ok, status = _http_ok(url, timeout=1.5)
+        if ok:
+            findings.append(
+                ("pass", f"{name} endpoint healthy at {url} (HTTP {status})", None)
+            )
+        else:
+            findings.append((
+                "warn",
+                f"{name} is not responding at {url}",
+                f"Start the {name} peer product. ARES integrates via this endpoint only.",
+            ))
+    return findings
+
+
+def diagnose_host_dependencies() -> int:
+    """Render required-tool findings. Return 1 if any failed, else 0."""
+    failed = 0
+    for status, msg, fix in host_dependencies_report():
+        if status == "pass":
+            check_pass(msg)
+        elif status == "warn":
+            check_warn(msg, fix)
+        else:
+            check_fail(msg, fix)
+            failed = 1
+    return failed
+
+
 def frontend_ownership_report(
     repo_root: Path,
 ) -> list[tuple[str, str, str | None]]:
     """Which frontend actually ships, stated out loud.
 
-    The repo carries two. ``apps/web/static`` is the vanilla-JS SPA that
-    ``fastapi_app.frontend.DEFAULT_FRONTEND_ROOT`` points at and the only
-    tree FastAPI ever mounts. ``apps/web-react`` is installed, typechecked
-    and unit-tested by the frontend-and-ownership CI job, and referenced by
-    no Python under services/ — CI therefore reports it healthy while the
-    server serves none of it.
+    FastAPI mounts ``services/controller/apps/dashboard/static`` — the value of
+    ``fastapi_app.frontend.DEFAULT_FRONTEND_ROOT``. ``apps/web/static`` and
+    ``apps/web/dist`` are not production. ``apps/web-react`` may still exist
+    as a CI-tested tree that no Python under services/ serves.
 
-    That gap is silent in both directions: an operator editing web-react
-    gets a green pipeline and an unchanged UI, and nothing told them why.
     Ownership is reported, never guessed at: web-react is called out as
     present-but-not-served rather than promoted on a heuristic.
 
@@ -196,21 +299,21 @@ def frontend_ownership_report(
     """
     findings: list[tuple[str, str, str | None]] = []
 
-    production = repo_root / "apps" / "web" / "static"
+    production = repo_root / PRODUCTION_UI_RELATIVE
     if (production / "index.html").is_file():
         findings.append(
-            ("pass", f"Production UI: apps/web/static ({production})", None))
+            ("pass", f"Production UI: {PRODUCTION_UI_LABEL} ({production})", None))
     elif production.is_dir():
         findings.append((
             "fail",
-            f"Production UI apps/web/static exists but has no index.html "
+            f"Production UI {PRODUCTION_UI_LABEL} exists but has no index.html "
             f"({production}) — the server will 404 on /.",
-            "Restore apps/web/static/index.html from git.",
+            f"Restore {PRODUCTION_UI_LABEL}/index.html from git.",
         ))
     else:
         findings.append((
             "fail",
-            f"Production UI apps/web/static is missing ({production}).",
+            f"Production UI {PRODUCTION_UI_LABEL} is missing ({production}).",
             "Check out the full repo; the FastAPI app mounts this path.",
         ))
 
@@ -223,7 +326,7 @@ def frontend_ownership_report(
             f"apps/web-react is present and {detail}, but is NOT served — "
             "no code under services/ references it. CI typechecks and "
             "tests it, so a green pipeline does not mean it ships.",
-            "Edit apps/web/static to change the running UI. To promote "
+            f"Edit {PRODUCTION_UI_LABEL} to change the running UI. To promote "
             "web-react deliberately, pass frontend_root=apps/web-react/dist "
             "to fastapi_app.main and update this check.",
         ))
@@ -231,9 +334,10 @@ def frontend_ownership_report(
     return findings
 
 
-def run_diagnostics() -> None:
+def run_diagnostics() -> int:
     print(f"{Colors.BOLD}ARES Diagnostic Tool (Doctor){Colors.RESET}")
     print("Checking system health and peer runtimes...\n")
+    failures = 0
 
     print_header("System & Environment")
     py_ver = sys.version_info
@@ -244,9 +348,13 @@ def run_diagnostics() -> None:
             f"Python version {py_ver.major}.{py_ver.minor} is unsupported.",
             "Upgrade to Python 3.10+",
         )
+        failures += 1
 
     os_name = platform.system()
     check_pass(f"Operating System: {os_name} {platform.release()}")
+
+    print_header("Host Dependencies")
+    failures += diagnose_host_dependencies()
 
     print_header("Frontend Ownership")
     try:
@@ -264,6 +372,7 @@ def run_diagnostics() -> None:
             check_warn(_msg, _fix)
         else:
             check_fail(_msg, _fix)
+            failures += 1
 
     print_header("ARES Core Components")
     ares_home = Path(os.path.expanduser("~/.ares")).resolve()
@@ -288,6 +397,7 @@ def run_diagnostics() -> None:
             "ARES installation manifest missing.",
             "Run bash install.sh from the ARES checkout",
         )
+        failures += 1
 
     ares_src = None
     if install_json.exists():
@@ -306,6 +416,7 @@ def run_diagnostics() -> None:
             "WebUI virtualenv python not found",
             "Re-run: bash install.sh --role primary",
         )
+        failures += 1
 
     _port = webui_port()
     ok, status = _http_ok(f"http://127.0.0.1:{_port}/health")
@@ -318,6 +429,7 @@ def run_diagnostics() -> None:
             f"ARES WebUI server is not responding on {_port}.",
             "Start with: ares start   or open ARES.app",
         )
+        failures += 1
 
     print_header("Remote Access & Networking")
     if shutil.which("tailscale"):
@@ -375,6 +487,16 @@ def run_diagnostics() -> None:
     else:
         check_warn(f"Unknown backend configured: {configured_backend}")
 
+    print_header("Peer Product Endpoints")
+    for _status, _msg, _fix in peer_endpoints_report():
+        if _status == "pass":
+            check_pass(_msg)
+        elif _status == "warn":
+            check_warn(_msg, _fix)
+        else:
+            check_fail(_msg, _fix)
+            failures += 1
+
     probe_jaeger(resolve_jaeger_home())
 
     print("\n" + "-" * 50)
@@ -382,7 +504,8 @@ def run_diagnostics() -> None:
         "Diagnostics complete. Fix ✖ items first, then re-run `ares doctor`. "
         "Companion setup issues usually need `jaeger doctor` or ARES onboarding."
     )
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    run_diagnostics()
+    raise SystemExit(run_diagnostics())

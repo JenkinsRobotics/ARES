@@ -9,6 +9,16 @@ if [ -L "${BASH_SOURCE[0]}" ]; then
 fi
 ARES_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CTL_SCRIPT="${ARES_ROOT}/ctl.sh"
+# shellcheck source=scripts/require-host-dependencies.sh
+source "${ARES_ROOT}/scripts/require-host-dependencies.sh"
+ARES_DESKTOP_BUNDLE_ID="com.jenkinsrobotics.ares-desktop"
+
+# Tests invoke the host-dependency gate without launching the app:
+#   ARES_HOST_DEPS_CHECK=1 bin/ares
+if [[ "${ARES_HOST_DEPS_CHECK:-}" == "1" ]]; then
+  require_ares_host_dependencies || exit 1
+  exit 0
+fi
 export ARES_WEBUI_DIR="${ARES_ROOT}/services/controller"
 export ARES_WEBUI_HOST="${ARES_WEBUI_HOST:-127.0.0.1}"
 export ARES_WEBUI_PORT="${ARES_WEBUI_PORT:-8788}"
@@ -54,6 +64,7 @@ _ares_app_path() {
 }
 
 _launch_ares_app() {
+  local START_SERVER="${1:-0}"
   local APP_PATH
   APP_PATH="$(_ares_app_path)" || exit 1
 
@@ -78,12 +89,47 @@ _launch_ares_app() {
   # `open` always sends reopen to a running app, which the delegate treats as a
   # request for the window, so an already-running app is left alone instead.
   if pgrep -x "ARES" >/dev/null 2>&1; then
-    echo "ARES is in the menu bar (use 'ares open' to open the window and start the server)."
-    return 0
+    if [[ "$START_SERVER" != "1" ]] || _ares_service_online; then
+      echo "ARES is in the menu bar."
+      return 0
+    fi
+
+    # Command-line arguments are only delivered on a fresh app launch. If a
+    # menu-only instance is already alive, replace it so `ares start` can
+    # reliably hand it --start-server instead of reporting a partial start.
+    echo "Restarting the ARES menu app so it can own the controller."
+    pkill -TERM -x "ARES" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      pgrep -x "ARES" >/dev/null 2>&1 || break
+      sleep 0.2
+    done
   fi
 
-  echo "Launching ARES into the menu bar (server is off until opened or started)."
-  open -g "$APP_PATH"
+  if [[ "$START_SERVER" == "1" ]]; then
+    echo "Launching ARES into the menu bar with its controller."
+    open -g "$APP_PATH" --args --start-server
+  else
+    echo "Launching ARES into the menu bar."
+    open -g "$APP_PATH"
+  fi
+}
+
+cmd_status() {
+  local APP_PID=""
+  APP_PID="$(pgrep -x "ARES" 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$APP_PID" ]]; then
+    echo "ARES menu app: running (PID $APP_PID)"
+  else
+    echo "ARES menu app: stopped"
+  fi
+
+  if _ares_service_online; then
+    local OWNER
+    OWNER="$(_ares_runtime_owner)"
+    echo "ARES controller: running at http://$(_webui_probe_host):${ARES_WEBUI_PORT} (owner: ${OWNER:-unknown})"
+  else
+    echo "ARES controller: stopped"
+  fi
 }
 
 _open_ares_window() {
@@ -125,11 +171,12 @@ _ares_runtime_owner() {
 }
 
 cmd_setup() {
+  require_ares_host_dependencies || exit 1
   pkill -x "ARES" 2>/dev/null || true
   sleep 1
-  defaults delete com.shuwalker.ARES onboarding_completed 2>/dev/null || true
-  defaults delete com.shuwalker.ARES ARESForceOnboarding 2>/dev/null || true
-  defaults write com.shuwalker.ARES ARESForceOnboarding -bool true
+  defaults delete "${ARES_DESKTOP_BUNDLE_ID}" onboarding_completed 2>/dev/null || true
+  defaults delete "${ARES_DESKTOP_BUNDLE_ID}" ARESForceOnboarding 2>/dev/null || true
+  defaults write "${ARES_DESKTOP_BUNDLE_ID}" ARESForceOnboarding -bool true
   _launch_ares_app
 }
 
@@ -139,6 +186,8 @@ cmd_doctor() {
 
   echo "ARES Doctor — checking system health"
   echo ""
+
+  require_ares_host_dependencies || return 1
 
   # 1. Check Python venv
   if [ -f "${ARES_ROOT}/services/controller/.venv/bin/python" ]; then
@@ -189,19 +238,14 @@ cmd_doctor() {
     needs_fix=1
   fi
 
-  # 4. Check frontend build
-  if [ -d "${ARES_ROOT}/apps/web/dist" ]; then
-    echo "  ✅ Frontend build: apps/web/dist"
+  # 4. Check production UI (what FastAPI actually mounts)
+  local FRONTEND="${ARES_ROOT}/services/controller/apps/dashboard/static"
+  if [ -f "${FRONTEND}/index.html" ]; then
+    echo "  ✅ Production UI: services/controller/apps/dashboard/static"
   else
-    echo "  ❌ Frontend build missing"
-    echo "     Building…"
-    cd "${ARES_ROOT}/apps/web"
-    if command -v npm >/dev/null 2>&1; then
-      npm run build 2>/dev/null && echo "  ✅ Built successfully" || echo "  ⚠️  Build failed — run 'cd apps/web && npm run build' manually"
-    else
-      echo "  ⚠️  npm not found — install Node.js to build the frontend"
-    fi
-    needs_fix=1
+    echo "  ❌ Production UI missing: services/controller/apps/dashboard/static" >&2
+    echo "     FastAPI mounts this path. Check out the full repo." >&2
+    return 1
   fi
 
   # 5. Check git repo state
@@ -258,12 +302,12 @@ cmd_update() {
     echo "  ✅ Python deps updated"
   fi
 
-  echo "3. Building frontend…"
-  if [ -d "${ARES_ROOT}/apps/web" ]; then
-    cd "${ARES_ROOT}/apps/web"
-    if command -v npm >/dev/null 2>&1; then
-      npm run build 2>/dev/null && echo "  ✅ Frontend built" || echo "  ⚠️  Build failed"
-    fi
+  echo "3. Verifying production UI…"
+  if [ -f "${ARES_ROOT}/services/controller/apps/dashboard/static/index.html" ]; then
+    echo "  ✅ Production UI: services/controller/apps/dashboard/static"
+  else
+    echo "  ❌ Production UI missing: services/controller/apps/dashboard/static" >&2
+    exit 1
   fi
 
   echo "4. Building and installing macOS app…"
@@ -293,12 +337,15 @@ case "${cmd}" in
       fi
       exec bash "${CTL_SCRIPT}" start
     fi
-    _launch_ares_app
+    _launch_ares_app 1
     ;;
   open)
     _open_ares_window
     ;;
-  stop|restart|status|logs)
+  status)
+    cmd_status
+    ;;
+  stop|restart|logs)
     exec bash "${CTL_SCRIPT}" "${cmd}" "$@"
     ;;
   chat|bookmarks)

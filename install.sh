@@ -69,10 +69,14 @@ fi
   echo "Not a current ARES checkout: $ARES_ROOT" >&2
   exit 1
 }
-[[ -f "$ARES_ROOT/apps/web/static/index.html" ]] || {
-  echo "ARES Web package is missing from $ARES_ROOT" >&2
+[[ -f "$ARES_ROOT/services/controller/apps/dashboard/static/index.html" ]] || {
+  echo "ARES production UI is missing from $ARES_ROOT (services/controller/apps/dashboard/static)" >&2
   exit 1
 }
+
+# shellcheck source=scripts/require-host-dependencies.sh
+source "$ARES_ROOT/scripts/require-host-dependencies.sh"
+require_ares_host_dependencies || exit 1
 
 
 PYTHON=""
@@ -98,12 +102,12 @@ fi
 echo "ARES WebUI is pre-built (no build step needed)."
 
 if [[ "$(uname -s)" == "Darwin" && "$SKIP_NATIVE" == false ]]; then
-  if command -v swift >/dev/null 2>&1; then
-    echo "Building the macOS application..."
-    (cd "$ARES_ROOT" && swift build)
-  else
-    echo "Swift is unavailable; skipping the optional macOS application." >&2
+  if ! command -v swift >/dev/null 2>&1; then
+    echo "Swift is missing. Install Xcode Command Line Tools with: xcode-select --install" >&2
+    exit 1
   fi
+  echo "Building the macOS application..."
+  (cd "$ARES_ROOT" && swift build)
 fi
 
 if [[ "$NO_CLI" == false ]]; then

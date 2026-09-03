@@ -32,6 +32,7 @@ from .models import (
     RunEvent,
     SystemThread,
     ThreadMessage,
+    tool_requires_approval,
 )
 from .store import AutomationStore
 
@@ -783,6 +784,11 @@ class AutomationService:
                 },
             )
             return {**resolved, "resumed_run_id": resumed["id"]}
+        if subject.get("gated_by") == "approval_tools":
+            # ARES gated the tool. Do not replay the prompt; that would
+            # re-request the same mutation. Owner-held runtimes continue
+            # through continue_runtime_run above.
+            return resolved
         if decision == "approved":
             # Compatibility for older, non-runtime approvals. New runtime
             # approvals always carry an owner continuation token so the
@@ -1197,6 +1203,22 @@ class AutomationService:
 
             def emit(kind: str, data: dict[str, Any]) -> None:
                 nonlocal approval_seen
+                if kind == "tool_requested":
+                    tool_name = str(
+                        data.get("tool") or data.get("name") or data.get("command")
+                        or data.get("operation") or ""
+                    )
+                    if tool_requires_approval(agent.approval_tools, tool_name):
+                        kind = "approval_required"
+                        data = {
+                            **data,
+                            "operation": tool_name or "runtime_request",
+                            "reason": str(
+                                data.get("reason") or data.get("description")
+                                or f"Agent requested gated tool {tool_name}"
+                            ),
+                            "gated_by": "approval_tools",
+                        }
                 if kind == "approval_required":
                     approval_seen = True
                     risks = data.get("risks") if isinstance(data.get("risks"), list) else []
@@ -1205,6 +1227,11 @@ class AutomationService:
                         for key in ("owner", "owner_run_id", "owner_approval_id", "owner_cursor")
                         if data.get(key)
                     }
+                    if data.get("gated_by"):
+                        owner_subject["gated_by"] = str(data.get("gated_by") or "")
+                        owner_subject["tool"] = str(
+                            data.get("operation") or data.get("tool") or data.get("command") or ""
+                        )
                     operation = str(data.get("operation") or data.get("command") or "runtime_request")
                     reason = str(
                         data.get("reason") or data.get("description")
@@ -1311,6 +1338,7 @@ class AutomationService:
             f"Model route: {agent.model_provider} ({agent.model_location}).\n"
             f"{local_context}"
             f"This is ARES run {run['id']}. Work autonomously within your configured tools and workspace. "
+            f"Tools requiring ARES approval before use: {', '.join(agent.approval_tools) or 'none'}. "
             "Do not claim approval you did not receive. If more work remains, you must say "
             "ARES_STATUS: continue. Otherwise a successful final answer is treated as completion. "
             "Prefer ending with exactly one explicit status marker: "

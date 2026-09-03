@@ -2,112 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ARES">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#F5F4EE" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1B1A18" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
   <title>ARES</title>
   <link rel="stylesheet" href="/static/style.css?v=__WEBUI_VERSION__">
 </head>
-<body>
+<body class="si-shell">
   <header>
     <div class="brand">
       <span class="mark">A</span>
       <div>
-        <strong>ARES</strong>
-        <small>Autonomous Reasoning &amp; Execution System</small>
-      </div>
-    </div>
-    <div class="fleet-strip" id="fleetStrip">
-      <div class="fleet-item" id="fleetHermes">
-        <span class="pulse-dot"></span>
-        <span class="fleet-label">Hermes</span>
-        <span class="fleet-meta">Container :8787</span>
-      </div>
-      <div class="fleet-item" id="fleetJaeger">
-        <span class="pulse-dot"></span>
-        <span class="fleet-label">Jaeger</span>
-        <span class="fleet-meta">Host :8790</span>
-      </div>
-      <div class="fleet-item" id="fleetOpenClaw">
-        <span class="pulse-dot"></span>
-        <span class="fleet-label">OpenClaw</span>
-        <span class="fleet-meta">Container :18789</span>
-      </div>
-      <div class="fleet-item" id="fleetGateway">
-        <span class="pulse-dot"></span>
-        <span class="fleet-label">Gateway</span>
-        <span class="fleet-meta">MCP :8811</span>
+        <strong id="siName">ARES</strong>
+        <small id="siTagline">Your SI</small>
       </div>
     </div>
     <div class="header-actions">
+      <button id="newThread" type="button">New chat</button>
       <button id="pause" class="danger">Pause all</button>
     </div>
   </header>
 
-  <main>
-    <section class="hero">
-      <div>
-        <p class="eyebrow">LOCAL CONTROL PLANE</p>
-        <h1>Independent agents.<br><em>One accountable loop.</em></h1>
-        <p>ARES coordinates goals, wakeups, approvals and evidence. Agent memory, tools, sessions and credentials remain with their owners.</p>
-      </div>
-      <div id="system" class="system">Loading controller…</div>
-    </section>
-
-    <section class="capacity-panel" aria-labelledby="capacityTitle">
-      <div class="section-title compact-title">
-        <div>
-          <p class="eyebrow">LOCAL TELEMETRY</p>
-          <h2 id="capacityTitle">System capacity</h2>
-        </div>
-        <span id="capacitySource">Reading macOS counters…</span>
-      </div>
-      <div id="capacityMetrics" class="capacity-grid" aria-live="polite"></div>
-      <details class="process-details">
-        <summary>Top memory processes</summary>
-        <div id="topProcesses" class="process-list"></div>
-      </details>
-    </section>
-
-    <!-- Elevated Multi-Agent Command Console -->
-    <section class="system-console elevated-hub">
-      <div class="section-title hub-header">
-        <div>
-          <p class="eyebrow">COMMAND CONSOLE</p>
-          <h2>System Inbox &amp; Interactive Hub</h2>
-          <span class="muted" id="activeThreadLabel">Loading conversation…</span>
-        </div>
-        <div class="service-links">
-          <button id="newThread" type="button">New thread</button>
-          <a id="hermesLink" target="_blank" rel="noopener">Hermes UI ↗</a>
-          <a id="jaegerLink" target="_blank" rel="noopener">Jaeger UI ↗</a>
-          <a id="n8nLink" target="_blank" rel="noopener">n8n ↗</a>
-          <a id="gatewayLink" target="_blank" rel="noopener">Gateway ↗</a>
-        </div>
-      </div>
-
-      <!-- Durable conversational run stream -->
+  <main class="si-main">
+    <section class="si-chat" aria-label="Conversation">
       <div id="chatStream" class="chat-stream">
         <div class="chat-empty" id="chatEmpty">
-          <div class="empty-icon">⚡</div>
-          <h3>Message the ARES Dispatcher</h3>
-          <p class="muted">ARES keeps this conversation and selects a qualified engine. Use an @agent prefix only when you want a direct route.</p>
-          <div class="quick-prompts">
-            <button class="quick-prompt" data-agent="jaeger" data-prompt="@jaeger Inspect git status and list uncommitted changes in ARES">"Inspect git status in ARES"</button>
-            <button class="quick-prompt" data-agent="hermes" data-prompt="@hermes Run pytest on services/controller/tests and report the test summary">"Run test suite in Hermes"</button>
-            <button class="quick-prompt" data-agent="jaeger" data-prompt="@jaeger Check active system capabilities and service health">"Check capability health"</button>
-            <button class="quick-prompt" data-agent="openclaw" data-prompt="@openclaw Summarize your current runtime and model status">"Ask OpenClaw for status"</button>
-          </div>
+          <h3>Talk to <span id="siEmptyName">ARES</span></h3>
+          <p class="muted">One persistent SI. Models and other apps stay underneath. It will ask when something needs your say.</p>
         </div>
       </div>
 
-      <!-- Agent Selection Pills -->
-      <div class="agent-pill-bar">
-        <span class="pill-label">Route to:</span>
+      <div class="agent-pill-bar" hidden>
         <div class="pill-group" id="agentPills">
-          <button type="button" class="agent-pill active" data-agent="dispatcher">⚡ Dispatcher</button>
-          <button type="button" class="agent-pill" data-agent="hermes">Hermes</button>
-          <button type="button" class="agent-pill" data-agent="jaeger">🐺 JaegerAI</button>
-          <button type="button" class="agent-pill" data-agent="openclaw">🦞 OpenClaw</button>
+          <button type="button" class="agent-pill active" data-agent="dispatcher">Dispatcher</button>
         </div>
         <label class="tier-control">Profile
           <select id="dispatcherTier" aria-label="Dispatcher performance profile">
@@ -116,76 +48,159 @@
             <option value="accurate">Accurate</option>
           </select>
         </label>
-        <span class="hub-hint" id="hubHint">ARES is loading its routing evidence…</span>
+        <span class="hub-hint" id="hubHint"></span>
       </div>
 
-      <!-- Interactive Composer -->
       <div class="composer">
-        <!-- Kept for backward compatibility and form bindings -->
-        <select id="systemAgent" style="display:none;">
+        <select id="systemAgent" hidden>
           <option value="dispatcher">Dispatcher</option>
           <option value="hermes">Hermes</option>
           <option value="jaeger">JaegerAI</option>
           <option value="openclaw">OpenClaw</option>
         </select>
-        <textarea id="systemMessage" placeholder="Message the ARES dispatcher… Prefix with @hermes, @jaeger, or @openclaw only to override routing."></textarea>
+        <textarea id="systemMessage" placeholder="Message ARES" rows="2"></textarea>
         <div class="composer-buttons">
           <button id="sendSystem" class="primary">Send</button>
-          <button id="cancelSystem" class="danger-outline" style="display:none;">Cancel run</button>
+          <button id="cancelSystem" class="danger-outline" style="display:none;">Cancel</button>
         </div>
       </div>
-
-      <!-- Legacy target for backward-compatibility with tests/scripts -->
-      <pre id="systemResult" class="system-result" style="display:none;">No System run started in this browser yet.</pre>
+      <pre id="systemResult" class="system-result" hidden>No System run started in this browser yet.</pre>
     </section>
 
-    <section>
-      <div class="section-title">
-        <h2>Connected agents</h2>
-        <span>Open an agent UI or trigger work</span>
+    <details id="systemDrawer" class="system-drawer">
+      <summary>System</summary>
+      <div class="fleet-strip" id="fleetStrip">
+        <a href="#" data-service="hermes" target="_blank" rel="noopener noreferrer" class="fleet-item" id="fleetHermes" title="Open Hermes WebUI">
+          <span class="pulse-dot"></span>
+          <span class="fleet-label">Hermes</span>
+          <span class="fleet-meta">:8787</span>
+        </a>
+        <a href="#" data-service="jaeger" target="_blank" rel="noopener noreferrer" class="fleet-item" id="fleetJaeger" title="Open Jaeger WebUI">
+          <span class="pulse-dot"></span>
+          <span class="fleet-label">Jaeger</span>
+          <span class="fleet-meta">:8790</span>
+        </a>
+        <a href="#" data-service="openclaw" target="_blank" rel="noopener noreferrer" class="fleet-item" id="fleetOpenClaw" title="Open OpenClaw">
+          <span class="pulse-dot"></span>
+          <span class="fleet-label">OpenClaw</span>
+          <span class="fleet-meta">:18789</span>
+        </a>
+        <a href="#" data-service="gateway" target="_blank" rel="noopener noreferrer" class="fleet-item" id="fleetGateway" title="Open Agentgateway">
+          <span class="pulse-dot"></span>
+          <span class="fleet-label">Gateway</span>
+          <span class="fleet-meta">:8811</span>
+        </a>
+        <a href="#" data-service="beszel" target="_blank" rel="noopener noreferrer" class="fleet-item" id="fleetBeszel" title="Open Beszel">
+          <span class="pulse-dot"></span>
+          <span class="fleet-label">Beszel</span>
+          <span class="fleet-meta">:8090</span>
+        </a>
       </div>
-      <div id="agents" class="grid"></div>
-    </section>
-
-    <section>
-      <div class="section-title">
-        <h2>Ollama model routes</h2>
-        <span>Local and cloud are explicit; only tool-capable models usable now are shown</span>
+      <div class="service-links">
+        <a id="hermesLink" target="_blank" rel="noopener">Hermes</a>
+        <a id="openclawLink" target="_blank" rel="noopener">OpenClaw</a>
+        <a id="jaegerLink" target="_blank" rel="noopener">Jaeger</a>
+        <a id="n8nLink" target="_blank" rel="noopener">n8n</a>
+        <a id="gatewayLink" target="_blank" rel="noopener">Gateway</a>
+        <a id="beszelLink" target="_blank" rel="noopener">Beszel</a>
       </div>
-      <div id="modelRoutes" class="grid"></div>
-    </section>
-
-    <section>
-      <div class="section-title">
-        <h2>Integration registry</h2>
-        <span>One ARES gateway; external write access stays approval-gated</span>
-      </div>
-      <div id="integrations" class="grid"></div>
-    </section>
-
-    <section class="columns">
-      <div>
-        <div class="section-title">
-          <h2>Goals</h2>
-          <button id="newGoal">New goal</button>
+      <span id="activeThreadLabel" hidden></span>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">LOCAL-FIRST</p>
+          <h1>ARES on this host</h1>
+          <p>Install ARES and it uses the stack already on the machine. Other apps stay theirs.</p>
+          <ul class="platform-row" aria-label="Supported hosts">
+            <li>Apple&nbsp;Silicon</li><li>Linux</li><li>WSL2</li>
+            <li class="platform-live"><span class="pulse-dot"></span><span id="heroHost">host</span></li>
+          </ul>
         </div>
-        <div id="goals" class="stack"></div>
-      </div>
-      <div>
-        <div id="approvalsHeader" class="section-title">
-          <h2>Pending approvals</h2>
+        <div id="system" class="system">Loading controller…</div>
+      </section>
+      <section class="specs" aria-labelledby="specsTitle">
+        <div class="section-title compact-title">
+          <div>
+            <p class="eyebrow">SYSTEM</p>
+            <h2 id="specsTitle">Capabilities</h2>
+          </div>
         </div>
-        <div id="approvals" class="stack"></div>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-title">
-        <h2>Run ledger</h2>
-        <button id="refresh">Refresh</button>
-      </div>
-      <div id="runs" class="stack"></div>
-    </section>
+        <div class="spec-grid">
+          <article class="spec-card"><h3>Runtime</h3><dl id="specRuntime" class="spec-facts"></dl></article>
+          <article class="spec-card"><h3>Security</h3><dl id="specSecurity" class="spec-facts"></dl></article>
+          <article class="spec-card"><h3>Telemetry</h3><dl id="specTelemetry" class="spec-facts"></dl></article>
+        </div>
+      </section>
+      <section class="capacity-panel" aria-labelledby="capacityTitle">
+        <div class="section-title compact-title"><h2 id="capacityTitle">Capacity</h2><span id="capacitySource"></span></div>
+        <div id="capacityMetrics" class="capacity-grid"></div>
+        <div id="telemetryExtra" class="capacity-grid telemetry-extra"></div>
+        <details class="process-details"><summary>Top memory processes</summary><div id="topProcesses" class="process-list"></div></details>
+      </section>
+      <section class="schematic-panel" aria-labelledby="schematicTitle">
+        <div class="section-title compact-title"><h2 id="schematicTitle">Data flow</h2></div>
+        <div class="schematic-scroll">
+          <svg id="schematic" viewBox="0 0 900 380" role="img" aria-label="ARES data flow">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="sch-arrow-head"/>
+              </marker>
+            </defs>
+            <g class="sch-edges" stroke-linecap="round" marker-end="url(#arrow)">
+              <path d="M168,86 H250"/><path d="M168,190 H250"/><path d="M168,294 H250"/>
+              <path d="M418,190 H500"/><path d="M668,120 V96 H735"/><path d="M668,190 H735"/>
+              <path d="M668,260 V284 H735"/><path d="M334,242 V330 H735 V310"/><path d="M334,138 V60  H500"/>
+            </g>
+            <g class="sch-node" data-node="iface" tabindex="0"><rect x="24" y="52" width="144" height="68" rx="10"/><text x="96" y="80">Interfaces</text><text x="96" y="100" class="sch-sub">Phone · Safari</text></g>
+            <g class="sch-node" data-node="clients" tabindex="0"><rect x="24" y="156" width="144" height="68" rx="10"/><text x="96" y="184">MCP clients</text><text x="96" y="204" class="sch-sub">Claude · Codex</text></g>
+            <g class="sch-node" data-node="tailscale" tabindex="0"><rect x="24" y="260" width="144" height="68" rx="10"/><text x="96" y="288">Tailscale</text><text x="96" y="308" class="sch-sub">Serve</text></g>
+            <g class="sch-node sch-core" data-node="ares" tabindex="0"><rect x="250" y="138" width="168" height="104" rx="12"/><text x="334" y="176">ARES</text><text x="334" y="198" class="sch-sub">controller :8788</text></g>
+            <g class="sch-node" data-node="store" tabindex="0"><rect x="500" y="26" width="168" height="68" rx="10"/><text x="584" y="54">Storage</text><text x="584" y="74" class="sch-sub">SQLite</text></g>
+            <g class="sch-node" data-node="gateway" tabindex="0"><rect x="500" y="146" width="168" height="88" rx="10"/><text x="584" y="180">Agentgateway</text><text x="584" y="200" class="sch-sub">MCP :8811</text></g>
+            <g class="sch-node" data-node="hermes" tabindex="0"><rect x="735" y="66" width="140" height="60" rx="10"/><text x="805" y="92">Hermes</text><text x="805" y="110" class="sch-sub">:8787</text></g>
+            <g class="sch-node" data-node="jaeger" tabindex="0"><rect x="735" y="160" width="140" height="60" rx="10"/><text x="805" y="186">JaegerAI</text><text x="805" y="204" class="sch-sub">:8790</text></g>
+            <g class="sch-node" data-node="openclaw" tabindex="0"><rect x="735" y="254" width="140" height="60" rx="10"/><text x="805" y="280">OpenClaw</text><text x="805" y="298" class="sch-sub">:18789</text></g>
+            <g class="sch-node sch-model" data-node="ollama" tabindex="0"><rect x="735" y="316" width="140" height="52" rx="10"/><text x="805" y="340">Ollama</text><text x="805" y="358" class="sch-sub">:11434</text></g>
+          </svg>
+        </div>
+        <p id="schematicDetail" class="schematic-detail">Loopback on this host. Other products stay on their ports.</p>
+      </section>
+      <section class="terminal-panel" aria-labelledby="terminalTitle">
+        <div class="section-title compact-title">
+          <h2 id="terminalTitle">Runs</h2>
+          <div class="terminal-controls">
+            <button id="terminalPause" type="button" class="tiny">Pause</button>
+            <span class="muted" id="terminalMeta"></span>
+          </div>
+        </div>
+        <pre id="terminalStream" class="terminal-stream" role="log"></pre>
+      </section>
+      <section>
+        <div class="section-title"><h2>Connected agents</h2></div>
+        <div id="agents" class="grid"></div>
+      </section>
+      <section>
+        <div class="section-title"><h2>Ollama model routes</h2></div>
+        <div id="modelRoutes" class="grid"></div>
+      </section>
+      <section>
+        <div class="section-title"><h2>Integrations</h2></div>
+        <div id="integrations" class="grid"></div>
+      </section>
+      <section class="columns">
+        <div>
+          <div class="section-title"><h2>Goals</h2><button id="newGoal">New goal</button></div>
+          <div id="goals" class="stack"></div>
+        </div>
+        <div>
+          <div id="approvalsHeader" class="section-title"><h2>Pending approvals</h2></div>
+          <div id="approvals" class="stack"></div>
+        </div>
+      </section>
+      <section>
+        <div class="section-title"><h2>Run ledger</h2><button id="refresh">Refresh</button></div>
+        <div id="runs" class="stack"></div>
+      </section>
+    </details>
   </main>
 
   <dialog id="goalDialog">
@@ -199,22 +214,20 @@
       </menu>
     </form>
   </dialog>
-
   <dialog id="configurationDialog">
     <form method="dialog">
       <h2>Configure Hermes</h2>
-      <p class="muted">ARES submits this change for approval, then applies it through Hermes WebUI's runtime-owned API.</p>
+      <p class="muted">ARES submits this change for approval, then applies it through Hermes.</p>
       <label>SOUL.md<textarea id="configurationSoul" required></textarea></label>
-      <label>Registered container workspaces<textarea id="configurationWorkspaces" placeholder="/workspace&#10;/workspace/GitHub"></textarea></label>
-      <p class="muted">Only paths already exposed inside <code>/workspace</code> are accepted. Host mounts are managed separately.</p>
+      <label>Registered container workspaces<textarea id="configurationWorkspaces"></textarea></label>
       <menu>
         <button value="cancel">Cancel</button>
         <button id="saveConfiguration" class="primary" value="default">Request approval</button>
       </menu>
     </form>
   </dialog>
-
   <script>window.__ARES_BOOT__=__CSRF_TOKEN_JSON__;</script>
   <script src="/static/app.js?v=__WEBUI_VERSION__"></script>
+  <script src="/static/ares-console.js?v=__WEBUI_VERSION__"></script>
 </body>
 </html>

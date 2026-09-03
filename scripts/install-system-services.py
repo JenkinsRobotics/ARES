@@ -12,11 +12,15 @@ from pathlib import Path
 
 PUBLIC_ENV_KEYS = {
     "ARES_A2A_PUBLIC_URL",
+    "ARES_OLLAMA_HOST",
     "ARES_WEBUI_TAILSCALE_USERS",
+    # Operator override only; the Serve proxy is loopback and trusted already.
+    "ARES_WEBUI_TRUSTED_PROXY_CIDRS",
     "ARES_WEBUI_HOST",
     "ARES_WEBUI_PORT",
     "ARES_SHARED_WORKSPACE",
 }
+
 
 
 def load_local_environment(state: Path) -> dict[str, str]:
@@ -80,7 +84,18 @@ def install(
     print(f"Installed {label}")
 
 
+def require_ollama() -> str:
+    """Ollama is a required host dependency. Do not skip silently."""
+    ollama_path = shutil.which("ollama")
+    if not ollama_path:
+        raise SystemExit(
+            "Ollama is missing. Install Ollama from https://ollama.com and re-run."
+        )
+    return ollama_path
+
+
 def main() -> int:
+    ollama_path = require_ollama()
     repo = Path(__file__).resolve().parents[1]
     state = Path(os.environ.get("ARES_HOME") or Path.home() / ".ares")
     log_dir = state / "logs"
@@ -129,29 +144,50 @@ def main() -> int:
         log_dir,
         False,
     )
-    ollama_path = shutil.which("ollama")
-    if ollama_path:
+    beszel_hub = Path.home() / ".local" / "bin" / "beszel"
+    beszel_agent_launcher = Path.home() / ".local" / "bin" / "beszel-agent-launcher"
+    if beszel_hub.is_file():
+        beszel_state = Path.home() / ".local" / "share" / "beszel" / "data"
+        beszel_state.mkdir(parents=True, exist_ok=True)
         install(
-            "com.jenkinsrobotics.ares-ollama",
-            [ollama_path, "serve"],
+            "com.jenkinsrobotics.beszel-hub",
+            [
+                str(beszel_hub), "serve", "--http", "127.0.0.1:8090",
+                "--dir", str(beszel_state),
+            ],
             log_dir,
             True,
-            environment={
-                # Containers reach this loopback listener through Apple's
-                # host.container.internal redirect. LAN and tailnet peers do
-                # not receive Ollama's unauthenticated API.
-                "OLLAMA_HOST": "127.0.0.1:11434",
-                "OLLAMA_FLASH_ATTENTION": "1",
-                "OLLAMA_KV_CACHE_TYPE": "q8_0",
-                # Unified memory is the scarce resource on this Mac. Keep one
-                # model resident briefly for conversational follow-ups, but do
-                # not let concurrent frameworks load competing model weights.
-                "OLLAMA_KEEP_ALIVE": os.environ.get("ARES_OLLAMA_KEEP_ALIVE", "90s"),
-                "OLLAMA_MAX_LOADED_MODELS": os.environ.get("ARES_OLLAMA_MAX_LOADED_MODELS", "1"),
-                "OLLAMA_NUM_PARALLEL": os.environ.get("ARES_OLLAMA_NUM_PARALLEL", "1"),
-                "OLLAMA_MAX_QUEUE": os.environ.get("ARES_OLLAMA_MAX_QUEUE", "32"),
-            },
         )
+    if beszel_agent_launcher.is_file():
+        install(
+            "com.jenkinsrobotics.beszel-agent",
+            [str(beszel_agent_launcher)],
+            log_dir,
+            True,
+        )
+    install(
+        "com.jenkinsrobotics.ares-ollama",
+        [ollama_path, "serve"],
+        log_dir,
+        True,
+        environment={
+            # Bind only to Apple Container's host bridge. Containers can
+            # reach the fallback while LAN and tailnet peers do not receive
+            # Ollama's unauthenticated API. Avoid 0.0.0.0 here.
+            "OLLAMA_HOST": os.environ.get(
+                "ARES_OLLAMA_HOST", "192.168.65.1:11434"
+            ),
+            "OLLAMA_FLASH_ATTENTION": "1",
+            "OLLAMA_KV_CACHE_TYPE": "q8_0",
+            # Unified memory is the scarce resource on this Mac. Keep one
+            # model resident briefly for conversational follow-ups, but do
+            # not let concurrent frameworks load competing model weights.
+            "OLLAMA_KEEP_ALIVE": os.environ.get("ARES_OLLAMA_KEEP_ALIVE", "90s"),
+            "OLLAMA_MAX_LOADED_MODELS": os.environ.get("ARES_OLLAMA_MAX_LOADED_MODELS", "1"),
+            "OLLAMA_NUM_PARALLEL": os.environ.get("ARES_OLLAMA_NUM_PARALLEL", "1"),
+            "OLLAMA_MAX_QUEUE": os.environ.get("ARES_OLLAMA_MAX_QUEUE", "32"),
+        },
+    )
     return 0
 
 

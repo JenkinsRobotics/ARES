@@ -17,10 +17,28 @@ from pathlib import Path
 from typing import Any
 
 
+def get_active_ares_home() -> Path:
+    """Return the active ARES home used for the SI character sheet.
+
+    Canonical identity lives at ``<home>/si/identity.json``. This prefers the
+    profile-aware resolver so named profiles stay isolated, then ``ARES_HOME``,
+    then ``~/.ares``. ``~/.hermes`` is never the source of truth.
+    """
+    try:
+        from api.profiles import get_active_ares_home as resolve_profile_home
+    except ImportError:
+        resolve_profile_home = None
+    if resolve_profile_home is not None:
+        return Path(resolve_profile_home()).expanduser()
+    env = os.environ.get("ARES_HOME", "").strip()
+    if env:
+        return Path(os.path.expanduser(env))
+    return Path.home() / ".ares"
+
+
 def _identity_path() -> Path:
-    """Return the path to the identity config file."""
-    ares_home = os.environ.get("ARES_HOME", os.path.expanduser("~/.ares"))
-    si_dir = Path(ares_home) / "si"
+    """Return the path to the canonical identity config file."""
+    si_dir = get_active_ares_home() / "si"
     si_dir.mkdir(parents=True, exist_ok=True)
     return si_dir / "identity.json"
 
@@ -68,9 +86,17 @@ def load_identity() -> SIIdentityConfig:
     if not isinstance(data, dict):
         return _DEFAULTS
 
+    if "owner_name" in data:
+        owner_raw = data.get("owner_name")
+    elif "owner" in data:
+        owner_raw = data.get("owner")
+    else:
+        owner_raw = _DEFAULTS.owner_name
+    owner_name = "" if owner_raw is None else str(owner_raw)
+
     return SIIdentityConfig(
         name=str(data.get("name", _DEFAULTS.name)),
-        owner_name=str(data.get("owner_name", _DEFAULTS.owner_name)),
+        owner_name=owner_name,
         mission=str(data.get("mission", _DEFAULTS.mission)),
         principles=list(data.get("principles", _DEFAULTS.principles)),
         loyalty=str(data.get("loyalty", _DEFAULTS.loyalty)),
@@ -112,6 +138,20 @@ def patch_identity(updates: dict[str, Any]) -> SIIdentityConfig:
             setattr(current, key, value)
     save_identity(current)
     return current
+
+
+
+def identity_prompt_fields(config: SIIdentityConfig | None = None) -> dict[str, str]:
+    """JSON identity fields injected into every briefing/prompt.
+
+    Empty owner is preserved — the field stays present even when identity.json
+    has ``owner_name: ""``. Callers must not substitute a placeholder.
+    """
+    cfg = config or load_identity()
+    return {
+        "name": "" if cfg.name is None else str(cfg.name),
+        "owner": "" if cfg.owner_name is None else str(cfg.owner_name),
+    }
 
 
 def ensure_identity_exists() -> SIIdentityConfig:

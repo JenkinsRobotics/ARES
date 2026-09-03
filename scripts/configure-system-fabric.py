@@ -58,6 +58,7 @@ def main() -> int:
     output = gateway_dir / "config.yaml"
     admin_token = client_token(gateway_dir / "client.token")
     hermes_token = client_token(Path.home() / ".hermes" / "ares" / "ares-mcp.token")
+    openclaw_token = client_token(state / "openclaw" / "ares-mcp.token")
     admin_api_key_policy = {
         "keys": [key_record(admin_token, "admin", "owner")],
         "mode": "strict",
@@ -66,6 +67,7 @@ def main() -> int:
         "keys": [
             key_record(admin_token, "admin", "owner"),
             key_record(hermes_token, "hermes", "agent"),
+            key_record(openclaw_token, "openclaw", "agent"),
         ],
         "mode": "strict",
     }
@@ -83,7 +85,8 @@ def main() -> int:
                 "mcpAuthorization": {
                     "rules": [
                         'apiKey.user == "admin"',
-                        'apiKey.user == "hermes" && mcp.tool.target == "host-hermes"',
+                        'apiKey.user == "hermes" && (mcp.tool.target == "host-hermes" || mcp.tool.target == "system")',
+                        'apiKey.user == "openclaw" && (mcp.tool.target == "host-hermes" || mcp.tool.target == "system")',
                     ],
                 },
                 "cors": {
@@ -98,7 +101,12 @@ def main() -> int:
                     "stdio": {
                         "cmd": controller_python,
                         "args": [str(repo / "services" / "controller" / "system_mcp_server.py")],
-                        "env": {"ARES_SYSTEM_URL": "http://127.0.0.1:8788"},
+                        "env": {
+                            "ARES_SYSTEM_URL": "http://127.0.0.1:8788",
+                            "ARES_HERMES_WEBUI_URL": "http://127.0.0.1:8787",
+                            "ARES_JAEGER_WEBUI_URL": "http://127.0.0.1:8790",
+                            "ARES_OPENCLAW_WEBUI_URL": "http://127.0.0.1:18789",
+                        },
                     },
                 },
                 {

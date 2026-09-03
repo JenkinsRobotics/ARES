@@ -63,39 +63,71 @@ def main() -> int:
     server_path = repo / "services" / "controller" / "system_mcp_server.py"
     if not python.is_file() or not server_path.is_file():
         raise SystemExit("ARES controller environment is incomplete")
+
+    home = Path.home()
+    token_file = home / ".ares" / "gateway" / "client.token"
+    admin_token = token_file.read_text(encoding="utf-8").strip() if token_file.is_file() else ""
+    gateway_url = "http://127.0.0.1:8811/mcp"
+
     command = str(python)
     args = [str(server_path)]
     stdio = {"command": command, "args": args}
+    gateway_http = {
+        "url": gateway_url,
+        "headers": {"Authorization": f"Bearer {admin_token}"},
+    }
 
-    replace_cli("claude", ["claude", "mcp", "remove", "ares-system", "--scope", "user"],
-                ["claude", "mcp", "add", "--scope", "user", "ares-system", "--", command, *args])
-    # Retire the former direct host-tool bypass. Hermes reaches its scoped host
-    # target through ARES/Agentgateway instead of granting every client a
-    # second, independently governed tool plane.
+    # Ensure ARES_GATEWAY_TOKEN is present in ~/.zshenv for CLI clients
+    zshenv = home / ".zshenv"
+    zshenv_text = zshenv.read_text(encoding="utf-8") if zshenv.exists() else ""
+    if admin_token and "ARES_GATEWAY_TOKEN=" not in zshenv_text:
+        with open(zshenv, "a", encoding="utf-8") as f:
+            f.write(f'\nexport ARES_GATEWAY_TOKEN="{admin_token}"\n')
+
+    # Claude Code: point at Agentgateway HTTP endpoint with bearer header
+    if shutil.which("claude") and admin_token:
+        replace_cli("claude", ["claude", "mcp", "remove", "ares-system", "--scope", "user"],
+                    ["claude", "mcp", "add", "ares-system", gateway_url, "--transport", "http",
+                     "--scope", "user", "-H", f"Authorization: Bearer {admin_token}"])
+    else:
+        replace_cli("claude", ["claude", "mcp", "remove", "ares-system", "--scope", "user"],
+                    ["claude", "mcp", "add", "--scope", "user", "ares-system", "--", command, *args])
+
+    # Retire former direct host-tool bypass
     subprocess.run(
         ["claude", "mcp", "remove", "hermes-mac-tools", "--scope", "user"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
     ) if shutil.which("claude") else None
-    replace_cli("codex", ["codex", "mcp", "remove", "ares-system"],
-                ["codex", "mcp", "add", "ares-system", "--", command, *args])
+
+    # Codex CLI: point at Agentgateway HTTP endpoint
+    if shutil.which("codex") and admin_token:
+        replace_cli("codex", ["codex", "mcp", "remove", "ares-system"],
+                    ["codex", "mcp", "add", "ares-system", "--url", gateway_url,
+                     "--bearer-token-env-var", "ARES_GATEWAY_TOKEN"])
+    else:
+        replace_cli("codex", ["codex", "mcp", "remove", "ares-system"],
+                    ["codex", "mcp", "add", "ares-system", "--", command, *args])
+
     subprocess.run(
         ["codex", "mcp", "remove", "hermes-mac-tools"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
     ) if shutil.which("codex") else None
+
+    # Gemini CLI: configure ares-system stdio wrapper
     replace_cli("gemini", ["gemini", "mcp", "remove", "--scope", "user", "ares-system"],
                 ["gemini", "mcp", "add", "--scope", "user", "--description",
                  "ARES governed control plane", "ares-system", command, *args])
 
-    home = Path.home()
     remove_json_entries(home / ".mcp.json", "mcpServers", {"hermes-mac-tools", "hermes-mac", "hermes-wsl"})
     remove_json_entries(home / ".claude" / ".mcp.json", "mcpServers", {"hermes-mac-tools", "hermes-mac", "hermes-wsl"})
     remove_json_entries(home / ".claude" / "mcp.json", "mcpServers", {"hermes-mac-tools", "hermes-mac", "hermes-wsl"})
     write_json(home / ".gemini" / "config" / "mcp_config.json", "mcpServers", stdio)
-    write_json(home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json", "mcpServers", stdio)
-    write_json(home / "Library" / "Application Support" / "Code" / "User" / "mcp.json", "servers", {"type": "stdio", **stdio})
+    write_json(home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json", "mcpServers", gateway_http)
+    write_json(home / "Library" / "Application Support" / "Code" / "User" / "mcp.json", "servers", {"type": "sse", **gateway_http})
     subprocess.run([str(python), str(repo / "scripts" / "probe-mcp-clients.py")], check=True)
-    print("Configured installed clients to use the single ARES System MCP server.")
+    print("Configured installed clients to use the governed ARES Agentgateway on :8811.")
     return 0
+
 
 
 if __name__ == "__main__":

@@ -263,7 +263,96 @@ def _pack_with_budget(
     return packed, manifest
 
 
-# ── Main Compilation ───────────────────────────────────────────────────
+# ── Character sheet (identity + working memory) ────────────────────────
+# Identity is identity.json — never SOUL.md / memories/SOUL.md.
+# Profile files MEMORY.md and USER.md are working memory, not identity.
+# SI retrieve_memories() is SI-scoped and must survive worker swaps.
+
+_PROFILE_FILE_CAP = 8000
+
+
+def _load_canonical_identity() -> SIIdentity:
+    """Load persisted SI identity from <ares_home>/si/identity.json."""
+    try:
+        from .identity import load_identity
+
+        cfg = load_identity()
+        return SIIdentity(
+            name=cfg.name or "ARES",
+            owner_name=cfg.owner_name or "User",
+            mission=cfg.mission or "",
+            principles=list(cfg.principles or []),
+            loyalty=cfg.loyalty or "user",
+        )
+    except Exception:
+        return SIIdentity(
+            name="ARES",
+            owner_name="User",
+            mission="Assist the owner accurately, protect their data, and be honest about uncertainty.",
+            principles=[
+                "Be honest about what you know and don't know",
+                "Protect the owner's private data",
+            ],
+            loyalty="user",
+        )
+
+
+def _load_profile_working_memory() -> list[ContextItem]:
+    """Load MEMORY.md and USER.md into the briefing. Do not treat SOUL.md as identity."""
+    memory_text = ""
+    user_text = ""
+    try:
+        from api.memory_store import read_memory
+
+        payload = read_memory()
+        memory_text = str(payload.get("memory") or "")
+        user_text = str(payload.get("user") or "")
+        # payload["soul"] is intentionally ignored: identity is identity.json.
+    except Exception:
+        try:
+            from .identity import get_active_ares_home
+
+            home = get_active_ares_home()
+            memory_path = home / "memories" / "MEMORY.md"
+            user_path = home / "memories" / "USER.md"
+            if memory_path.is_file():
+                memory_text = memory_path.read_text(encoding="utf-8", errors="replace")
+            if user_path.is_file():
+                user_text = user_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return []
+
+    items: list[ContextItem] = []
+    if memory_text.strip():
+        items.append(ContextItem(
+            source="profile_memory",
+            source_id="MEMORY.md",
+            content=memory_text[:_PROFILE_FILE_CAP],
+            sensitivity=PERSONAL,
+            relevance=1.0,
+            recency=1.0,
+        ))
+    if user_text.strip():
+        items.append(ContextItem(
+            source="profile_user",
+            source_id="USER.md",
+            content=user_text[:_PROFILE_FILE_CAP],
+            sensitivity=PERSONAL,
+            relevance=1.0,
+            recency=1.0,
+        ))
+    return items
+
+
+def _load_si_memories(query: str) -> list[MemoryItem]:
+    """Retrieve SI-store memories. Not keyed by worker id."""
+    try:
+        from .memory import retrieve_memories
+
+        return retrieve_memories(query, limit=10)
+    except Exception:
+        return []
+
 
 def compile_context(
     user_message: str,
@@ -308,43 +397,34 @@ def compile_context(
     conversation_items = [i for i in packed_items if i.source == "conversation"]
     document_items = [i for i in packed_items if i.source == "document"]
 
-    # 6. Build the briefing — load persisted Companion identity (not generic defaults)
+    # 6. Character sheet: canonical identity + Profile files + SI memories.
+    # Worker id is only used later for privacy filtering — never as a memory key.
     if si_identity is None:
-        try:
-            from api.si.identity import load_identity
-
-            cfg = load_identity()
-            si_identity = SIIdentity(
-                name=cfg.name or "ARES",
-                owner_name=cfg.owner_name or "User",
-                mission=cfg.mission or "",
-                principles=list(cfg.principles or []),
-                loyalty=cfg.loyalty or "user",
-            )
-        except Exception:
-            si_identity = SIIdentity(
-                name="ARES",
-                owner_name="User",
-                mission="Assist the owner accurately, protect their data, and be honest about uncertainty.",
-                principles=[
-                    "Be honest about what you know and don't know",
-                    "Protect the owner's private data",
-                ],
-                loyalty="user",
-            )
+        si_identity = _load_canonical_identity()
+    profile_items = _load_profile_working_memory()
+    si_memories = _load_si_memories(user_message)
+    seen_memory_ids = {m.memory_id for m in si_memories}
+    relevant_memories = list(si_memories)
+    for item in document_items:
+        if item.source_id in seen_memory_ids:
+            continue
+        relevant_memories.append(MemoryItem(
+            memory_id=item.source_id,
+            content=item.content,
+            source=item.source,
+            sensitivity=item.sensitivity,
+            importance=item.relevance,
+        ))
 
     briefing = ContextBriefing(
         si_identity=si_identity,
+        user_context=profile_items,
         recent_conversation=conversation_items,
-        relevant_memories=[MemoryItem(
-            memory_id=i.source_id,
-            content=i.content,
-            source=i.source,
-            sensitivity=i.sensitivity,
-            importance=i.relevance,
-        ) for i in document_items],
+        relevant_memories=relevant_memories,
         context_manifest=pack_manifest,
-        total_tokens=sum(_estimate_tokens(i.content) for i in packed_items),
+        total_tokens=sum(_estimate_tokens(i.content) for i in packed_items)
+        + sum(_estimate_tokens(i.content) for i in profile_items)
+        + sum(_estimate_tokens(m.content) for m in si_memories),
     )
 
     # 7. Filter for privacy based on the target worker

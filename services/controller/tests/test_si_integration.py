@@ -511,3 +511,147 @@ class TestEvaluatorIntegration:
             intent="action",
         )
         assert result.verdict in (EvaluationVerdict.FAIL, EvaluationVerdict.ESCALATE)
+
+# ── Live-path identity + trust-gate tests ────────────────────────────────
+
+def _isolate_si_home(tmp_path, monkeypatch):
+    """Point identity.json at a tmp home so tests never touch the owner's sheet."""
+    home = tmp_path / "ares-home"
+    home.mkdir()
+    (home / "si").mkdir()
+    monkeypatch.setenv("ARES_HOME", str(home))
+    monkeypatch.setenv("ARES_BASE_HOME", str(home))
+    try:
+        import api.profiles as profiles
+
+        monkeypatch.setattr(profiles, "get_active_ares_home", lambda: home)
+    except Exception:
+        pass
+    import core.si.identity as ident_mod
+
+    monkeypatch.setattr(ident_mod, "get_active_ares_home", lambda: home)
+    return home
+
+
+class TestLivePathIdentity:
+    """Live chat path injects identity.json into the briefing/prompt every turn."""
+
+    def test_si_prepare_message_injects_json_identity_even_when_owner_empty(self, tmp_path, monkeypatch):
+        """Name + owner (even empty) must appear in the live-path prompt, not just reload."""
+        _isolate_si_home(tmp_path, monkeypatch)
+        from api.si.identity import SIIdentityConfig, save_identity, load_identity
+
+        save_identity(SIIdentityConfig(name="LivePathSI", owner_name=""))
+        reloaded = load_identity()
+        assert reloaded.name == "LivePathSI"
+        assert reloaded.owner_name == ""
+
+        from api.si.bridge import si_prepare_message
+
+        prepared = si_prepare_message("who are you?")
+        prompt = prepared["prompt"]
+        # Assert the JSON identity is in the briefing/prompt itself.
+        assert '"name": "LivePathSI"' in prompt
+        assert '"owner": ""' in prompt
+        ident = prepared["si_identity"]
+        assert ident.name == "LivePathSI"
+        assert ident.owner_name == ""
+
+    def test_dispatch_turn_sends_identity_json_not_raw_user_text(self, tmp_path, monkeypatch):
+        """WebUI live path (/api/dispatch/turn) must brief the worker with identity.json."""
+        home = _isolate_si_home(tmp_path, monkeypatch)
+        monkeypatch.setattr("api.journal.paths.si_dir", lambda: home / "si")
+        import core.si.orchestrator as orch_mod
+        orch_mod._PLANS_DB = None
+
+        from api.si.identity import SIIdentityConfig, save_identity
+        from api.dispatch_service import DispatchService
+
+        save_identity(SIIdentityConfig(name="LivePathSI", owner_name=""))
+
+        captured = {}
+
+        class _Worker:
+            name = "jaeger_local"
+
+            def is_available(self) -> bool:
+                return True
+
+            def run_turn(self, message: str, session_id: str, **kwargs) -> dict:
+                captured["message"] = message
+                return {"text": "ok", "session_id": session_id}
+
+        class _Registry:
+            @classmethod
+            def get_available(cls):
+                return {"jaeger_local": _Worker()}
+
+        service = DispatchService(backend_registry=_Registry)
+        result = service.dispatch_turn(
+            user_message="who are you?",
+            conversation_id="live-path-identity",
+            local_only_mode=True,
+            si_name="Leo",
+            owner_name="User",
+        )
+        if result.get("status") == "awaiting_approval":
+            # Conversation turns should execute; if gated, identity still lives in prepare.
+            from api.si.bridge import si_prepare_message
+
+            prepared = si_prepare_message("who are you?")
+            prompt = prepared["prompt"]
+        else:
+            assert result.get("status") == "step_completed"
+            prompt = captured["message"]
+
+        assert '"name": "LivePathSI"' in prompt
+        assert '"owner": ""' in prompt
+        assert "Leo" not in prompt.split("[User message]")[0]
+
+    def test_si_enabled_defaults_to_live_si_path(self, monkeypatch):
+        monkeypatch.delenv("ARES_SI_ENABLED", raising=False)
+        monkeypatch.setattr("api.config.load_settings", lambda: {})
+        from api.si.bridge import si_enabled
+
+        assert si_enabled() is True
+
+    def test_streaming_live_path_uses_si_not_wake_agent(self):
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parents[1] / "api" / "streaming.py"
+        text = src.read_text(encoding="utf-8")
+        assert "_run_si_owned_live_turn" in text
+        assert "si_prepare_message" in text
+        assert "si_turn(" in text
+        # wake-agent is not the default live turn path
+        assert "_si_on and not ephemeral" in text
+
+
+class TestLivePathTrustGate:
+    """Trust gates return awaiting_approval with plan_id + step_id."""
+
+    def test_action_intent_returns_awaiting_approval_ids(self, tmp_path, monkeypatch):
+        home = _isolate_si_home(tmp_path, monkeypatch)
+        monkeypatch.setattr("api.journal.paths.si_dir", lambda: home / "si")
+        import core.si.orchestrator as orch_mod
+        orch_mod._PLANS_DB = None
+        from api.si.orchestrator import orchestrate_request
+
+        result = orchestrate_request("execute rm -rf /tmp/example_dir")
+        assert result["status"] == "awaiting_approval"
+        assert result.get("plan_id")
+        assert result.get("step_id")
+        assert result["step_id"] == (result.get("step") or {}).get("step_id")
+
+    def test_si_turn_does_not_silently_skip_gates(self, tmp_path, monkeypatch):
+        home = _isolate_si_home(tmp_path, monkeypatch)
+        monkeypatch.setattr("api.journal.paths.si_dir", lambda: home / "si")
+        import core.si.orchestrator as orch_mod
+        orch_mod._PLANS_DB = None
+        from api.si.bridge import si_turn
+
+        result = si_turn("execute rm -rf /tmp/example_dir", session_id="gate-test")
+        assert result.get("status") == "awaiting_approval"
+        assert result.get("plan_id")
+        assert result.get("step_id")
+

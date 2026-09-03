@@ -11,6 +11,29 @@ from ..runtimes import is_durable_runtime, normalize_runtime_id
 #: Runtime ids are validated against ``core.runtimes`` rather than frozen into
 #: a Literal here, so a newly registered runtime does not need a type edit.
 Runtime = str
+
+
+def tool_requires_approval(approval_tools: object, tool: object) -> bool:
+    """True when ``tool`` is listed on the agent as requiring ARES approval.
+
+    Matching is case-insensitive. Dotted capability names such as
+    ``workspace.write`` match if the full name or the last segment is listed.
+    An empty allowlist means this field gates nothing.
+    """
+
+    gated = {
+        str(item).strip().lower()
+        for item in (approval_tools or ())
+        if str(item).strip()
+    }
+    raw = str(tool or "").strip().lower()
+    if not raw or not gated:
+        return False
+    last = raw.rsplit(".", 1)[-1]
+    candidates = {raw, last, raw.replace(".", "_"), raw.replace("_", ".")}
+    return bool(gated & candidates)
+
+
 RunStatus = Literal[
     "queued", "running", "continue", "complete", "blocked",
     "approval_required", "failed", "paused", "cancelled", "timed_out",

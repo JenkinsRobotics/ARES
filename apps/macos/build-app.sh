@@ -166,7 +166,7 @@ cat >> "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>SUEnableAutomaticChecks</key>
     <true/>
     <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/shuwalker/ARES/main/appcast.xml</string>
+    <string>https://raw.githubusercontent.com/JenkinsRobotics/ARES/main/appcast.xml</string>
 </dict>
 </plist>
 PLIST

@@ -84,7 +84,7 @@ class HermesAdapter(AgentAdapter):
     def __init__(self, command: str | None = None, webui_url: str | None = None) -> None:
         configured = command or os.environ.get("ARES_HERMES_COMMAND")
         self.command = configured or shutil.which("hermes") or str(Path.home() / "bin" / "hermes")
-        self.webui_url = (webui_url or os.environ.get("ARES_HERMES_WEBUI_URL") or "http://127.0.0.1:8787").rstrip("/")
+        self.webui_url = (webui_url or os.environ.get("ARES_HERMES_WEBUI_URL") or os.environ.get("ARES_PUBLIC_URL") or "http://127.0.0.1:8787").rstrip("/")
         self._active: subprocess.Popen[str] | None = None
 
     def probe(self, _agent: Agent) -> dict[str, Any]:
@@ -631,6 +631,188 @@ class OpenClawAdapter(AgentAdapter):
             proc.terminate()
 
 
+def _host_env() -> dict[str, str]:
+    env = os.environ.copy()
+    dirs = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        str(Path.home() / ".grok" / "bin"),
+        str(Path.home() / "bin"),
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    existing = env.get("PATH", "").split(":")
+    for d in reversed(dirs):
+        if d not in existing:
+            existing.insert(0, d)
+    env["PATH"] = ":".join(existing)
+    return env
+
+
+class CliToolAdapter(AgentAdapter):
+    """Generic adapter for independently owned host CLI tools."""
+
+    def __init__(
+        self,
+        command: str,
+        cli_name: str,
+        arg_builder: Callable[[str, Agent], list[str]],
+    ) -> None:
+        self.command = command
+        self.cli_name = cli_name
+        self.arg_builder = arg_builder
+        self._active: subprocess.Popen[str] | None = None
+
+    def probe(self, _agent: Agent) -> dict[str, Any]:
+        env = _host_env()
+        resolved = shutil.which(self.command, path=env["PATH"]) or (self.command if os.path.exists(self.command) else None)
+        if not resolved:
+            return {
+                "available": False,
+                "command": self.command,
+                "owner": self.cli_name,
+                "error": f"{self.cli_name} CLI not found on host PATH",
+            }
+        try:
+            res = subprocess.run([resolved, "--version"], env=env, capture_output=True, text=True, timeout=5)
+            version = (res.stdout.strip() or res.stderr.strip()).splitlines()[0]
+            return {
+                "available": True,
+                "command": resolved,
+                "owner": self.cli_name,
+                "version": version,
+            }
+        except Exception as exc:
+            return {"available": False, "command": resolved, "owner": self.cli_name, "error": str(exc)}
+
+    def start_run(
+        self,
+        agent: Agent,
+        prompt: str,
+        session_id: str,
+        emit: EventSink,
+        cancel: threading.Event,
+    ) -> AdapterResult:
+        env = _host_env()
+        resolved = shutil.which(self.command, path=env["PATH"]) or (self.command if os.path.exists(self.command) else None)
+        if not resolved:
+            return AdapterResult("", session_id, f"{self.cli_name} CLI not found on host PATH")
+
+        args = [resolved] + self.arg_builder(prompt, agent)
+        cwd = agent.workspace or "/Users/matthewjenkins/workspace"
+        if not os.path.isdir(cwd):
+            cwd = str(Path.home())
+
+        try:
+            proc = subprocess.Popen(
+                args,
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+            )
+            self._active = proc
+        except Exception as exc:
+            return AdapterResult("", session_id, f"Failed to spawn {self.cli_name}: {exc}")
+
+        output_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        def _stream_stdout():
+            try:
+                for line in iter(proc.stdout.readline, ""):
+                    if cancel.is_set():
+                        break
+                    output_chunks.append(line)
+                    emit("text_delta", {"text": line})
+            except Exception:
+                pass
+
+        def _stream_stderr():
+            try:
+                for line in iter(proc.stderr.readline, ""):
+                    if cancel.is_set():
+                        break
+                    stderr_chunks.append(line)
+            except Exception:
+                pass
+
+        t_out = threading.Thread(target=_stream_stdout, daemon=True)
+        t_err = threading.Thread(target=_stream_stderr, daemon=True)
+        t_out.start()
+        t_err.start()
+
+        try:
+            proc.wait(timeout=agent.timeout_seconds)
+            t_out.join(timeout=2)
+            t_err.join(timeout=2)
+        except subprocess.TimeoutExpired:
+            self._terminate_process_tree(proc)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.SubprocessError:
+                pass
+            return AdapterResult("".join(output_chunks), session_id, f"{self.cli_name} run timed out")
+        finally:
+            self._active = None
+
+        if cancel.is_set():
+            return AdapterResult("".join(output_chunks), session_id, "cancelled")
+
+        full_text = "".join(output_chunks).strip()
+        stderr_text = "".join(stderr_chunks).strip()
+        error = stderr_text if proc.returncode != 0 and not full_text else ""
+        return AdapterResult(full_text or (stderr_text if proc.returncode == 0 else ""), session_id, error)
+
+    def cancel_run(self, _session_id: str) -> None:
+        if self._active is not None:
+            self._terminate_process_tree(self._active)
+
+    @staticmethod
+    def _terminate_process_tree(proc: "subprocess.Popen[str]") -> None:
+        if getattr(proc, "poll", lambda: None)() is not None:
+            return
+        try:
+            process_group = os.getpgid(proc.pid)
+            os.killpg(process_group, signal.SIGTERM)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(process_group, signal.SIGKILL)
+                proc.wait(timeout=3)
+        except (AttributeError, ProcessLookupError, PermissionError):
+            proc.terminate()
+
+
+class ClaudeAdapter(CliToolAdapter):
+    def __init__(self, command: str | None = None) -> None:
+        cmd = command or os.environ.get("ARES_CLAUDE_COMMAND") or shutil.which("claude") or "/opt/homebrew/bin/claude"
+        super().__init__(cmd, "claude", lambda prompt, agent: ["-p", prompt])
+
+
+class CodexAdapter(CliToolAdapter):
+    def __init__(self, command: str | None = None) -> None:
+        cmd = command or os.environ.get("ARES_CODEX_COMMAND") or shutil.which("codex") or "/opt/homebrew/bin/codex"
+        super().__init__(cmd, "codex", lambda prompt, agent: ["exec", "--skip-git-repo-check", prompt])
+
+
+class GrokAdapter(CliToolAdapter):
+    def __init__(self, command: str | None = None) -> None:
+        cmd = command or os.environ.get("ARES_GROK_COMMAND") or shutil.which("grok") or str(Path.home() / ".grok" / "bin" / "grok")
+        super().__init__(cmd, "grok", lambda prompt, agent: ["-p", prompt, "--permission-mode", "auto"])
+
+
+class GeminiAdapter(CliToolAdapter):
+    def __init__(self, command: str | None = None) -> None:
+        cmd = command or os.environ.get("ARES_GEMINI_COMMAND") or shutil.which("gemini") or "/opt/homebrew/bin/gemini"
+        super().__init__(cmd, "gemini", lambda prompt, agent: ["-p", prompt, "-y"])
+
+
 #: Adapter class per runtime id. A runtime is promotable to ``durable=True`` in
 #: ``core.runtimes`` only once it has an entry here -- ``default_adapters()``
 #: enforces that pairing so a half-finished promotion fails at construction
@@ -639,6 +821,10 @@ ADAPTER_TYPES: dict[str, type[AgentAdapter]] = {
     "hermes": HermesAdapter,
     "jaeger": JaegerAdapter,
     "openclaw": OpenClawAdapter,
+    "claude": ClaudeAdapter,
+    "codex": CodexAdapter,
+    "grok": GrokAdapter,
+    "gemini": GeminiAdapter,
 }
 
 

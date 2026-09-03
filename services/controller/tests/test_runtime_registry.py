@@ -151,18 +151,19 @@ def test_agent_normalizes_a_legacy_runtime_id():
 
 
 def test_agent_rejects_a_registered_but_unpromoted_runtime():
-    """claude is installed and classified but has no adapter yet, so it must
+    """pi is installed and classified but has no adapter yet, so it must
     fail at record creation with an actionable message rather than later at
     dispatch with a KeyError."""
-    assert is_runtime("claude")
-    assert not is_durable_runtime("claude")
+    assert is_runtime("pi")
+    assert not is_durable_runtime("pi")
     with pytest.raises(ValueError, match="not enabled for durable agent runs"):
-        Agent.from_dict(_agent_payload("claude"))
+        Agent.from_dict(_agent_payload("pi"))
 
 
-def test_openclaw_is_promoted_and_dispatchable():
-    assert is_durable_runtime("openclaw")
-    assert "openclaw" in default_adapters()
+def test_cli_runtimes_are_promoted_and_dispatchable():
+    for name in ("claude", "codex", "grok", "gemini", "openclaw"):
+        assert is_durable_runtime(name)
+        assert name in default_adapters()
 
 
 def test_openclaw_exec_loads_gateway_secret_from_runtime_file():

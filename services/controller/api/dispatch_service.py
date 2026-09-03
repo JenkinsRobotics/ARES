@@ -37,8 +37,8 @@ class DispatchService:
         user_message: str,
         conversation_id: str,
         local_only_mode: bool = False,
-        si_name: str = "Leo",
-        owner_name: str = "User",
+        si_name: str | None = None,
+        owner_name: str | None = None,
         model: str | None = None,
         model_provider: str | None = None,
         profile: str | None = None,
@@ -51,7 +51,21 @@ class DispatchService:
         4. Pass output through evaluator.py (6 verification checks)
         5. Complete step & record turn to turn_journal.py
         """
-        # 1. Orchestrate request
+        # 1. Orchestrate request — identity.json owns name/owner every turn.
+        # Request/caller Leo/User defaults must not beat disk, even if empty owner.
+        try:
+            from core.si.identity import load_identity
+
+            cfg = load_identity()
+            si_name = cfg.name
+            owner_name = cfg.owner_name
+        except Exception:
+            logger.debug("identity.json load failed for dispatch", exc_info=True)
+            if si_name is None:
+                si_name = "ARES"
+            if owner_name is None:
+                owner_name = ""
+
         orch_res = orchestrate_request(
             user_message=user_message,
             conversation_id=conversation_id,
@@ -62,12 +76,20 @@ class DispatchService:
 
         status = orch_res.get("status")
 
-        # 2. Check approval requirement
+        # 2. Check approval requirement — surface plan_id + step_id for WebUI.
         if status == "awaiting_approval":
+            step = orch_res.get("step") or {}
+            if not orch_res.get("step_id"):
+                orch_res["step_id"] = step.get("step_id")
             logger.info("Plan %s awaiting user approval for intent %s", orch_res.get("plan_id"), orch_res.get("intent"))
             append_turn_journal_event(
                 session_id=conversation_id,
-                event={"event": "awaiting_approval", "plan_id": orch_res.get("plan_id"), "reason": orch_res.get("approval_reason")},
+                event={
+                    "event": "awaiting_approval",
+                    "plan_id": orch_res.get("plan_id"),
+                    "step_id": orch_res.get("step_id"),
+                    "reason": orch_res.get("approval_reason"),
+                },
             )
             return orch_res
 
@@ -115,6 +137,53 @@ class DispatchService:
         if budget_check["warning"]:
             logger.warning("Budget warning for %s: %s", assigned_worker, budget_check["warning"])
 
+        # 2.6 Companion SI owns the worker prompt — never send raw user text.
+        try:
+            from core.si.bridge import si_prepare_message
+
+            prepared = si_prepare_message(user_message, target_worker=assigned_worker)
+        except Exception:
+            logger.exception("SI prepare failed for dispatch turn")
+            return {
+                "plan_id": plan_id,
+                "status": "execution_failed",
+                "assigned_worker": assigned_worker,
+                "error": "Companion SI could not prepare this turn.",
+            }
+
+        if prepared.get("status") == "awaiting_approval":
+            step = prepared.get("step") or orch_res.get("step") or {}
+            step_id = prepared.get("step_id") or orch_res.get("step_id") or step.get("step_id")
+            payload = {
+                "plan_id": prepared.get("plan_id") or orch_res.get("plan_id") or plan_id,
+                "step_id": step_id,
+                "status": "awaiting_approval",
+                "step": step,
+                "needs_approval": True,
+                "approval_reason": prepared.get("approval_reason")
+                or orch_res.get("approval_reason"),
+                "intent": orch_res.get("intent") or prepared.get("intent"),
+            }
+            append_turn_journal_event(
+                session_id=conversation_id,
+                event={
+                    "event": "awaiting_approval",
+                    "plan_id": payload["plan_id"],
+                    "step_id": payload["step_id"],
+                    "reason": payload.get("approval_reason"),
+                },
+            )
+            return payload
+
+        worker_message = str(prepared.get("prompt") or "")
+        if not worker_message.strip():
+            return {
+                "plan_id": plan_id,
+                "status": "execution_failed",
+                "assigned_worker": assigned_worker,
+                "error": "Companion SI produced an empty briefing.",
+            }
+
         # 3. Execute through the canonical framework-adapter seam (ADR-0009).
         # Explicit registry injection remains only as a test compatibility seam;
         # production never falls back to the second registry.
@@ -152,7 +221,7 @@ class DispatchService:
         if adapter is not None:
             try:
                 turn_res = adapter.run_turn(
-                    user_message,
+                    worker_message,
                     session_id=conversation_id,
                     profile=profile,
                     model=model,
@@ -172,7 +241,7 @@ class DispatchService:
             try:
                 if hasattr(worker, "run_turn"):
                     turn_res = worker.run_turn(
-                        user_message,
+                        worker_message,
                         session_id=conversation_id,
                         model=model,
                         model_provider=model_provider,
@@ -183,7 +252,7 @@ class DispatchService:
                     else:
                         raw_output = str(turn_res)
                 elif hasattr(worker, "generate_response"):
-                    raw_output = worker.generate_response(user_message)
+                    raw_output = worker.generate_response(worker_message)
                 else:
                     raw_output = f"[Worker Response] Executed via {assigned_worker}"
             except Exception as exc:

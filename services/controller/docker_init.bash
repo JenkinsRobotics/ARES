@@ -197,7 +197,7 @@ chown_home_areswebui() {
   find /home/areswebui \
     -path "/home/areswebui/.ares/ares-agent" -prune \
     -o -name ".git" -prune \
-    -o -exec chown -h "${WANTED_UID}:${WANTED_GID}" {} +
+    -o -exec chown -h "${WANTED_UID}:${WANTED_GID}" {} + 2>/dev/null || true
 }
 
 # The production image does not ship sudo. The entrypoint starts as root only

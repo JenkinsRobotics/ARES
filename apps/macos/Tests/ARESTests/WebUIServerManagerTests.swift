@@ -56,6 +56,36 @@ final class WebUIServerManagerTests: XCTestCase {
         XCTAssertEqual(environment["UNCHANGED"], "yes")
     }
 
+    func testTailscaleUsersReachTheControllerEnvironment() {
+        let environment = WebUIServerManager.applyingNativeRuntimeEnvironment(
+            to: [:],
+            host: "127.0.0.1",
+            port: 8788,
+            reloadDevMode: false,
+            tailscaleUsers: "  shuwalker@github  ",
+            instanceID: "mac-instance",
+            stateDirectory: URL(fileURLWithPath: "/tmp/ares-native")
+        )
+
+        XCTAssertEqual(environment["ARES_WEBUI_TAILSCALE_USERS"], "shuwalker@github")
+    }
+
+    /// An empty setting must not clobber an inherited allowlist: doing so is
+    /// what silently locked the Serve portal out while loopback stayed healthy.
+    func testEmptyTailscaleUsersDoesNotOverrideInheritedAllowlist() {
+        let environment = WebUIServerManager.applyingNativeRuntimeEnvironment(
+            to: ["ARES_WEBUI_TAILSCALE_USERS": "inherited@github"],
+            host: "127.0.0.1",
+            port: 8788,
+            reloadDevMode: false,
+            tailscaleUsers: "   ",
+            instanceID: "mac-instance",
+            stateDirectory: URL(fileURLWithPath: "/tmp/ares-native")
+        )
+
+        XCTAssertEqual(environment["ARES_WEBUI_TAILSCALE_USERS"], "inherited@github")
+    }
+
     func testDevelopmentLauncherSelectsSiblingJaegerAIAndActiveCompanion() throws {
         let workspace = FileManager.default.temporaryDirectory
             .appendingPathComponent("ares-jaeger-dependency-\(UUID().uuidString)")

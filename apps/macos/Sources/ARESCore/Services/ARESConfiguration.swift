@@ -66,6 +66,14 @@ public final class ARESConfiguration: ObservableObject, @unchecked Sendable {
         didSet { UserDefaults.standard.set(allowUnauthenticatedNetwork, forKey: "ares.config.allowUnauthenticatedNetwork") }
     }
 
+    /// Comma-separated Tailscale logins allowed through the Serve portal.
+    /// Forwarded to the controller as ``ARES_WEBUI_TAILSCALE_USERS``. The
+    /// identity gate fails closed, so leaving this empty denies every remote
+    /// request while loopback continues to work.
+    @Published public var tailscaleUsers: String = UserDefaults.standard.string(forKey: "ares.config.tailscaleUsers") ?? "" {
+        didSet { UserDefaults.standard.set(tailscaleUsers, forKey: "ares.config.tailscaleUsers") }
+    }
+
     @Published public var aresRole: String = UserDefaults.standard.string(forKey: "ares.config.role") ?? "primary" {
         didSet { UserDefaults.standard.set(aresRole, forKey: "ares.config.role") }
     }

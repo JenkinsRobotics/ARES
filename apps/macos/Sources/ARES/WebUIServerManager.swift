@@ -135,7 +135,16 @@ public final class WebUIServerManager: ObservableObject {
             return
         }
         process.executableURL = python
-        process.arguments = ["-m", "uvicorn", "fastapi_app.main:app", "--port", String(port), "--host", host]
+        // --no-proxy-headers is load-bearing for the Tailscale Serve portal.
+        // Uvicorn trusts loopback proxies by default and rewrites the peer
+        // address from X-Forwarded-For, which erases the raw Serve-proxy IP
+        // that the identity gate checks. ARES resolves forwarded headers
+        // itself (api.network_trust), so let it see the true socket peer.
+        process.arguments = [
+            "-m", "uvicorn", "fastapi_app.main:app",
+            "--port", String(port), "--host", host,
+            "--no-proxy-headers",
+        ]
         
         var env = ProcessInfo.processInfo.environment
         env = Self.applyingNativeRuntimeEnvironment(
@@ -144,6 +153,7 @@ public final class WebUIServerManager: ObservableObject {
             port: port,
             reloadDevMode: config.reloadDevMode,
             allowUnauthenticatedNetwork: config.allowUnauthenticatedNetwork,
+            tailscaleUsers: config.tailscaleUsers,
             instanceID: NativeSystemBridge.shared.instanceID,
             stateDirectory: config.configDirectory
         )
@@ -196,6 +206,7 @@ public final class WebUIServerManager: ObservableObject {
         port: Int,
         reloadDevMode: Bool,
         allowUnauthenticatedNetwork: Bool = true,
+        tailscaleUsers: String = "",
         instanceID: String,
         stateDirectory: URL
     ) -> [String: String] {
@@ -204,6 +215,14 @@ public final class WebUIServerManager: ObservableObject {
         environment["ARES_WEBUI_PORT"] = String(port)
         environment["ARES_WEBUI_RELOAD"] = reloadDevMode ? "1" : "0"
         environment["ARES_WEBUI_ALLOW_UNAUTHENTICATED_NETWORK"] = allowUnauthenticatedNetwork ? "1" : "0"
+        // The Tailscale Serve portal fails closed on an empty allowlist, so a
+        // child launched without this variable rejects every remote request
+        // even though loopback keeps working. Only forward a non-empty value:
+        // an empty string here must not mask an inherited one.
+        let trimmedTailscaleUsers = tailscaleUsers.trimmingCharacters(in: .whitespaces)
+        if !trimmedTailscaleUsers.isEmpty {
+            environment["ARES_WEBUI_TAILSCALE_USERS"] = trimmedTailscaleUsers
+        }
         environment["ARES_RUNTIME_OWNER"] = "mac_app"
         environment["ARES_RUNTIME_INSTANCE_ID"] = instanceID
         environment["ARES_NATIVE_STATE_DIR"] = stateDirectory.path

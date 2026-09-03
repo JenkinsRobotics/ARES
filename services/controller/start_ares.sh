@@ -79,4 +79,5 @@ cd "$DIR"
 echo $$ > "$_PID_FILE"
 
 exec "$PYBIN" -m uvicorn fastapi_app.main:app \
-  --host "$ARES_WEBUI_HOST" --port "$ARES_WEBUI_PORT" --no-server-header
+  --host "$ARES_WEBUI_HOST" --port "$ARES_WEBUI_PORT" --no-server-header \
+  --no-proxy-headers
